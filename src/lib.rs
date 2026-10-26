@@ -14,6 +14,7 @@ pub mod agent;
 mod button;
 mod controls;
 mod display;
+mod frame;
 mod icon;
 mod layout;
 mod overlay;
@@ -25,6 +26,7 @@ pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, Te
 pub use display::{
     Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, ProgressBar, Spinner, StatusDot, Tone,
 };
+pub use frame::{TitleBar, custom_frame};
 pub use icon::{Assets, Icon, IconName};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, SectionHeader, Sidebar, Tabs, Toolbar,

@@ -26,8 +26,8 @@ Translucent chrome over a blurred window, 30 px capsule controls, large radii, r
 Calmer and friendlier; costs density. Suits consumer-facing creator apps and secondary windows
 (onboarding, voice setup, export).
 
-The Glass screenshots below were taken before the translucency fix and show the chrome opaque;
-see "Translucency" for how it renders now.
+The Glass screenshots below were captured before the translucency fix and before the custom
+window frame, so they show opaque chrome under the system title bar.
 
 ![Glass dark](images/arrange-glass-dark.png)
 ![Glass light](images/arrange-glass-light.png)
@@ -49,8 +49,8 @@ alpha dark, 50 % light), and content areas — the canvas, panels, the agent tra
 opaque so text over them never depends on what is behind the window.
 
 - **macOS:** gpui's native window blur (not yet checked on a Mac).
-- **Windows 10 1809+ / 11:** gpui 0.2.2 uses the undocumented `SetWindowCompositionAttribute`
-  acrylic accent (not Mica). It needs *Settings → Personalization → Colors → Transparency
+- **Windows 10 1809+ / 11:** confirmed working. gpui 0.2.2 uses the undocumented
+  `SetWindowCompositionAttribute` acrylic accent (not Mica). It needs *Settings → Personalization → Colors → Transparency
   effects* on; with it off, Windows draws the chrome solid.
 - **Linux:** depends on the compositor; on X11 without one the chrome is solid.
 

@@ -59,7 +59,12 @@ and its undo); wrap the component in an element that handles the gesture.
 
 These implement `Styled` and `ParentElement`, so chain sizes and children:
 
-- `Toolbar::new()` — title bar / main toolbar row (chrome, bottom hairline).
+- `TitleBar::new().leading(..).title(..).subtitle(..).child(..).trailing(..)` — the window's own
+  title bar. Open the window with `atelier::custom_frame(options, cx.theme())` so the system bar
+  is hidden. Its empty space drags the window; children are shielded from the drag. On Windows it
+  draws minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on
+  macOS it leaves room for the traffic lights; Linux keeps the system frame for now.
+- `Toolbar::new()` — a toolbar row inside the window (chrome, bottom hairline).
 - `Sidebar::new(Edge::Left | Edge::Right).w(px(232.))` — persistent side region.
 - `Card::new()` — grouped region, hairline, no shadow.
 - `SectionHeader::new(title).description(..).action(button)`; `SectionHeader::caption(title)`.

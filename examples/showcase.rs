@@ -18,12 +18,12 @@ use atelier::{
     ControlSize, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName, Kbd, Knob,
     Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, SectionHeader, Segment,
     SegmentedControl, Sidebar, Slider, Spinner, Switch, Tabs, TextColor, TextField, TextSize,
-    Theme, Tone, Toolbar, menu_separator,
+    Theme, TitleBar, Tone, menu_separator,
 };
 use gpui::{
     AnyElement, App, Application, Bounds, Context, Hsla, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window, WindowBounds, WindowOptions, div, prelude::*, px, relative, rgb,
-    size,
+    SharedString, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, div, prelude::*,
+    px, relative, rgb, size,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -117,23 +117,13 @@ impl Showcase {
             .iter()
             .position(|d| *d == self.direction)
             .unwrap_or(0);
-        Toolbar::new()
-            .child(Button::icon_only("sidebar", IconName::SidebarLeft).tooltip("Show sidebar"))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(Label::new("Midnight Drive").weight(theme.typography.label_weight))
-                    .child(
-                        Label::new("Edited 2 min ago")
-                            .size(TextSize::XSmall)
-                            .color(TextColor::Faint),
-                    ),
-            )
+        TitleBar::new()
+            .leading(Button::icon_only("sidebar", IconName::SidebarLeft).tooltip("Hide sidebar"))
+            .title("Midnight Drive")
+            .subtitle("Edited 2 min ago")
             .child(div().w(theme.spacing.lg))
             .child(transport(cx))
-            .child(div().flex_1())
-            .child(
+            .trailing(
                 SegmentedControl::new(
                     "direction",
                     Direction::ALL.map(|direction| Segment::label(direction.label())),
@@ -145,7 +135,7 @@ impl Showcase {
                     this.apply_theme(window, cx);
                 })),
             )
-            .child(
+            .trailing(
                 SegmentedControl::new(
                     "appearance",
                     [Segment::label("Light"), Segment::label("Dark")],
@@ -157,8 +147,8 @@ impl Showcase {
                     this.apply_theme(window, cx);
                 })),
             )
-            .child(Divider::vertical())
-            .child(
+            .trailing(Divider::vertical())
+            .trailing(
                 AgentToggle::new(
                     "agent-toggle",
                     self.agent_open,
@@ -1055,26 +1045,31 @@ fn main() {
             let background = theme.window_background();
             atelier::init(cx, theme);
             let bounds = Bounds::centered(None, size(px(1480.), px(920.)), cx);
-            cx.open_window(
+            let options = atelier::custom_frame(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_background: background,
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Atelier showcase".into()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 },
-                |_, cx| {
-                    cx.new(|_| Showcase {
-                        direction,
-                        appearance,
-                        page,
-                        agent_open,
-                        reasoning_open: false,
-                        tool_open: false,
-                        selected_track: 1,
-                        mute: [false, false, false, false, true],
-                        solo: [false, true, false, false, false],
-                    })
-                },
-            )
+                cx.theme(),
+            );
+            cx.open_window(options, |_, cx| {
+                cx.new(|_| Showcase {
+                    direction,
+                    appearance,
+                    page,
+                    agent_open,
+                    reasoning_open: false,
+                    tool_open: false,
+                    selected_track: 1,
+                    mute: [false, false, false, false, true],
+                    solo: [false, true, false, false, false],
+                })
+            })
             .expect("failed to open the showcase window");
             cx.activate(true);
         });

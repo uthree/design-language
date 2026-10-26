@@ -18,7 +18,8 @@ Application::new().with_assets(Assets::with_fallback(AppAssets)).run(|cx| {
     let theme = Theme::new(Direction::Glass, Appearance::Dark);
     let background = theme.window_background();
     atelier::init(cx, theme);
-    cx.open_window(WindowOptions { window_background: background, ..Default::default() }, ...);
+    let options = WindowOptions { window_background: background, ..Default::default() };
+    cx.open_window(atelier::custom_frame(options, cx.theme()), ...); // draw TitleBar in the root view
 });
 
 // root view
