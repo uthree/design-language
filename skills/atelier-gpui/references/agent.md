@@ -70,6 +70,13 @@ does not ship a text editor; `.value(..)` is for mock-ups.
 - Give transcript rows ids (`UserMessage::id`, `AssistantMessage::id`) so they rise into place
   as they arrive.
 
+## Code
+
+- `CodeBlock::new(id, code).title("cargo test").copyable().line_numbers(1)` for command output
+  and excerpts.
+- `DiffBlock::new(path).lines([DiffLine::Hunk(..), DiffLine::Removed(n, ..), DiffLine::Added(n,
+  ..), DiffLine::Context(n, ..)])` for a file change; the header counts additions and removals.
+
 ## In the canvas
 
 Draw AI-authored objects with the object's own colour plus a dashed `colors.agent` border and a

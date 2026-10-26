@@ -1,0 +1,547 @@
+//! Two Auris Studio windows redrawn in Atelier: the project chooser and "AIで曲を作る…".
+//! The text is Auris's Japanese interface; the takes, players and generation are mock data.
+//!
+//! ```text
+//! cargo run --example auris_screens -- [--screen chooser|compose]
+//!                                       [--direction glass|studio|mono] [--appearance dark|light]
+//! ```
+
+mod common;
+
+use atelier::agent::{AssistantMessage, Composer, UserMessage};
+use atelier::{
+    ActiveTheme, Appearance, AudioPlayer, Badge, Button, ControlSize, Direction, Divider, Edge,
+    IconName, Label, ListItem, OptionCard, ProgressBar, SectionHeader, Segment, SegmentedControl,
+    Sidebar, Spinner, StepList, StepState, Switch, TextColor, TextSize, TitleBar,
+};
+use common::Themed;
+use gpui::{
+    AnyElement, Context, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px,
+};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    Chooser,
+    Compose,
+}
+
+struct AurisScreens {
+    choice: (Direction, Appearance),
+    screen: Screen,
+    /// Chooser: 0 new project, 1 recent.
+    chooser_page: usize,
+    /// Chooser: which way to start.
+    start: usize,
+    /// Compose: which take is playing.
+    playing: Option<usize>,
+    learn_preferences: bool,
+}
+
+impl Themed for AurisScreens {
+    fn choice(&mut self) -> &mut (Direction, Appearance) {
+        &mut self.choice
+    }
+}
+
+/// Deterministic peaks for a take's mock waveform: an intro, a build, a loud body, an ending.
+fn take_peaks(seed: f32) -> Vec<f32> {
+    (0..72)
+        .map(|index| {
+            let x = index as f32 / 71.;
+            let shape = if x < 0.12 {
+                0.25 + x * 2.
+            } else if x < 0.85 {
+                0.6 + 0.3 * (x * 9. + seed).sin().abs()
+            } else {
+                (1. - x) * 4.
+            };
+            let grain = ((index as f32 * 12.9898 + seed * 78.233).sin() * 43_758.547)
+                .fract()
+                .abs();
+            (shape * (0.7 + 0.3 * grain)).clamp(0.05, 1.)
+        })
+        .collect()
+}
+
+impl AurisScreens {
+    fn chooser(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let sidebar = Sidebar::new(Edge::Left)
+            .w(px(232.))
+            .p(theme.spacing.sm)
+            .gap(theme.spacing.xxs)
+            .child(
+                ListItem::new("page-new", "新規プロジェクト")
+                    .icon(IconName::Plus)
+                    .selected(self.chooser_page == 0)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.chooser_page = 0;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                ListItem::new("page-recent", "最近使った項目")
+                    .icon(IconName::History)
+                    .trailing(
+                        Label::new("4")
+                            .size(TextSize::XSmall)
+                            .color(TextColor::Faint),
+                    )
+                    .selected(self.chooser_page == 1)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.chooser_page = 1;
+                        cx.notify();
+                    })),
+            )
+            .child(div().flex_1())
+            // Setup is help, not a way to start: it lives with navigation, not with the commit.
+            .child(
+                Button::new("setup", "セットアップガイド…")
+                    .ghost()
+                    .icon(IconName::Info)
+                    .full_width(),
+            );
+
+        let body = if self.chooser_page == 0 {
+            let card = |index: usize, card: OptionCard, cx: &Context<Self>| {
+                div()
+                    .flex_1()
+                    .max_w(px(340.))
+                    .child(card.selected(self.start == index).on_click(cx.listener(
+                        move |this, _, _, cx| {
+                            this.start = index;
+                            cx.notify();
+                        },
+                    )))
+            };
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing.xl)
+                .child(
+                    SectionHeader::new("新しいプロジェクト")
+                        .description("始め方を選んでください。あとから変えられます。"),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(theme.spacing.lg)
+                        .child(card(
+                            0,
+                            OptionCard::new("start-empty", IconName::Music, "空のプロジェクト")
+                                .description("音源トラックから、自由に曲を作り始めます。"),
+                            cx,
+                        ))
+                        .child(card(
+                            1,
+                            OptionCard::new("start-ai", IconName::Sparkles, "AIで曲を作る…")
+                                .description(
+                                    "雰囲気を伝えると、作曲アシスタントが候補を3つ作ります。",
+                                )
+                                .agent(),
+                            cx,
+                        )),
+                )
+                .into_any_element()
+        } else {
+            let recent = [
+                (
+                    "成層圏突破",
+                    "~/Music/Auris/stratosphere.auris",
+                    "今日 11:20",
+                ),
+                ("雲海の決戦", "~/Music/Auris/sea-of-clouds.auris", "昨日"),
+                (
+                    "Midnight Drive",
+                    "~/Music/Auris/midnight-drive.auris",
+                    "10月21日",
+                ),
+                ("合唱テスト", "~/Music/Auris/choir-test.auris", "10月18日"),
+            ];
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing.md)
+                .child(SectionHeader::new("最近使った項目"))
+                .child(
+                    div().flex().flex_col().gap(theme.spacing.xxs).children(
+                        recent
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, (name, path, when))| {
+                                ListItem::new(("recent", index), name)
+                                    .icon(IconName::File)
+                                    .description(path)
+                                    .trailing(
+                                        Label::new(when)
+                                            .size(TextSize::Small)
+                                            .color(TextColor::Faint),
+                                    )
+                                    .selected(index == 0)
+                            }),
+                    ),
+                )
+                .into_any_element()
+        };
+
+        let footer = div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.sm)
+            .h(theme.density.toolbar)
+            .px(theme.spacing.lg)
+            .border_t_1()
+            .border_color(theme.colors.border)
+            .child(Button::new("open", "既存のプロジェクトを開く…").icon(IconName::Folder))
+            .child(div().flex_1())
+            .child(Button::new("close", "閉じる"))
+            .child(
+                Button::new(
+                    "create",
+                    if self.start == 1 {
+                        "AIで作り始める…"
+                    } else {
+                        "作成"
+                    },
+                )
+                .primary(),
+            );
+
+        div()
+            .flex()
+            .flex_1()
+            .min_h_0()
+            .child(sidebar)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .bg(theme.colors.surface)
+                    .child(div().flex_1().p(theme.spacing.xxl).child(body))
+                    .child(footer),
+            )
+            .into_any_element()
+    }
+
+    fn take_card(
+        &self,
+        index: usize,
+        title: &'static str,
+        description: &'static str,
+        tags: [&'static str; 3],
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let playing = self.playing == Some(index);
+        let (elapsed, position) = if playing {
+            ("1:32", 0.76)
+        } else {
+            ("0:00", 0.)
+        };
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(theme.spacing.md)
+            .p(theme.spacing.lg)
+            .rounded(theme.shape.radius_lg)
+            .bg(theme.colors.elevated)
+            .border_1()
+            .border_color(if playing {
+                theme.colors.accent
+            } else {
+                theme.colors.border
+            })
+            .child(Label::new(title).size(TextSize::Large).heading_weight())
+            .child(
+                div()
+                    .flex()
+                    .gap(theme.spacing.xs)
+                    .children(tags.map(Badge::new)),
+            )
+            .child(
+                Label::new(description)
+                    .size(TextSize::Small)
+                    .color(TextColor::Muted),
+            )
+            .child(
+                AudioPlayer::new(("player", index), position, elapsed, "2:00")
+                    .peaks(take_peaks(index as f32 * 3.1))
+                    .playing(playing)
+                    .on_play(cx.listener(move |this, _, _, cx| {
+                        this.playing = if this.playing == Some(index) {
+                            None
+                        } else {
+                            Some(index)
+                        };
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(theme.spacing.sm)
+                    .child(Button::new(("continue", index), "この曲で続ける").icon(IconName::Check))
+                    .child(
+                        Button::new(("redo", index), "作り直す")
+                            .ghost()
+                            .icon(IconName::Refresh),
+                    ),
+            )
+    }
+
+    fn generating_card(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(theme.spacing.md)
+            .p(theme.spacing.lg)
+            .rounded(theme.shape.radius_lg)
+            .bg(theme.colors.agent_wash)
+            .border_1()
+            .border_color(theme.colors.agent.opacity(0.35))
+            .child(
+                Label::new("成層圏突破")
+                    .size(TextSize::Large)
+                    .heading_weight(),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(theme.spacing.xs)
+                    .child(Badge::new("BPM 174"))
+                    .child(Badge::new("F#m"))
+                    .child(Badge::new("生成中").tone(atelier::Tone::Agent).dot()),
+            )
+            .child(
+                Label::new("電子的なパルスとロックの推進力を融合した、未来的で攻撃的な高速曲。")
+                    .size(TextSize::Small)
+                    .color(TextColor::Muted),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.spacing.sm)
+                    .p(theme.spacing.md)
+                    .rounded(theme.shape.radius_md)
+                    .bg(theme.colors.surface)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.spacing.sm)
+                            .child(Spinner::new("generating"))
+                            .child(Label::new("編曲を進めています").size(TextSize::Small))
+                            .child(div().flex_1())
+                            .child(
+                                Label::new("約40秒")
+                                    .size(TextSize::XSmall)
+                                    .color(TextColor::Faint),
+                            ),
+                    )
+                    .child(ProgressBar::indeterminate("generating-bar").tone(atelier::Tone::Agent))
+                    .child(
+                        StepList::new("generation")
+                            .step("メロディと和声", StepState::Done)
+                            .step("編曲", StepState::Running)
+                            .step("ミックスと書き出し", StepState::Pending),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(theme.spacing.sm)
+                    .child(
+                        Button::new("continue-3", "この曲で続ける")
+                            .icon(IconName::Check)
+                            .disabled(true),
+                    )
+                    .child(
+                        Button::new("stop-3", "生成を停止")
+                            .ghost()
+                            .icon(IconName::Stop),
+                    ),
+            )
+    }
+
+    fn compose(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let transcript = div()
+            .flex()
+            .flex_col()
+            .gap(theme.spacing.xl)
+            .w_full()
+            .max_w(px(1040.))
+            .child(UserMessage::new("Ace Combatみたいな超かっこいい曲作ってほしい").id("request"))
+            .child(
+                AssistantMessage::new(
+                    "空戦の疾走感と英雄的なスケールを軸に、方向性の異なるオリジナル曲を3案作ります。気に入った案を選ぶと、その曲で続けて編集できます。",
+                )
+                .id("reply")
+                .name("作曲アシスタント")
+                .meta("GPT-6-Sol (Codex) · 2分14秒"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(theme.spacing.lg)
+                    .items_start()
+                    .child(self.take_card(
+                        0,
+                        "蒼穹の迎撃",
+                        "鋭いギターと重厚なオーケストラが一気に加速する、正面突破の空戦テーマ。",
+                        ["BPM 160", "Dm", "2:00"],
+                        cx,
+                    ))
+                    .child(self.take_card(
+                        1,
+                        "雲海の決戦",
+                        "静かなピアノから始まり、弦とブラスが広がるドラマチックな決戦曲。",
+                        ["BPM 148", "Cm", "2:00"],
+                        cx,
+                    ))
+                    .child(self.generating_card(cx)),
+            );
+
+        let composer = Composer::new("composer")
+            .placeholder("要望を追加する（例：もっとブラスを前に）…")
+            .model("GPT-6-Sol (Codex) · effort: medium")
+            .busy(true);
+
+        let footer = div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.md)
+            .w_full()
+            .max_w(px(1040.))
+            .child(
+                Button::new("back", "戻る")
+                    .ghost()
+                    .icon(IconName::ChevronLeft),
+            )
+            .child(
+                Switch::new("learn", self.learn_preferences)
+                    .label("好みを記録・活用")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.learn_preferences = !this.learn_preferences;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Button::new("history", "選択履歴…")
+                    .ghost()
+                    .icon(IconName::History),
+            )
+            .child(div().flex_1())
+            .child(
+                Button::new("open-editor", "エディタで開く")
+                    .disabled(true)
+                    .tooltip("案を選ぶと開けます"),
+            );
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .bg(theme.colors.surface)
+            .child(
+                div()
+                    .id("compose-transcript")
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px(theme.spacing.xxl)
+                    .py(theme.spacing.xl)
+                    .child(transcript),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(theme.spacing.md)
+                    .px(theme.spacing.xxl)
+                    .pb(theme.spacing.lg)
+                    .child(div().w_full().max_w(px(1040.)).child(composer))
+                    .child(footer),
+            )
+            .into_any_element()
+    }
+}
+
+impl Render for AurisScreens {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let switch = common::theme_switch(self, cx);
+        let (title, subtitle) = match self.screen {
+            Screen::Chooser => ("プロジェクトを選択", "Auris Studio"),
+            Screen::Compose => ("AIで曲を作る", "3案 · 1案を生成中"),
+        };
+        let body = match self.screen {
+            Screen::Chooser => self.chooser(cx),
+            Screen::Compose => self.compose(cx),
+        };
+        div()
+            .font(theme.typography.ui.clone())
+            .text_color(theme.colors.text)
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(theme.window_fill())
+            .child(
+                TitleBar::new()
+                    .title(title)
+                    .subtitle(subtitle)
+                    .trailing(
+                        SegmentedControl::new(
+                            "screen",
+                            [
+                                Segment::label("プロジェクト選択"),
+                                Segment::label("AIで曲を作る"),
+                            ],
+                            self.screen as usize,
+                        )
+                        .size(ControlSize::Small)
+                        .on_select(cx.listener(
+                            |this, index: &usize, _, cx| {
+                                this.screen = if *index == 0 {
+                                    Screen::Chooser
+                                } else {
+                                    Screen::Compose
+                                };
+                                cx.notify();
+                            },
+                        )),
+                    )
+                    .trailing(Divider::vertical())
+                    .trailing(switch),
+            )
+            .child(body)
+    }
+}
+
+fn main() {
+    let screen = match common::argument("--screen").as_deref() {
+        Some("compose") => Screen::Compose,
+        _ => Screen::Chooser,
+    };
+    common::run("Auris Studio", 1320., 860., move |choice, _| AurisScreens {
+        choice,
+        screen,
+        chooser_page: 0,
+        start: 1,
+        playing: Some(0),
+        learn_preferences: true,
+    });
+}

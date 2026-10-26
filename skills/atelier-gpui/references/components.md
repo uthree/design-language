@@ -80,6 +80,13 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 - `Disclosure::new(id, label, open).on_toggle(..)`.
 - `EmptyState::new(icon, title).description(..).action(button)`.
 
+## Media and choices
+
+- `AudioPlayer::new(id, position, "1:32", "2:00").peaks(peaks).playing(bool).volume(v)` — a
+  preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made.
+- `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
+  hands work to the agent. Use a row of them when choosing is the point of the screen.
+
 ## Overlays
 
 `Popover::new().w(..).child(MenuItem::new(id, "Duplicate").shortcut("Ctrl+D"))`,

@@ -296,6 +296,12 @@ impl LevelMeter {
         }
     }
 
+    /// Change the level, keeping the other settings.
+    pub fn level(mut self, level: f32) -> Self {
+        self.level = level.clamp(0., 1.);
+        self
+    }
+
     /// Peak hold position.
     pub fn peak(mut self, peak: f32) -> Self {
         self.peak = Some(peak.clamp(0., 1.));

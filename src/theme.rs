@@ -195,6 +195,16 @@ pub struct Colors {
     /// Meter fill, from safe to clipping.
     pub meter: [Hsla; 3],
 
+    /// Distinct colours for plotted series: left/right channels, voices, overlaid curves.
+    pub series: [Hsla; 4],
+    /// A sequential ramp for intensity: spectrograms, membrane displacement, heat maps. The
+    /// first stop is the plot's own background, so silence disappears into it.
+    pub heat: [Hsla; 5],
+    /// Major grid lines in plots: octaves, 0 dB, bar lines.
+    pub grid: Hsla,
+    /// Minor grid lines in plots.
+    pub grid_faint: Hsla,
+
     /// Shadow colour; alpha is applied by [`Elevation`].
     pub shadow: Hsla,
 }
@@ -726,6 +736,26 @@ fn colors(
             _ => accent,
         },
         meter: [success, warning, danger],
+        series: [accent, agent_main, success, warning],
+        heat: if dark {
+            [
+                sunken,
+                mix(sunken, accent, 0.45),
+                accent,
+                mix(accent, warning, 0.7),
+                mix(warning, gpui::white(), 0.6),
+            ]
+        } else {
+            [
+                sunken,
+                mix(sunken, accent, 0.3),
+                accent,
+                mix(accent, danger, 0.6),
+                mix(warning, danger, 0.3),
+            ]
+        },
+        grid: tone.opacity(if dark { 0.12 } else { 0.14 }),
+        grid_faint: tone.opacity(if dark { 0.05 } else { 0.06 }),
         shadow: hsla(0., 0., 0., 1.),
     }
 }
@@ -909,6 +939,13 @@ fn luminance(color: Hsla) -> f32 {
 /// Linear interpolation in RGB, from `a` (amount 0) to `b` (amount 1).
 pub fn mix(a: Hsla, b: Hsla, amount: f32) -> Hsla {
     let amount = amount.clamp(0., 1.);
+    // The ends are returned as given: a round trip through RGB would shift them slightly.
+    if amount == 0. {
+        return a;
+    }
+    if amount == 1. {
+        return b;
+    }
     let (a, b): (Rgba, Rgba) = (a.into(), b.into());
     let lerp = |x: f32, y: f32| x + (y - x) * amount;
     Rgba {

@@ -601,3 +601,132 @@ impl RenderOnce for EmptyState {
             )
     }
 }
+
+/// A large choice tile: an icon, a title and a line of description. Use a row of them when the
+/// choice is the whole point of the screen — how to start a project, which template to use.
+#[derive(IntoElement)]
+pub struct OptionCard {
+    id: ElementId,
+    icon: IconName,
+    title: SharedString,
+    description: Option<SharedString>,
+    selected: bool,
+    agent: bool,
+    on_click: Option<ClickHandler>,
+}
+
+impl OptionCard {
+    /// A tile.
+    pub fn new(id: impl Into<ElementId>, icon: IconName, title: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            icon,
+            title: title.into(),
+            description: None,
+            selected: false,
+            agent: false,
+            on_click: None,
+        }
+    }
+
+    /// What choosing it does, in one line.
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// The current choice.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// The choice hands the work to the agent: its icon takes the agent colours.
+    pub fn agent(mut self) -> Self {
+        self.agent = true;
+        self
+    }
+
+    /// Called on click.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for OptionCard {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let (icon_color, icon_wash) = if self.agent {
+            (colors.agent, colors.agent_wash)
+        } else {
+            (colors.accent_text, colors.accent_wash)
+        };
+        let tile = px(56.);
+        let hover = colors.hover;
+        let mut card = div()
+            .id(self.id)
+            .flex()
+            .flex_col()
+            .gap(theme.spacing.md)
+            .p(theme.spacing.lg)
+            .rounded(theme.shape.radius_lg)
+            .bg(colors.elevated)
+            .border_1()
+            .border_color(if self.selected {
+                colors.accent
+            } else {
+                colors.border
+            })
+            // The selected tile carries a ring as well as the border colour, so it does not rely on
+            // a hue difference alone.
+            .when(self.selected, |card| {
+                card.shadow(vec![gpui::BoxShadow {
+                    color: colors.focus_ring.opacity(0.35),
+                    offset: gpui::point(px(0.), px(0.)),
+                    blur_radius: px(0.),
+                    spread_radius: px(3.),
+                }])
+            })
+            .when(!self.selected, |card| {
+                card.hover(move |style| style.bg(hover))
+            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(tile)
+                    .rounded(
+                        Theme::concentric(theme.shape.radius_lg, theme.spacing.lg)
+                            .max(theme.shape.radius_md),
+                    )
+                    .bg(icon_wash)
+                    .child(Icon::new(self.icon).size(px(28.)).color(icon_color)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.spacing.xs)
+                    .child(
+                        Label::new(self.title)
+                            .size(TextSize::Large)
+                            .heading_weight(),
+                    )
+                    .children(self.description.map(|description| {
+                        Label::new(description)
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted)
+                    })),
+            );
+        if let Some(handler) = self.on_click {
+            card = card.on_click(handler);
+        }
+        card
+    }
+}
