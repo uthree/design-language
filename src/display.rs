@@ -3,12 +3,13 @@
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, App, Bounds, ElementId, Hsla, IntoElement, ParentElement, Pixels,
-    RenderOnce, SharedString, Styled, Transformation, Window, canvas, div, fill, linear_color_stop,
-    linear_gradient, percentage, point, prelude::FluentBuilder, px, relative, size, svg,
+    App, Bounds, ElementId, Hsla, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
+    Styled, Transformation, Window, canvas, div, fill, linear_color_stop, linear_gradient,
+    percentage, point, prelude::FluentBuilder, px, size, svg,
 };
 
 use crate::icon::{Icon, IconName};
+use crate::motion::looping;
 use crate::theme::{ActiveTheme, Theme};
 
 /// The meaning of a badge or notice. Keep most badges [`Tone::Neutral`]: a row of coloured
@@ -275,52 +276,6 @@ impl RenderOnce for Divider {
     }
 }
 
-/// A determinate progress bar.
-#[derive(IntoElement)]
-pub struct ProgressBar {
-    value: f32,
-    tone: Tone,
-}
-
-impl ProgressBar {
-    /// Progress from 0 to 1.
-    pub fn new(value: f32) -> Self {
-        Self {
-            value: value.clamp(0., 1.),
-            tone: Tone::Accent,
-        }
-    }
-
-    /// Fill colour.
-    pub fn tone(mut self, tone: Tone) -> Self {
-        self.tone = tone;
-        self
-    }
-}
-
-impl RenderOnce for ProgressBar {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let fill_color = match self.tone {
-            Tone::Accent => theme.colors.accent,
-            other => other.colors(theme).0,
-        };
-        let height = theme.spacing.xs;
-        div()
-            .w_full()
-            .h(height)
-            .rounded(height / 2.)
-            .bg(theme.colors.sunken)
-            .child(
-                div()
-                    .h_full()
-                    .w(relative(self.value))
-                    .rounded(height / 2.)
-                    .bg(fill_color),
-            )
-    }
-}
-
 /// A level meter: green to yellow to red, with a peak hold line.
 #[derive(IntoElement)]
 pub struct LevelMeter {
@@ -339,6 +294,12 @@ impl LevelMeter {
             vertical: true,
             thickness: px(6.),
         }
+    }
+
+    /// Change the level, keeping the other settings.
+    pub fn level(mut self, level: f32) -> Self {
+        self.level = level.clamp(0., 1.);
+        self
     }
 
     /// Peak hold position.
@@ -447,16 +408,19 @@ impl Spinner {
 
 impl RenderOnce for Spinner {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        svg()
+        let spinner = svg()
             .path(IconName::Spinner.path())
             .size(self.size)
             .flex_none()
-            .text_color(self.color.unwrap_or(cx.theme().colors.agent))
-            .with_animation(
-                self.id,
-                Animation::new(Duration::from_millis(900)).repeat(),
-                |svg, delta| svg.with_transformation(Transformation::rotate(percentage(delta))),
-            )
+            .text_color(self.color.unwrap_or(cx.theme().colors.agent));
+        looping(
+            spinner,
+            self.id,
+            Duration::from_millis(900),
+            0.,
+            cx,
+            |svg, delta| svg.with_transformation(Transformation::rotate(percentage(delta))),
+        )
     }
 }
 

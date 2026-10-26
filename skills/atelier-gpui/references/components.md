@@ -52,14 +52,26 @@ and its undo); wrap the component in an element that handles the gesture.
 
 `Badge::new("Rendered").tone(Tone::Success).dot()`, `Kbd::new("⌘K")`, `Avatar::person("UT")`,
 `Avatar::agent()`, `Divider::horizontal()` / `Divider::vertical().full()`,
-`ProgressBar::new(0.4)`, `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`),
-`Spinner::new(id)`, `StatusDot::new(color)`.
+`LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
+
+## Progress and loading
+
+`ProgressBar::new(v)` (`.id(..)` to glide, `.tone(..)`, `.height(..)`),
+`ProgressBar::indeterminate(id)`, `ProgressRing::new(v).size(..).show_value()`,
+`Spinner::new(id)`, `Skeleton::new(id).w(..).h(..)`, `skeleton_paragraph(id, lines, cx)`,
+`TaskProgress::new(id, title)`, `StepList::new(id).step(label, state)`. When to use which, and
+how components animate: [motion.md](motion.md).
 
 ## Layout
 
 These implement `Styled` and `ParentElement`, so chain sizes and children:
 
-- `Toolbar::new()` — title bar / main toolbar row (chrome, bottom hairline).
+- `TitleBar::new().leading(..).title(..).subtitle(..).child(..).trailing(..)` — the window's own
+  title bar. Open the window with `atelier::custom_frame(options, cx.theme())` so the system bar
+  is hidden. Its empty space drags the window; children are shielded from the drag. On Windows it
+  draws minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on
+  macOS it leaves room for the traffic lights; Linux keeps the system frame for now.
+- `Toolbar::new()` — a toolbar row inside the window (chrome, bottom hairline).
 - `Sidebar::new(Edge::Left | Edge::Right).w(px(232.))` — persistent side region.
 - `Card::new()` — grouped region, hairline, no shadow.
 - `SectionHeader::new(title).description(..).action(button)`; `SectionHeader::caption(title)`.
@@ -67,6 +79,13 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   .selected(bool).indent(depth)` — sidebar, list and tree rows with fixed icon/trailing lanes.
 - `Disclosure::new(id, label, open).on_toggle(..)`.
 - `EmptyState::new(icon, title).description(..).action(button)`.
+
+## Media and choices
+
+- `AudioPlayer::new(id, position, "1:32", "2:00").peaks(peaks).playing(bool).volume(v)` — a
+  preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made.
+- `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
+  hands work to the agent. Use a row of them when choosing is the point of the screen.
 
 ## Overlays
 

@@ -12,10 +12,12 @@
 //! * **Tool work is collapsed by default** and grouped, so a long turn reads as its answer.
 //! * **Approvals name the object and the verb**, with the safe choice as the default.
 
+mod code;
 mod composer;
 mod panel;
 mod transcript;
 
+pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use transcript::{

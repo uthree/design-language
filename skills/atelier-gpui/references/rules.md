@@ -66,6 +66,8 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
 
 ## Creator-tool specifics
 
+- The window has one bar: `TitleBar` is both chrome and main toolbar. Put the document title and
+  frequent commands in it; leave its middle empty so it can be dragged.
 - Canvas first: the timeline/editor gets `flex_1` and `min_w_0`/`min_h_0`; inspectors and the
   agent panel are fixed-width, dismissible regions on the trailing edge.
 - Values are monospaced (`Label::mono`) and right-aligned where they are compared: timecode,

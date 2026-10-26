@@ -16,10 +16,15 @@ Read this page fully, then the reference for the part you touch.
 | [references/tokens.md](references/tokens.md) | Choosing a colour, size, radius, spacing step, font, or a direction. |
 | [references/components.md](references/components.md) | Using buttons, controls, knobs, meters, layout containers, menus. |
 | [references/agent.md](references/agent.md) | Anything that shows the AI: panel, transcript, tool calls, approvals, composer, entry points. |
+| [references/motion.md](references/motion.md) | Animating anything; showing progress, loading or long-running tasks. |
+| [references/visualization.md](references/visualization.md) | Plots for sound: spectra, waveforms, spectrograms, vectorscopes, physical-model views. |
 | [references/adopting.md](references/adopting.md) | Adding Atelier to an app, or migrating an existing gpui UI (e.g. Auris Studio) onto it. |
 
 Before writing code, look at the crate itself (`src/` of the `atelier` dependency, or this
-repository) and at `examples/showcase.rs`, which composes every component into a working screen.
+repository) and at the examples that compose it into whole screens: `showcase` (a DAW and the
+component catalogue), `agent_desktop` (a coding-agent app), `instrument_lab` (physical-model
+views), `visualizer` (analysers) and `auris_screens` (Auris's project chooser and AI compose
+window).
 Do not invent a builder method because its name seems plausible: check the source.
 
 ## Non-negotiables

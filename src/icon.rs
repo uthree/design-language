@@ -97,6 +97,10 @@ icons! {
     Undo => "undo",
     User => "user",
     Waveform => "waveform",
+    WindowClose => "window-close",
+    WindowMaximize => "window-maximize",
+    WindowMinimize => "window-minimize",
+    WindowRestore => "window-restore",
     Wrench => "wrench",
 }
 

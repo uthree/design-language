@@ -3,22 +3,34 @@
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Window, div, prelude::FluentBuilder, px,
+    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder, px,
 };
 
 use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Avatar, Spinner};
 use crate::icon::{Icon, IconName};
+use crate::motion::{appear, chevron, lerp, looping, reveal, transition};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
+/// Rise a new transcript row into place, if it has an id to remember that it already arrived.
+fn arrive(row: gpui::Div, id: Option<ElementId>, cx: &App) -> AnyElement {
+    match id {
+        Some(id) => appear(row, id, cx, |row, delta| {
+            row.opacity(delta).mt(px(lerp(8., 0., delta)))
+        }),
+        None => row.into_any_element(),
+    }
+}
+
 /// What the person said: a bubble on the trailing edge, with any attached context above it.
 #[derive(IntoElement)]
 pub struct UserMessage {
+    id: Option<ElementId>,
     text: SharedString,
     attachments: Vec<AnyElement>,
 }
@@ -27,9 +39,17 @@ impl UserMessage {
     /// A message.
     pub fn new(text: impl Into<SharedString>) -> Self {
         Self {
+            id: None,
             text: text.into(),
             attachments: Vec::new(),
         }
+    }
+
+    /// A stable id for the message. With one, the message rises into place when it first
+    /// appears; without, it is simply drawn.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Context sent with the message, usually [`super::ContextChip`]s.
@@ -43,7 +63,7 @@ impl RenderOnce for UserMessage {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        div()
+        let message = div()
             .flex()
             .flex_col()
             .items_end()
@@ -69,7 +89,8 @@ impl RenderOnce for UserMessage {
                     .text_color(colors.on_user_bubble)
                     .text_size(theme.typography.size_md)
                     .child(self.text),
-            )
+            );
+        arrive(message, self.id, cx)
     }
 }
 
@@ -80,6 +101,7 @@ impl RenderOnce for UserMessage {
 /// [`AssistantMessage::body`] instead.
 #[derive(IntoElement)]
 pub struct AssistantMessage {
+    id: Option<ElementId>,
     text: SharedString,
     body: Option<AnyElement>,
     name: SharedString,
@@ -92,6 +114,7 @@ impl AssistantMessage {
     /// An answer.
     pub fn new(text: impl Into<SharedString>) -> Self {
         Self {
+            id: None,
             text: text.into(),
             body: None,
             name: "Assistant".into(),
@@ -99,6 +122,12 @@ impl AssistantMessage {
             streaming: false,
             actions: Vec::new(),
         }
+    }
+
+    /// A stable id for the message, so it rises into place when it first appears.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Replace the built-in text rendering.
@@ -204,7 +233,21 @@ impl RenderOnce for AssistantMessage {
             Some(body) => vec![body],
             None => prose(&self.text, theme),
         };
-        div()
+        let caret = self.streaming.then(|| {
+            looping(
+                div()
+                    .w(px(7.))
+                    .h(theme.typography.size_md)
+                    .rounded(px(1.))
+                    .bg(colors.agent),
+                "caret",
+                Duration::from_millis(1000),
+                1.,
+                cx,
+                |caret, delta| caret.opacity(gpui::pulsating_between(0.2, 1.)(delta)),
+            )
+        });
+        let message = div()
             .flex()
             .flex_col()
             .gap(theme.spacing.sm)
@@ -233,26 +276,12 @@ impl RenderOnce for AssistantMessage {
                     .text_size(theme.typography.size_md)
                     .text_color(colors.text)
                     .children(body)
-                    .when(self.streaming, |column| {
-                        column.child(
-                            div()
-                                .w(px(7.))
-                                .h(theme.typography.size_md)
-                                .rounded(px(1.))
-                                .bg(colors.agent)
-                                .with_animation(
-                                    "caret",
-                                    Animation::new(Duration::from_millis(1000))
-                                        .repeat()
-                                        .with_easing(gpui::pulsating_between(0.2, 1.)),
-                                    |caret, delta| caret.opacity(delta),
-                                ),
-                        )
-                    }),
+                    .children(caret),
             )
             .when(!self.streaming && !self.actions.is_empty(), |column| {
                 column.child(div().flex().gap(theme.spacing.xxs).children(self.actions))
-            })
+            });
+        arrive(message, self.id, cx)
     }
 }
 
@@ -299,7 +328,17 @@ impl ReasoningBlock {
 }
 
 impl RenderOnce for ReasoningBlock {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let muted = cx.theme().colors.text_muted;
+        let chevron = chevron(
+            (self.id.clone(), "chevron"),
+            self.open,
+            px(11.),
+            muted,
+            window,
+            cx,
+        );
+        let reveal_id = (self.id.clone(), "text");
         let theme = cx.theme();
         let colors = &theme.colors;
         let hover = colors.hover;
@@ -316,14 +355,7 @@ impl RenderOnce for ReasoningBlock {
             .hover(move |style| style.bg(hover))
             .child(Icon::new(IconName::Brain).size(px(13.)))
             .child(self.summary)
-            .child(
-                Icon::new(if self.open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })
-                .size(px(11.)),
-            );
+            .child(chevron);
         if let Some(handler) = self.on_toggle {
             header = header.on_click(handler);
         }
@@ -333,7 +365,7 @@ impl RenderOnce for ReasoningBlock {
             .gap(theme.spacing.xs)
             .child(div().flex().child(header))
             .when(self.open, |column| {
-                column.child(
+                column.child(reveal(
                     div()
                         .ml(theme.spacing.sm)
                         .pl(theme.spacing.md)
@@ -342,7 +374,9 @@ impl RenderOnce for ReasoningBlock {
                         .text_size(theme.typography.size_sm)
                         .text_color(colors.text_muted)
                         .child(self.text),
-                )
+                    reveal_id,
+                    cx,
+                ))
             })
     }
 }
@@ -423,8 +457,9 @@ impl ToolCall {
 }
 
 impl RenderOnce for ToolCall {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let id = self.id.clone();
+        let theme = cx.theme().clone();
         let colors = &theme.colors;
         let state_mark = match self.state {
             ToolState::Running => Spinner::new((self.id.clone(), "spinner"))
@@ -469,14 +504,24 @@ impl RenderOnce for ToolCall {
                     .mono()
                     .color(TextColor::Faint),
             )
-            .child(div().flex().w(px(14.)).justify_center().child(state_mark));
+            // A finished call's mark settles in as the spinner gives way to it.
+            .child(transition(
+                div().flex().w(px(14.)).justify_center().child(state_mark),
+                (id.clone(), "state"),
+                &self.state,
+                theme.motion.normal,
+                window,
+                cx,
+                |mark, delta| mark.opacity(delta),
+            ));
+        let reveal_id = (id, "detail");
         if let Some(handler) = self.on_toggle {
             row = row.on_click(handler);
         }
         div().flex().flex_col().child(row).when_some(
             self.detail.filter(|_| self.open),
             |column, detail| {
-                column.child(
+                column.child(reveal(
                     div()
                         .mx(theme.spacing.sm)
                         .mb(theme.spacing.xs)
@@ -488,7 +533,9 @@ impl RenderOnce for ToolCall {
                         .text_size(theme.typography.size_xs)
                         .text_color(colors.text_muted)
                         .child(detail),
-                )
+                    reveal_id,
+                    cx,
+                ))
             },
         )
     }
@@ -646,7 +693,7 @@ impl RenderOnce for ApprovalCard {
                 .ghost()
                 .on_click(handler)
         });
-        div()
+        let card = div()
             .flex()
             .flex_col()
             .gap(theme.spacing.sm)
@@ -681,7 +728,8 @@ impl RenderOnce for ApprovalCard {
                     .child(div().flex_1())
                     .child(deny)
                     .child(allow),
-            )
+            );
+        arrive(card, Some(self.id), cx)
     }
 }
 
@@ -793,26 +841,20 @@ impl RenderOnce for ThinkingIndicator {
             .items_center()
             .gap(theme.spacing.sm)
             .child(Avatar::agent().size(px(20.)))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(3.))
-                    .children((0..3usize).map(move |index| {
-                        div()
-                            .size(px(5.))
-                            .rounded(px(2.5))
-                            .bg(color)
-                            .with_animation(
-                                ("thinking-dot", index),
-                                Animation::new(Duration::from_millis(1200)).repeat(),
-                                move |dot, delta| {
-                                    let phase = (delta - index as f32 * 0.18).rem_euclid(1.);
-                                    let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
-                                    dot.opacity(0.25 + 0.75 * pulse)
-                                },
-                            )
-                    })),
-            )
+            .child(div().flex().gap(px(3.)).children((0..3usize).map(|index| {
+                looping(
+                    div().size(px(5.)).rounded(px(2.5)).bg(color),
+                    ("thinking-dot", index),
+                    Duration::from_millis(1200),
+                    0.25,
+                    cx,
+                    move |dot, delta| {
+                        let phase = (delta - index as f32 * 0.18).rem_euclid(1.);
+                        let pulse = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+                        dot.opacity(0.25 + 0.75 * pulse)
+                    },
+                )
+            })))
             .child(
                 Label::new(self.label)
                     .size(TextSize::Small)

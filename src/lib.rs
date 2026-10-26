@@ -14,22 +14,32 @@ pub mod agent;
 mod button;
 mod controls;
 mod display;
+mod frame;
 mod icon;
 mod layout;
+mod media;
+pub mod motion;
 mod overlay;
+mod progress;
 mod text;
 mod theme;
+pub mod viz;
 
 pub use button::{Button, ButtonVariant, ControlSize};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
-pub use display::{
-    Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, ProgressBar, Spinner, StatusDot, Tone,
-};
+pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
+pub use frame::{TitleBar, custom_frame};
 pub use icon::{Assets, Icon, IconName};
 pub use layout::{
-    Card, Disclosure, Edge, EmptyState, ListItem, SectionHeader, Sidebar, Tabs, Toolbar,
+    Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
+pub use media::AudioPlayer;
+pub use motion::Motion;
 pub use overlay::{MenuItem, Popover, Tooltip, menu_separator};
+pub use progress::{
+    ProgressBar, ProgressRing, Skeleton, StepList, StepState, TaskProgress, TaskState,
+    skeleton_paragraph,
+};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,
