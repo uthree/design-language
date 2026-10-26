@@ -1,0 +1,764 @@
+//! Value controls: switches, checkboxes, segmented controls, sliders and knobs.
+//!
+//! These are presentational: they draw a value and report clicks. Dragging, keyboard stepping
+//! and value mapping stay with the application, which already owns the value and its undo.
+
+use std::f32::consts::PI;
+
+use gpui::{
+    AnyElement, App, Bounds, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement,
+    ParentElement, PathBuilder, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Window, canvas, div, fill, point, prelude::FluentBuilder, px, relative, size,
+};
+
+use crate::button::ControlSize;
+use crate::icon::{Icon, IconName};
+use crate::text::{Label, TextColor, TextSize};
+use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
+
+type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+
+/// The fill of an "on" control: the accent, or the foreground in solid-primary directions.
+fn on_fill(theme: &Theme) -> Hsla {
+    match theme.primary_style {
+        PrimaryStyle::Accent => theme.colors.accent,
+        PrimaryStyle::Solid => theme.colors.solid,
+    }
+}
+
+/// An on/off switch, drawn as a track and a thumb.
+#[derive(IntoElement)]
+pub struct Switch {
+    id: ElementId,
+    on: bool,
+    label: Option<SharedString>,
+    disabled: bool,
+    on_click: Option<ClickHandler>,
+}
+
+impl Switch {
+    /// A switch showing `on`.
+    pub fn new(id: impl Into<ElementId>, on: bool) -> Self {
+        Self {
+            id: id.into(),
+            on,
+            label: None,
+            disabled: false,
+            on_click: None,
+        }
+    }
+
+    /// Text after the switch.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Greyed out.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Called on click; flip the value there.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Switch {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let height = (theme.density.control_sm - px(2.)).max(px(18.));
+        let width = height * 1.75;
+        let inset = px(2.);
+        let thumb = height - inset * 2.;
+        let track = if self.on {
+            on_fill(theme)
+        } else {
+            theme.colors.border_strong
+        };
+        let thumb_color = if self.on && theme.primary_style == PrimaryStyle::Solid {
+            theme.colors.on_solid
+        } else {
+            gpui::white()
+        };
+        let mut row = div()
+            .id(self.id)
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(
+                div()
+                    .relative()
+                    .flex_none()
+                    .w(width)
+                    .h(height)
+                    .rounded(height / 2.)
+                    .bg(track)
+                    .child(
+                        div()
+                            .absolute()
+                            .top(inset)
+                            .left(if self.on {
+                                width - thumb - inset
+                            } else {
+                                inset
+                            })
+                            .size(thumb)
+                            .rounded(thumb / 2.)
+                            .bg(thumb_color)
+                            .shadow(theme.elevation.low.clone()),
+                    ),
+            )
+            .children(
+                self.label
+                    .map(|label| Label::new(label).size(TextSize::Medium)),
+            );
+        if self.disabled {
+            return row.opacity(0.45);
+        }
+        if let Some(handler) = self.on_click {
+            row = row.on_click(handler);
+        }
+        row
+    }
+}
+
+/// A checkbox, with an optional label.
+#[derive(IntoElement)]
+pub struct Checkbox {
+    id: ElementId,
+    checked: bool,
+    label: Option<SharedString>,
+    on_click: Option<ClickHandler>,
+}
+
+impl Checkbox {
+    /// A checkbox showing `checked`.
+    pub fn new(id: impl Into<ElementId>, checked: bool) -> Self {
+        Self {
+            id: id.into(),
+            checked,
+            label: None,
+            on_click: None,
+        }
+    }
+
+    /// Text after the box.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Called on click.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Checkbox {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let fill_color = on_fill(theme);
+        let mark = theme.text_on(fill_color);
+        let mut row = div()
+            .id(self.id)
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .size(px(16.))
+                    .rounded(theme.shape.radius_xs)
+                    .when_else(
+                        self.checked,
+                        |el| el.bg(fill_color),
+                        |el| {
+                            el.bg(theme.colors.sunken)
+                                .border_1()
+                                .border_color(theme.colors.border_strong)
+                        },
+                    )
+                    .children(
+                        self.checked
+                            .then(|| Icon::new(IconName::Check).size(px(12.)).color(mark)),
+                    ),
+            )
+            .children(self.label.map(Label::new));
+        if let Some(handler) = self.on_click {
+            row = row.on_click(handler);
+        }
+        row
+    }
+}
+
+/// One segment of a [`SegmentedControl`].
+pub struct Segment {
+    label: Option<SharedString>,
+    icon: Option<IconName>,
+}
+
+impl Segment {
+    /// A text segment.
+    pub fn label(label: impl Into<SharedString>) -> Self {
+        Self {
+            label: Some(label.into()),
+            icon: None,
+        }
+    }
+
+    /// An icon segment.
+    pub fn icon(icon: IconName) -> Self {
+        Self {
+            label: None,
+            icon: Some(icon),
+        }
+    }
+
+    /// Add an icon before the label.
+    pub fn with_icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+}
+
+type SelectHandler = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
+
+/// Mutually exclusive choices drawn as one control, the way macOS draws them.
+#[derive(IntoElement)]
+pub struct SegmentedControl {
+    id: ElementId,
+    segments: Vec<Segment>,
+    selected: usize,
+    size: ControlSize,
+    on_select: Option<SelectHandler>,
+}
+
+impl SegmentedControl {
+    /// A control with `selected` chosen.
+    pub fn new(
+        id: impl Into<ElementId>,
+        segments: impl IntoIterator<Item = Segment>,
+        selected: usize,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            segments: segments.into_iter().collect(),
+            selected,
+            size: ControlSize::default(),
+            on_select: None,
+        }
+    }
+
+    /// Control height.
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Called with the index of the clicked segment.
+    pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_select = Some(std::rc::Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for SegmentedControl {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let height = self.size.height(theme);
+        let inset = px(2.);
+        let inner = height - inset * 2.;
+        let id = self.id.clone();
+        div()
+            .id(self.id)
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(height)
+            .p(inset)
+            .gap(px(1.))
+            .rounded(theme.control_radius(height))
+            .bg(theme.colors.sunken)
+            .border_1()
+            .border_color(theme.colors.border)
+            .children(
+                self.segments
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, segment)| {
+                        let selected = index == self.selected;
+                        let text = if selected {
+                            theme.colors.text
+                        } else {
+                            theme.colors.text_muted
+                        };
+                        let mut item = div()
+                            .id(ElementId::NamedChild(
+                                Box::new(id.clone()),
+                                index.to_string().into(),
+                            ))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap(px(5.))
+                            .h(inner)
+                            .min_w(inner)
+                            .px(theme.density.control_padding * 0.8)
+                            .rounded(Theme::concentric(theme.control_radius(height), inset))
+                            .text_size(theme.typography.size_sm)
+                            .font_weight(theme.typography.label_weight)
+                            .text_color(text)
+                            .children(
+                                segment
+                                    .icon
+                                    .map(|icon| Icon::new(icon).size(px(14.)).color(text)),
+                            )
+                            .children(segment.label);
+                        if selected {
+                            item = item
+                                .bg(mix(
+                                    theme.colors.elevated,
+                                    theme.colors.text,
+                                    if theme.appearance.is_dark() { 0.08 } else { 0. },
+                                ))
+                                .shadow(theme.elevation.low.clone());
+                        } else {
+                            let hover = theme.colors.hover;
+                            item = item.hover(move |style| style.bg(hover));
+                        }
+                        if let Some(handler) = self.on_select.clone() {
+                            item = item.on_click(move |_, window, cx| handler(&index, window, cx));
+                        }
+                        item
+                    }),
+            )
+    }
+}
+
+/// A horizontal slider showing a normalised value from 0 to 1.
+#[derive(IntoElement)]
+pub struct Slider {
+    value: f32,
+    label: Option<SharedString>,
+    readout: Option<SharedString>,
+    bipolar: bool,
+}
+
+impl Slider {
+    /// A slider at `value`, clamped to 0..=1.
+    pub fn new(value: f32) -> Self {
+        Self {
+            value: value.clamp(0., 1.),
+            label: None,
+            readout: None,
+            bipolar: false,
+        }
+    }
+
+    /// Caption to the left.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Formatted value to the right, for example "-6.0 dB".
+    pub fn readout(mut self, readout: impl Into<SharedString>) -> Self {
+        self.readout = Some(readout.into());
+        self
+    }
+
+    /// Fill from the centre, for pan and other signed values.
+    pub fn bipolar(mut self) -> Self {
+        self.bipolar = true;
+        self
+    }
+}
+
+impl RenderOnce for Slider {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let track_height = px(4.);
+        let thumb = px(14.);
+        let (start, end) = if self.bipolar {
+            (self.value.min(0.5), self.value.max(0.5))
+        } else {
+            (0., self.value)
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .w_full()
+            .children(self.label.map(|label| {
+                div().w(px(64.)).flex_none().child(
+                    Label::new(label)
+                        .size(TextSize::Small)
+                        .color(TextColor::Muted),
+                )
+            }))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .h(thumb)
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .top((thumb - track_height) / 2.)
+                            .h(track_height)
+                            .rounded(track_height / 2.)
+                            .bg(theme.colors.sunken)
+                            .border_1()
+                            .border_color(theme.colors.border),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(relative(start))
+                            .w(relative(end - start))
+                            .top((thumb - track_height) / 2.)
+                            .h(track_height)
+                            .rounded(track_height / 2.)
+                            .bg(on_fill(theme)),
+                    )
+                    // The thumb's left edge sits at value × (width − thumb), so it never overhangs.
+                    .child(
+                        div()
+                            .absolute()
+                            .left(relative(self.value))
+                            .ml(-thumb * self.value)
+                            .top_0()
+                            .size(thumb)
+                            .rounded(thumb / 2.)
+                            .bg(gpui::white())
+                            .border_1()
+                            .border_color(gpui::black().opacity(0.12))
+                            .shadow(theme.elevation.medium.clone()),
+                    ),
+            )
+            .children(self.readout.map(|readout| {
+                div().w(px(56.)).flex_none().flex().justify_end().child(
+                    Label::new(readout)
+                        .size(TextSize::Small)
+                        .mono()
+                        .color(TextColor::Muted),
+                )
+            }))
+    }
+}
+
+/// A rotary knob, the creator-tool control: a 270° arc, a pointer and a value underneath.
+#[derive(IntoElement)]
+pub struct Knob {
+    value: f32,
+    diameter: Pixels,
+    label: Option<SharedString>,
+    readout: Option<SharedString>,
+    bipolar: bool,
+    color: Option<Hsla>,
+}
+
+impl Knob {
+    /// A knob at `value`, clamped to 0..=1.
+    pub fn new(value: f32) -> Self {
+        Self {
+            value: value.clamp(0., 1.),
+            diameter: px(40.),
+            label: None,
+            readout: None,
+            bipolar: false,
+            color: None,
+        }
+    }
+
+    /// Outer diameter of the arc.
+    pub fn diameter(mut self, diameter: Pixels) -> Self {
+        self.diameter = diameter;
+        self
+    }
+
+    /// Name under the knob.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Formatted value under the name.
+    pub fn readout(mut self, readout: impl Into<SharedString>) -> Self {
+        self.readout = Some(readout.into());
+        self
+    }
+
+    /// Draw the arc from twelve o'clock, for pan and detune.
+    pub fn bipolar(mut self) -> Self {
+        self.bipolar = true;
+        self
+    }
+
+    /// Arc colour; defaults to the accent. Use a track colour to tie a knob to its channel.
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
+    }
+}
+
+/// The knob's sweep: from 7:30 clockwise to 4:30, in radians from +x, y pointing down.
+const SWEEP_START: f32 = 0.75 * PI;
+const SWEEP: f32 = 1.5 * PI;
+
+fn arc(
+    center: gpui::Point<Pixels>,
+    radius: Pixels,
+    from: f32,
+    to: f32,
+    width: Pixels,
+) -> Option<gpui::Path<Pixels>> {
+    if (to - from).abs() < 0.001 {
+        return None;
+    }
+    let steps = (((to - from).abs() / (PI / 48.)).ceil() as usize).max(2);
+    let mut builder = PathBuilder::stroke(width);
+    for step in 0..=steps {
+        let angle = from + (to - from) * step as f32 / steps as f32;
+        let at = point(
+            center.x + radius * angle.cos(),
+            center.y + radius * angle.sin(),
+        );
+        if step == 0 {
+            builder.move_to(at);
+        } else {
+            builder.line_to(at);
+        }
+    }
+    builder.build().ok()
+}
+
+impl RenderOnce for Knob {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let diameter = self.diameter;
+        let track = theme.colors.sunken;
+        let ring = theme.colors.border_strong;
+        let value_color = self.color.unwrap_or(theme.colors.accent);
+        let dark = theme.appearance.is_dark();
+        let body = mix(
+            theme.colors.elevated,
+            gpui::white(),
+            if dark { 0.06 } else { 0. },
+        );
+        let body_edge = theme.colors.border_strong;
+        let pointer = theme.colors.text;
+        let value = self.value;
+        let bipolar = self.bipolar;
+
+        let dial = canvas(
+            |_, _, _| {},
+            move |bounds: Bounds<Pixels>, _, window, _| {
+                let center = bounds.center();
+                let radius = diameter / 2. - px(3.);
+                let width = px(3.);
+                let end = SWEEP_START + SWEEP;
+                if let Some(path) = arc(center, radius, SWEEP_START, end, width) {
+                    window.paint_path(path, track);
+                }
+                if let Some(path) = arc(center, radius + px(2.), SWEEP_START, end, px(0.75)) {
+                    window.paint_path(path, ring.opacity(0.5));
+                }
+                let origin = if bipolar {
+                    SWEEP_START + SWEEP / 2.
+                } else {
+                    SWEEP_START
+                };
+                let at = SWEEP_START + SWEEP * value;
+                let (from, to) = if at < origin {
+                    (at, origin)
+                } else {
+                    (origin, at)
+                };
+                if let Some(path) = arc(center, radius, from, to, width) {
+                    window.paint_path(path, value_color);
+                }
+                let body_radius = radius - px(6.);
+                let body_bounds = Bounds::new(
+                    point(center.x - body_radius, center.y - body_radius),
+                    size(body_radius * 2., body_radius * 2.),
+                );
+                window.paint_quad(
+                    fill(body_bounds, body)
+                        .corner_radii(body_radius)
+                        .border_widths(px(1.))
+                        .border_color(body_edge),
+                );
+                let mut needle = PathBuilder::stroke(px(2.));
+                needle.move_to(point(
+                    center.x + body_radius * 0.25 * at.cos(),
+                    center.y + body_radius * 0.25 * at.sin(),
+                ));
+                needle.line_to(point(
+                    center.x + body_radius * 0.8 * at.cos(),
+                    center.y + body_radius * 0.8 * at.sin(),
+                ));
+                if let Ok(path) = needle.build() {
+                    window.paint_path(path, pointer);
+                }
+            },
+        )
+        .size(diameter);
+
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(2.))
+            .child(dial)
+            .children(self.label.map(|label| {
+                Label::new(label)
+                    .size(TextSize::XSmall)
+                    .color(TextColor::Muted)
+            }))
+            .children(
+                self.readout
+                    .map(|readout| Label::new(readout).size(TextSize::XSmall).mono()),
+            )
+    }
+}
+
+/// A framed text field. Put the application's own editable input inside with `.child(...)`, or
+/// show a static value with [`TextField::value`] in mock-ups.
+#[derive(IntoElement)]
+pub struct TextField {
+    value: Option<SharedString>,
+    placeholder: Option<SharedString>,
+    icon: Option<IconName>,
+    focused: bool,
+    size: ControlSize,
+    children: Vec<AnyElement>,
+}
+
+impl TextField {
+    /// An empty field.
+    pub fn new() -> Self {
+        Self {
+            value: None,
+            placeholder: None,
+            icon: None,
+            focused: false,
+            size: ControlSize::default(),
+            children: Vec::new(),
+        }
+    }
+
+    /// Static content.
+    pub fn value(mut self, value: impl Into<SharedString>) -> Self {
+        self.value = Some(value.into());
+        self
+    }
+
+    /// Text shown while empty.
+    pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Leading icon, typically [`IconName::Search`].
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// Draw the focus ring.
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
+    /// Control height.
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+}
+
+impl Default for TextField {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ParentElement for TextField {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements)
+    }
+}
+
+impl RenderOnce for TextField {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let height = self.size.height(theme);
+        let empty = self.value.is_none() && self.children.is_empty();
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .h(height)
+            .w_full()
+            .px(theme.density.control_padding * 0.8)
+            .rounded(theme.control_radius(height))
+            .bg(theme.colors.sunken)
+            .border_1()
+            .border_color(if self.focused {
+                theme.colors.accent
+            } else {
+                theme.colors.border
+            })
+            .when(self.focused, |el| {
+                el.shadow(vec![gpui::BoxShadow {
+                    color: theme.colors.focus_ring.opacity(0.35),
+                    offset: point(px(0.), px(0.)),
+                    blur_radius: px(0.),
+                    spread_radius: px(3.),
+                }])
+            })
+            .text_size(theme.typography.size_md)
+            .children(
+                self.icon
+                    .map(|icon| Icon::new(icon).size(px(14.)).color(theme.colors.text_faint)),
+            )
+            .children(self.value.map(|value| {
+                div()
+                    .flex_1()
+                    .truncate()
+                    .text_color(theme.colors.text)
+                    .child(value)
+            }))
+            .children(self.children)
+            .children(
+                empty
+                    .then_some(self.placeholder)
+                    .flatten()
+                    .map(|placeholder| {
+                        div()
+                            .flex_1()
+                            .truncate()
+                            .text_color(theme.colors.text_faint)
+                            .child(placeholder)
+                    }),
+            )
+    }
+}

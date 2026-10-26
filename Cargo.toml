@@ -1,0 +1,24 @@
+[package]
+name = "atelier"
+description = "A design language and component kit for gpui creator tools with built-in AI agent surfaces"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.95"
+
+# Pinned to the release Auris Studio builds against, so both can share one gpui in a workspace.
+[dependencies]
+gpui = "=0.2.2"
+unicode-segmentation = "1.10"
+
+# `runtime_shaders` compiles the Metal shaders at start-up, so the gallery builds on a Mac with
+# only the Command Line Tools installed. Feature unification applies it to the library as well
+# whenever the examples are built.
+[dev-dependencies]
+gpui = { version = "=0.2.2", features = ["runtime_shaders"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
