@@ -11,6 +11,12 @@ rust-version = "1.95"
 gpui = "=0.2.2"
 unicode-segmentation = "1.10"
 
+# `set_window_background` reaches the window's `NSVisualEffectView` through the handle gpui hands
+# out, to pick a material that still blurs on macOS 26 and later.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+raw-window-handle = "0.6"
+
 # `runtime_shaders` compiles the Metal shaders at start-up, so the gallery builds on a Mac with
 # only the Command Line Tools installed. Feature unification applies it to the library as well
 # whenever the examples are built.

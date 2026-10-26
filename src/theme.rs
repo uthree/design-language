@@ -470,7 +470,8 @@ impl Theme {
 
     /// The window background an application should request for this theme.
     ///
-    /// Pass it to `WindowOptions::window_background` or `Window::set_background_appearance`.
+    /// Pass it to `WindowOptions::window_background`; once the window exists, go through
+    /// [`crate::set_window_background`] instead, which keeps the macOS blur alive.
     pub fn window_background(&self) -> WindowBackgroundAppearance {
         match self.material {
             Material::Opaque => WindowBackgroundAppearance::Opaque,

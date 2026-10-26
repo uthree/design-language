@@ -43,7 +43,7 @@ pub trait Themed: Render + Sized + 'static {
 /// Install the theme for `choice` and let the window follow its material.
 pub fn apply(choice: (Direction, Appearance), window: &mut Window, cx: &mut App) {
     let theme = Theme::new(choice.0, choice.1);
-    window.set_background_appearance(theme.window_background());
+    atelier::set_window_background(window, &theme);
     theme.install(cx);
 }
 
@@ -110,8 +110,11 @@ pub fn run<V: Themed>(
                 },
                 &Theme::new(choice.0, choice.1),
             );
-            cx.open_window(options, |_, cx| cx.new(|cx| build(choice, cx)))
-                .expect("failed to open the window");
+            cx.open_window(options, |window, cx| {
+                atelier::set_window_background(window, &Theme::new(choice.0, choice.1));
+                cx.new(|cx| build(choice, cx))
+            })
+            .expect("failed to open the window");
             cx.activate(true);
         });
 }

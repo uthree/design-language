@@ -119,7 +119,7 @@ fn track_color(track: &Track) -> Hsla {
 impl Showcase {
     fn apply_theme(&self, window: &mut Window, cx: &mut App) {
         let theme = Theme::new(self.direction, self.appearance);
-        window.set_background_appearance(theme.window_background());
+        atelier::set_window_background(window, &theme);
         theme.install(cx);
     }
 
@@ -1334,7 +1334,8 @@ fn main() {
                 },
                 cx.theme(),
             );
-            cx.open_window(options, |_, cx| {
+            cx.open_window(options, |window, cx| {
+                atelier::set_window_background(window, &Theme::new(direction, appearance));
                 cx.new(|_| Showcase {
                     direction,
                     appearance,

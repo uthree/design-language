@@ -24,6 +24,7 @@ mod progress;
 mod text;
 mod theme;
 pub mod viz;
+mod window;
 
 pub use button::{Button, ButtonVariant, ControlSize};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
@@ -45,6 +46,7 @@ pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,
     Spacing, Theme, Typography, contrast, ensure_contrast, lighten, mix, mono_font, ui_font,
 };
+pub use window::set_window_background;
 
 /// Install `theme`. Call once at start-up, before opening windows.
 pub fn init(cx: &mut gpui::App, theme: Theme) {
