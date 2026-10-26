@@ -3,13 +3,14 @@
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, linear_color_stop,
-    linear_gradient, prelude::FluentBuilder, px,
+    linear_gradient, prelude::FluentBuilder, px, relative,
 };
 
 use super::{AgentStatus, AgentStatusLabel};
 use crate::button::Button;
 use crate::display::Avatar;
 use crate::icon::{Icon, IconName};
+use crate::motion::{lerp, looping};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
 
@@ -164,7 +165,24 @@ impl RenderOnce for AgentPanel {
                             90.,
                             linear_color_stop(middle, 0.),
                             linear_color_stop(to, 1.),
-                        ))),
+                        )))
+                        .overflow_hidden()
+                        // A light passes along the edge, so "working" reads even from the
+                        // corner of the eye.
+                        .child(looping(
+                            div().absolute().top_0().bottom_0().w(relative(0.25)).bg(
+                                linear_gradient(
+                                    90.,
+                                    linear_color_stop(gpui::white().opacity(0.), 0.),
+                                    linear_color_stop(gpui::white().opacity(0.85), 1.),
+                                ),
+                            ),
+                            (self.id.clone(), "sheen"),
+                            theme.motion.slow,
+                            -1.,
+                            cx,
+                            |band, delta| band.left(relative(lerp(-0.25, 1., delta))),
+                        )),
                 )
             })
             .child(

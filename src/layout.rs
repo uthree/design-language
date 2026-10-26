@@ -509,7 +509,16 @@ impl Disclosure {
 }
 
 impl RenderOnce for Disclosure {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let muted = cx.theme().colors.text_muted;
+        let chevron = crate::motion::chevron(
+            (self.id.clone(), "chevron"),
+            self.open,
+            px(12.),
+            muted,
+            window,
+            cx,
+        );
         let theme = cx.theme();
         let hover = theme.colors.hover;
         let mut row = div()
@@ -523,14 +532,7 @@ impl RenderOnce for Disclosure {
             .text_size(theme.typography.size_sm)
             .text_color(theme.colors.text_muted)
             .hover(move |style| style.bg(hover))
-            .child(
-                Icon::new(if self.open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })
-                .size(px(12.)),
-            )
+            .child(chevron)
             .child(div().flex_1().min_w_0().truncate().child(self.label))
             .children(self.trailing);
         if let Some(handler) = self.on_toggle {

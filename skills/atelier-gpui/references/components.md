@@ -52,8 +52,15 @@ and its undo); wrap the component in an element that handles the gesture.
 
 `Badge::new("Rendered").tone(Tone::Success).dot()`, `Kbd::new("⌘K")`, `Avatar::person("UT")`,
 `Avatar::agent()`, `Divider::horizontal()` / `Divider::vertical().full()`,
-`ProgressBar::new(0.4)`, `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`),
-`Spinner::new(id)`, `StatusDot::new(color)`.
+`LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
+
+## Progress and loading
+
+`ProgressBar::new(v)` (`.id(..)` to glide, `.tone(..)`, `.height(..)`),
+`ProgressBar::indeterminate(id)`, `ProgressRing::new(v).size(..).show_value()`,
+`Spinner::new(id)`, `Skeleton::new(id).w(..).h(..)`, `skeleton_paragraph(id, lines, cx)`,
+`TaskProgress::new(id, title)`, `StepList::new(id).step(label, state)`. When to use which, and
+how components animate: [motion.md](motion.md).
 
 ## Layout
 

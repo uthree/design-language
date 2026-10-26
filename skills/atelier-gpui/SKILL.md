@@ -16,6 +16,7 @@ Read this page fully, then the reference for the part you touch.
 | [references/tokens.md](references/tokens.md) | Choosing a colour, size, radius, spacing step, font, or a direction. |
 | [references/components.md](references/components.md) | Using buttons, controls, knobs, meters, layout containers, menus. |
 | [references/agent.md](references/agent.md) | Anything that shows the AI: panel, transcript, tool calls, approvals, composer, entry points. |
+| [references/motion.md](references/motion.md) | Animating anything; showing progress, loading or long-running tasks. |
 | [references/adopting.md](references/adopting.md) | Adding Atelier to an app, or migrating an existing gpui UI (e.g. Auris Studio) onto it. |
 
 Before writing code, look at the crate itself (`src/` of the `atelier` dependency, or this

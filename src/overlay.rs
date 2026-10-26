@@ -69,12 +69,22 @@ impl Render for Tooltip {
 #[derive(IntoElement)]
 pub struct Popover {
     base: gpui::Div,
+    id: Option<ElementId>,
 }
 
 impl Popover {
     /// An empty popover surface.
     pub fn new() -> Self {
-        Self { base: div() }
+        Self {
+            base: div(),
+            id: None,
+        }
+    }
+
+    /// A stable id, so the popover fades in when it opens.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 }
 
@@ -99,7 +109,8 @@ impl ParentElement for Popover {
 impl RenderOnce for Popover {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        self.base
+        let surface = self
+            .base
             .flex()
             .flex_col()
             .p(px(4.))
@@ -107,7 +118,15 @@ impl RenderOnce for Popover {
             .bg(theme.colors.overlay)
             .border_1()
             .border_color(theme.colors.border)
-            .shadow(theme.elevation.medium.clone())
+            .shadow(theme.elevation.medium.clone());
+        match self.id {
+            Some(id) => crate::motion::appear(surface, id, cx, |surface, delta| {
+                surface
+                    .opacity(delta)
+                    .mt(gpui::px(crate::motion::lerp(-4., 0., delta)))
+            }),
+            None => surface.into_any_element(),
+        }
     }
 }
 

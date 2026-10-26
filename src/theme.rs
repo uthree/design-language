@@ -314,6 +314,8 @@ pub struct Theme {
     pub typography: Typography,
     /// Drop shadows.
     pub elevation: Elevation,
+    /// Durations and whether to animate at all.
+    pub motion: crate::motion::Motion,
 }
 
 impl Global for Theme {}
@@ -388,6 +390,7 @@ impl Theme {
             },
             typography: typography(direction),
             elevation: elevation(direction, appearance),
+            motion: crate::motion::Motion::default(),
         }
     }
 

@@ -13,6 +13,7 @@ use gpui::{
 
 use crate::button::ControlSize;
 use crate::icon::{Icon, IconName};
+use crate::motion::{lerp, transition};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 
@@ -71,50 +72,71 @@ impl Switch {
 }
 
 impl RenderOnce for Switch {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme().clone();
         let height = (theme.density.control_sm - px(2.)).max(px(18.));
         let width = height * 1.75;
         let inset = px(2.);
         let thumb = height - inset * 2.;
-        let track = if self.on {
-            on_fill(theme)
-        } else {
-            theme.colors.border_strong
-        };
+        let off_track = theme.colors.border_strong;
+        let on_track = on_fill(&theme);
         let thumb_color = if self.on && theme.primary_style == PrimaryStyle::Solid {
             theme.colors.on_solid
         } else {
             gpui::white()
         };
+        let off_left = f32::from(inset);
+        let on_left = f32::from(width - thumb - inset);
+        let (from, to) = if self.on {
+            (off_left, on_left)
+        } else {
+            (on_left, off_left)
+        };
+        let (from_track, to_track) = if self.on {
+            (off_track, on_track)
+        } else {
+            (on_track, off_track)
+        };
+
+        // The thumb slides and the track cross-fades when the value changes.
+        let thumb_element = transition(
+            div()
+                .absolute()
+                .top(inset)
+                .left(px(to))
+                .size(thumb)
+                .rounded(thumb / 2.)
+                .bg(thumb_color)
+                .shadow(theme.elevation.low.clone()),
+            (self.id.clone(), "thumb"),
+            &self.on,
+            theme.motion.fast,
+            window,
+            cx,
+            move |thumb, delta| thumb.left(px(lerp(from, to, delta))),
+        );
+        let track = transition(
+            div()
+                .relative()
+                .flex_none()
+                .w(width)
+                .h(height)
+                .rounded(height / 2.)
+                .bg(to_track)
+                .child(thumb_element),
+            (self.id.clone(), "track"),
+            &self.on,
+            theme.motion.fast,
+            window,
+            cx,
+            move |track, delta| track.bg(mix(from_track, to_track, delta)),
+        );
         let mut row = div()
             .id(self.id)
             .flex()
             .items_center()
-            .gap(px(8.))
-            .child(
-                div()
-                    .relative()
-                    .flex_none()
-                    .w(width)
-                    .h(height)
-                    .rounded(height / 2.)
-                    .bg(track)
-                    .child(
-                        div()
-                            .absolute()
-                            .top(inset)
-                            .left(if self.on {
-                                width - thumb - inset
-                            } else {
-                                inset
-                            })
-                            .size(thumb)
-                            .rounded(thumb / 2.)
-                            .bg(thumb_color)
-                            .shadow(theme.elevation.low.clone()),
-                    ),
-            )
+            .gap(theme.spacing.sm)
+            .child(track)
             .children(
                 self.label
                     .map(|label| Label::new(label).size(TextSize::Medium)),
@@ -166,15 +188,27 @@ impl Checkbox {
 }
 
 impl RenderOnce for Checkbox {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let fill_color = on_fill(theme);
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let fill_color = on_fill(&theme);
         let mark = theme.text_on(fill_color);
+        // The mark pops in when checked; unchecking is immediate, so nothing lingers.
+        let check = self.checked.then(|| {
+            transition(
+                Icon::new(IconName::Check).size(px(12.)).color(mark),
+                (self.id.clone(), "mark"),
+                &self.checked,
+                theme.motion.fast,
+                window,
+                cx,
+                |icon, delta| icon.size(px(lerp(6., 12., delta))),
+            )
+        });
         let mut row = div()
             .id(self.id)
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(theme.spacing.sm)
             .child(
                 div()
                     .flex()
@@ -192,10 +226,7 @@ impl RenderOnce for Checkbox {
                                 .border_color(theme.colors.border_strong)
                         },
                     )
-                    .children(
-                        self.checked
-                            .then(|| Icon::new(IconName::Check).size(px(12.)).color(mark)),
-                    ),
+                    .children(check),
             )
             .children(self.label.map(Label::new));
         if let Some(handler) = self.on_click {
@@ -277,8 +308,9 @@ impl SegmentedControl {
 }
 
 impl RenderOnce for SegmentedControl {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let theme = &theme;
         let height = self.size.height(theme);
         let inset = px(2.);
         let inner = height - inset * 2.;
@@ -295,57 +327,67 @@ impl RenderOnce for SegmentedControl {
             .bg(theme.colors.sunken)
             .border_1()
             .border_color(theme.colors.border)
-            .children(
-                self.segments
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, segment)| {
-                        let selected = index == self.selected;
-                        let text = if selected {
-                            theme.colors.text
-                        } else {
-                            theme.colors.text_muted
-                        };
-                        let mut item = div()
-                            .id(ElementId::NamedChild(
-                                Box::new(id.clone()),
-                                index.to_string().into(),
-                            ))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .gap(px(5.))
-                            .h(inner)
-                            .min_w(inner)
-                            .px(theme.density.control_padding * 0.8)
-                            .rounded(Theme::concentric(theme.control_radius(height), inset))
-                            .text_size(theme.typography.size_sm)
-                            .font_weight(theme.typography.label_weight)
-                            .text_color(text)
-                            .children(
-                                segment
-                                    .icon
-                                    .map(|icon| Icon::new(icon).size(px(14.)).color(text)),
-                            )
-                            .children(segment.label);
-                        if selected {
-                            item = item
-                                .bg(mix(
-                                    theme.colors.elevated,
-                                    theme.colors.text,
-                                    if theme.appearance.is_dark() { 0.08 } else { 0. },
-                                ))
-                                .shadow(theme.elevation.low.clone());
-                        } else {
-                            let hover = theme.colors.hover;
-                            item = item.hover(move |style| style.bg(hover));
-                        }
-                        if let Some(handler) = self.on_select.clone() {
-                            item = item.on_click(move |_, window, cx| handler(&index, window, cx));
-                        }
-                        item
-                    }),
-            )
+            .children({
+                let mut items = Vec::new();
+                for (index, segment) in self.segments.into_iter().enumerate() {
+                    let selected = index == self.selected;
+                    let selected_fill = mix(
+                        theme.colors.elevated,
+                        theme.colors.text,
+                        if theme.appearance.is_dark() { 0.08 } else { 0. },
+                    );
+                    let text = if selected {
+                        theme.colors.text
+                    } else {
+                        theme.colors.text_muted
+                    };
+                    let mut item = div()
+                        .id(ElementId::NamedChild(
+                            Box::new(id.clone()),
+                            index.to_string().into(),
+                        ))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(5.))
+                        .h(inner)
+                        .min_w(inner)
+                        .px(theme.density.control_padding * 0.8)
+                        .rounded(Theme::concentric(theme.control_radius(height), inset))
+                        .text_size(theme.typography.size_sm)
+                        .font_weight(theme.typography.label_weight)
+                        .text_color(text)
+                        .children(
+                            segment
+                                .icon
+                                .map(|icon| Icon::new(icon).size(px(14.)).color(text)),
+                        )
+                        .children(segment.label);
+                    if selected {
+                        item = item.bg(selected_fill).shadow(theme.elevation.low.clone());
+                    } else {
+                        let hover = theme.colors.hover;
+                        item = item.hover(move |style| style.bg(hover));
+                    }
+                    if let Some(handler) = self.on_select.clone() {
+                        item = item.on_click(move |_, window, cx| handler(&index, window, cx));
+                    }
+                    // The chosen segment's fill fades in as the old one's fades out.
+                    items.push(transition(
+                        item,
+                        ElementId::NamedChild(Box::new(id.clone()), format!("fill-{index}").into()),
+                        &selected,
+                        theme.motion.fast,
+                        window,
+                        cx,
+                        move |item, delta| {
+                            let strength = if selected { delta } else { 1. - delta };
+                            item.bg(selected_fill.opacity(strength))
+                        },
+                    ));
+                }
+                items
+            })
     }
 }
 
@@ -522,7 +564,7 @@ impl Knob {
 const SWEEP_START: f32 = 0.75 * PI;
 const SWEEP: f32 = 1.5 * PI;
 
-fn arc(
+pub(crate) fn arc(
     center: gpui::Point<Pixels>,
     radius: Pixels,
     from: f32,

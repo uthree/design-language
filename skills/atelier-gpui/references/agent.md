@@ -65,6 +65,10 @@ does not ship a text editor; `.value(..)` is for mock-ups.
 - `ContextChip` for what will be sent: a track, a clip range, a file. `.on_remove(..)` makes it
   removable in the composer.
 - `ConversationRow` for history lists; live conversations show their status instead of time.
+- `StepList` for the agent's plan inside the transcript, and `TaskProgress::by_agent()` for long
+  agent jobs (batch edits, renders) that outlive one message.
+- Give transcript rows ids (`UserMessage::id`, `AssistantMessage::id`) so they rise into place
+  as they arrive.
 
 ## In the canvas
 
