@@ -19,7 +19,10 @@ Application::new().with_assets(Assets::with_fallback(AppAssets)).run(|cx| {
     let background = theme.window_background();
     atelier::init(cx, theme);
     let options = WindowOptions { window_background: background, ..Default::default() };
-    cx.open_window(atelier::custom_frame(options, cx.theme()), ...); // draw TitleBar in the root view
+    cx.open_window(atelier::custom_frame(options, cx.theme()), |window, cx| {
+        atelier::set_window_background(window, cx.theme());         // keeps the macOS blur alive
+        ...                                                          // draw TitleBar in the root view
+    });
 });
 
 // root view

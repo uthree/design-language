@@ -43,12 +43,18 @@ colour in the panel always means "the agent". Most editorial; strongest AI ident
 
 ## Translucency
 
-Glass asks the window for `WindowBackgroundAppearance::Blurred`. The window root is painted clear
-(`Theme::window_fill`), the title bar and sidebars carry the only tint (`colors.chrome` at 42 %
-alpha dark, 50 % light), and content areas — the canvas, panels, the agent transcript — stay
-opaque so text over them never depends on what is behind the window.
+Glass asks the window for `WindowBackgroundAppearance::Blurred` through
+`atelier::set_window_background`, which also keeps the macOS blur alive (below). The window root
+is painted clear (`Theme::window_fill`), the title bar and sidebars carry the only tint
+(`colors.chrome` at 42 % alpha dark, 50 % light), and content areas — the canvas, panels, the
+agent transcript — stay opaque so text over them never depends on what is behind the window.
 
-- **macOS:** gpui's native window blur (not yet checked on a Mac).
+- **macOS:** confirmed working on macOS 27.0.1. gpui's own blur view comes up on
+  `NSVisualEffectMaterial.selection`, which draws no backdrop under Liquid Glass and leaves the
+  window plain transparent; `set_window_background` moves it to `.underWindowBackground`. Use
+  that function instead of `Window::set_background_appearance`, both when the window opens and
+  after every theme change — leaving the translucent material and coming back makes gpui build a
+  fresh blur view.
 - **Windows 10 1809+ / 11:** confirmed working. gpui 0.2.2 uses the undocumented
   `SetWindowCompositionAttribute` acrylic accent (not Mica). It needs *Settings → Personalization → Colors → Transparency
   effects* on; with it off, Windows draws the chrome solid.

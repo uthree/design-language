@@ -414,6 +414,8 @@ name = "atelier"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "objc2",
+ "raw-window-handle",
  "unicode-segmentation",
 ]
 

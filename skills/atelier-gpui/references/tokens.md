@@ -6,8 +6,12 @@ use atelier::{ActiveTheme, Appearance, Direction, Theme};
 atelier::init(cx, Theme::new(Direction::Glass, Appearance::Dark));  // at start-up
 let theme = cx.theme();                                             // anywhere with &App
 Theme::new(Direction::Glass, Appearance::Light).install(cx);        // switch live
-window.set_background_appearance(theme.window_background());       // after switching
+atelier::set_window_background(window, theme);                      // when it opens and after
 ```
+
+`set_window_background` replaces `Window::set_background_appearance`: it asks for the theme's
+background and, on macOS, keeps the blur on a material that still draws a backdrop. Call it in
+the `open_window` closure and again after every theme change.
 
 Under Glass, `window_fill()` is clear and only chrome is tinted: do not add another background
 under the title bar or sidebars, or the blur disappears. Keep content areas on opaque
