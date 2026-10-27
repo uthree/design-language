@@ -1,24 +1,18 @@
 // Dunes: sheets of silk lie in layers, one in front of another, their crests rolling slowly.
 // Each is lit from above, with a sheen along its slopes and a soft shadow where it falls on the
-// one behind. The pointer lifts the silk under it; its ripples run along the crests; moving the
-// window slides the layers apart, the nearest furthest.
+// one behind. Moving the window slides the layers apart, the nearest furthest. It leaves the
+// pointer alone.
 
 const LAYERS: i32 = 5;
 
-// The crest of layer `index` at `x`, and where its sheet would be without the pointer.
+// The crest of layer `index` at `x`.
 fn crest(x: f32, index: f32) -> f32 {
     let t = params.time;
     let level = -0.26 + 0.16 * index;
-    var y = level
+    return level
         + 0.09 * sin(x * (1.1 + 0.25 * index) + t + index * 1.9)
         + 0.045 * sin(x * (2.6 - 0.2 * index) - 2. * t + index * 3.7)
         + 0.015 * sin(x * 6.1 + 3. * t + index * 5.3);
-    // The pointer lifts the sheet nearest it.
-    let d = vec2f(x, y) - params.pointer;
-    let lift = params.presence * exp(-d.x * d.x / 0.06) * exp(-d.y * d.y / 0.02);
-    y -= lift * 0.07 + params.velocity.y * lift * 0.01;
-    y += ripples(vec2f(x, y)).x * 0.006;
-    return y;
 }
 
 fn sheet(index: f32) -> vec3f {

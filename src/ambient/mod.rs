@@ -19,10 +19,11 @@
 //! core, at half a sample per logical pixel and without the caustics' fringes, and shown as a
 //! still image that answers nothing. It is shaded again only when its size or the theme changes.
 //!
-//! On the GPU each answers the person in front of it (see `sim.rs`): the pointer touches the
-//! scene where it is — parting the curtains, lifting the silk, stirring the colour, gathering the
-//! light like a lens — and leaves ripples as it travels; moving or resizing the window leaves the scene behind
-//! for a moment and it swings back, nearer layers further, so the window has depth.
+//! On the GPU each answers the window (see `sim.rs`): moving or resizing it leaves the scene
+//! behind for a moment and it swings back, nearer layers further, so the window has depth. Bloom
+//! and Caustics also answer the pointer — stirring the colour round it, or gathering the light
+//! like a lens — and leave ripples as it travels; Aurora and Dunes leave it alone, since
+//! ripples through a sky or a stack of silk would break the stillness they are there for.
 //!
 //! Put the screen's words on a card above the backdrop, never on it. When
 //! [`crate::Motion::enabled`] is off it stands still and answers nothing.
@@ -57,11 +58,11 @@ const LIVELY_FPS: f32 = 60.;
 /// Which scene an [`AmbientBackdrop`] shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Ambience {
-    /// Curtains of light folding slowly over a night sky. The pointer parts them and lights them
-    /// where it passes; the window swings them.
+    /// Curtains of light folding slowly over a night sky, mirrored in still water. The window
+    /// swings them; the pointer leaves them alone.
     Aurora,
     /// Sheets of silk in layers, their crests rolling, each with a sheen and a soft shadow. The
-    /// pointer lifts the silk under it; the window slides the layers apart.
+    /// window slides the layers apart; the pointer leaves them alone.
     Dunes,
     /// Great clouds of colour drifting and melting together under a frosted sheen. The pointer
     /// stirs the colour round itself; the window leaves the clouds sloshing.
@@ -88,6 +89,11 @@ impl Ambience {
             Ambience::Bloom => "Bloom",
             Ambience::Caustics => "Caustics",
         }
+    }
+
+    /// Whether the scene answers the pointer as well as the window.
+    pub fn answers_pointer(self) -> bool {
+        matches!(self, Ambience::Bloom | Ambience::Caustics)
     }
 
     /// How long one cycle of the scene takes.
@@ -222,7 +228,7 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
         let pointer = window
             .is_window_hovered()
             .then(|| window.mouse_position())
-            .filter(|pointer| bounds.contains(pointer))
+            .filter(|pointer| scene.ambience.answers_pointer() && bounds.contains(pointer))
             .map(|pointer| {
                 let local = pointer - bounds.origin;
                 [f32::from(local.x), f32::from(local.y)]
@@ -382,7 +388,8 @@ mod tests {
                 let t = n as f32 / fps;
                 // The pointer sweeps across from 0.5 s to 3.5 s, then leaves; the window is
                 // dragged 160 pixels right and 60 up at 4.5 s.
-                let pointer = (0.5..3.5).contains(&t).then(|| {
+                let sweeping = ambience.answers_pointer() && (0.5..3.5).contains(&t);
+                let pointer = sweeping.then(|| {
                     let u = (t - 0.5) / 3.;
                     [
                         width as f32 * (0.15 + 0.7 * u),

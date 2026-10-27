@@ -136,9 +136,10 @@ colours from the theme — background, agent gradient and accent — as light ov
 appearance and as washes of colour in a light one.
 
 Each is a WGSL shader on the crate's wgpu device, shaded off screen and read back like the metal.
-Each answers the pointer — it parts the curtains, lifts the silk, stirs the colour round itself,
-or gathers the light like a lens, and leaves ripples as it travels — and the window: moving or
-resizing it leaves the scene behind for a moment, nearer layers further, and it swings back.
+Each answers the window: moving or resizing it leaves the scene behind for a moment, nearer
+layers further, and it swings back. Bloom and Caustics also answer the pointer — stirring the
+colour round itself, or gathering the light like a lens — and leave ripples as it travels; Aurora
+and Dunes leave it alone, so the sky and the silk stay still.
 Without a hardware GPU the backdrop is one still frame shaded on the CPU, with no animation and
 no response. Captured on Linux under Weston.
 

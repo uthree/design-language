@@ -2,7 +2,9 @@
 //!
 //! Each drop hangs on a spring from its place on its orbit. The pointer pushes nearby drops aside
 //! and drags them along as it passes, so pools stretch, part and close behind it; moving or
-//! resizing the window leaves the liquid behind for a moment, and it sloshes back. Drops of
+//! resizing the window leaves the liquid behind for a moment, and it sloshes back. A move is let
+//! out over a few frames rather than all at once: during a drag macOS reports the window's place
+//! in uneven steps, and taking each step whole made the liquid jump with it. Drops of
 //! different sizes swing at different rates, so a pool deforms rather than moving as one. Where
 //! the pointer crosses the metal it leaves ripples that run outwards and fade.
 //!
@@ -18,6 +20,8 @@ const SPRING: f32 = 26.;
 const DAMPING: f32 = 2.6;
 /// How much of a move of the window the liquid is left behind by.
 const LAG: f32 = 0.8;
+/// How quickly a move of the window is let out into the drops, per second.
+const CATCH: f32 = 14.;
 /// How far the pointer reaches, in units of the box's shorter side, beyond a drop's own radius.
 const POINTER_REACH: f32 = 0.16;
 /// How hard the pointer pushes a drop it is on top of, in units per second squared.
@@ -42,6 +46,8 @@ const SUBSTEP: f32 = 1. / 120.;
 pub(super) struct Sim {
     offsets: [[f32; 2]; DROPS.len()],
     velocities: [[f32; 2]; DROPS.len()],
+    /// What the window's moves have yet to leave behind, per drop.
+    pending: [[f32; 2]; DROPS.len()],
     waves: Vec<Wave>,
     last: Option<Instant>,
     origin: Option<[f32; 2]>,
@@ -83,14 +89,14 @@ impl Sim {
         // and the drops catch up.
         if let Some(origin) = self.origin.replace(input.origin) {
             let moved = sub(input.origin, origin);
-            for offset in &mut self.offsets {
-                *offset = sub(*offset, scale(moved, LAG));
+            for pending in &mut self.pending {
+                *pending = sub(*pending, scale(moved, LAG));
             }
         }
         if let Some(size) = self.size.replace(input.size) {
             let grown = sub(input.size, size);
-            for (offset, drop) in self.offsets.iter_mut().zip(&DROPS) {
-                *offset = sub(*offset, scale([grown[0] * drop.x, grown[1] * drop.y], LAG));
+            for (pending, drop) in self.pending.iter_mut().zip(&DROPS) {
+                *pending = sub(*pending, scale([grown[0] * drop.x, grown[1] * drop.y], LAG));
             }
         }
 
@@ -119,10 +125,13 @@ impl Sim {
 
         let steps = (dt / SUBSTEP).ceil().max(1.);
         let h = dt / steps;
+        let taken = 1. - (-CATCH * h).exp();
         for _ in 0..steps as usize {
             for (index, drop) in DROPS.iter().enumerate() {
                 let (x, y, reach) = input.drops[index];
-                let offset = self.offsets[index];
+                let step = scale(self.pending[index], taken);
+                self.pending[index] = sub(self.pending[index], step);
+                let offset = add(self.offsets[index], step);
                 let velocity_here = self.velocities[index];
                 // Small drops are lighter and swing faster.
                 let stiffness = SPRING * (0.12 / drop.radius).sqrt().clamp(0.7, 1.6);
@@ -160,6 +169,7 @@ impl Sim {
     /// Whether anything is still moving: a drop swinging, or a ripple spreading.
     pub fn moving(&self) -> bool {
         !self.waves.is_empty()
+            || self.pending.iter().any(|pending| length(*pending) > 0.5)
             || self
                 .velocities
                 .iter()
@@ -249,6 +259,29 @@ mod tests {
         assert!(sim.offsets.iter().all(|offset| offset[0] < 0.));
         frames(&mut sim, start, 3, 600, |_| ([80., 0.], None));
         assert!(!sim.moving(), "and settles back in under ten seconds");
+    }
+
+    #[test]
+    fn a_window_moved_in_uneven_steps_sloshes_smoothly() {
+        // A drag reported every fourth frame, 40 pixels at a time, as macOS can. Taking each
+        // report whole would jump the drops 32 pixels in one frame and not at all in the next.
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let mut places = Vec::new();
+        for frame in 0..40 {
+            frames(&mut sim, start, frame, 1, |frame| {
+                ([40. * (frame / 4) as f32, 0.], None)
+            });
+            places.push(sim.offsets[0][0]);
+        }
+        let jolt = places
+            .windows(3)
+            .map(|w| (w[2] - 2. * w[1] + w[0]).abs())
+            .fold(0., f32::max);
+        assert!(
+            jolt < 8.,
+            "the drops' speed never changes by much at once: {jolt} px"
+        );
     }
 
     #[test]

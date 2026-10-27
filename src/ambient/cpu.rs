@@ -128,16 +128,13 @@ impl Shader {
     fn curtain(&self, p: V2, index: f32) -> (V3, f32) {
         let t = self.time;
         let depth = 0.55 + 0.25 * index;
-        let mut q = p + self.sway * depth;
-        let near = self.touch(q, 0.28);
-        q = q - (q - self.pointer) * (near * 0.35) - self.velocity * (near * 0.05);
+        let q = p + self.sway * depth;
         let x = q.x / depth;
-        let mut hem = 0.02
+        let hem = 0.02
             + 0.07 * index
             + 0.06 * (x * 1.6 + t + index * 2.1).sin()
             + 0.035 * (x * 3.7 - 2. * t + index * 4.3).sin()
             + 0.015 * (x * 7.9 + 3. * t + index).sin();
-        hem += self.ripples(q).0 * 0.05;
         let above = hem - q.y;
         let height = 0.22 + 0.06 * index;
         let body = (-above.max(0.) / height).exp() * ease(-0.03, 0.006, above);
@@ -146,7 +143,7 @@ impl Shader {
         let ray_at = v2((x + above * lean) * 16. + drift, index * 7.3 + above * 1.5);
         let rays = 0.3 + 1.1 * ease(0.3, 0.85, fbm(ray_at));
         let fold = 0.35 + 0.65 * ease(-0.6, 1., (x * 2.3 - t * 2. + index * 1.7).sin());
-        let strength = body * rays * fold * (1. + near * 0.9);
+        let strength = body * rays * fold;
         let h = (above / height * 0.7).clamp(0., 1.);
         let i = index as usize;
         let color = self.hues[(3 + i * 2) % 4].mix(self.hues[(i + 1) % 4], h);
@@ -172,18 +169,15 @@ impl Shader {
     }
 
     fn aurora(&self, p: V2) -> V3 {
-        let color = if p.y < AURORA_LAKE {
-            self.sky(p)
-        } else {
-            let depth = p.y - AURORA_LAKE;
-            let wobble = 0.004 * (depth * 140. / (0.2 + depth) + self.time * 4.).sin()
-                + self.ripples(p).0 * 0.01;
-            let mirrored = self.sky(v2(p.x + wobble, AURORA_LAKE - depth * 1.15));
-            let water = self.deep.mix(self.base, 0.5);
-            let color = water.mix(mirrored, lerp(0.7, 0.6, self.dark) * (-depth * 1.8).exp());
-            self.light(color, self.hues[3], (-depth / 0.004).exp() * 0.25)
-        };
-        self.light(color, self.hues[3], self.touch(p, 0.2) * 0.1)
+        if p.y < AURORA_LAKE {
+            return self.sky(p);
+        }
+        let depth = p.y - AURORA_LAKE;
+        let wobble = 0.004 * (depth * 140. / (0.2 + depth) + self.time * 4.).sin();
+        let mirrored = self.sky(v2(p.x + wobble, AURORA_LAKE - depth * 1.15));
+        let water = self.deep.mix(self.base, 0.5);
+        let color = water.mix(mirrored, lerp(0.7, 0.6, self.dark) * (-depth * 1.8).exp());
+        self.light(color, self.hues[3], (-depth / 0.004).exp() * 0.25)
     }
 
     // dunes.wgsl
@@ -191,14 +185,10 @@ impl Shader {
     fn crest(&self, x: f32, index: f32) -> f32 {
         let t = self.time;
         let level = -0.26 + 0.16 * index;
-        let mut y = level
+        level
             + 0.09 * (x * (1.1 + 0.25 * index) + t + index * 1.9).sin()
             + 0.045 * (x * (2.6 - 0.2 * index) - 2. * t + index * 3.7).sin()
-            + 0.015 * (x * 6.1 + 3. * t + index * 5.3).sin();
-        let d = v2(x, y) - self.pointer;
-        let lift = self.presence * (-d.x * d.x / 0.06).exp() * (-d.y * d.y / 0.02).exp();
-        y -= lift * 0.07 + self.velocity.y * lift * 0.01;
-        y + self.ripples(v2(x, y)).0 * 0.006
+            + 0.015 * (x * 6.1 + 3. * t + index * 5.3).sin()
     }
 
     fn sheet(&self, index: f32) -> V3 {
@@ -513,15 +503,21 @@ mod tests {
     }
 
     #[test]
-    fn the_pointer_changes_the_scene() {
+    fn only_bloom_and_caustics_answer_the_pointer() {
         for ambience in Ambience::ALL {
             let still = render(ambience, &frame(0.2));
             let mut touched = frame(0.2);
             touched.response.presence = 1.;
             touched.response.pointer = [0.1, 0.05];
             touched.response.velocity = [0.6, 0.];
+            touched.response.waves[0] = [0.1, 0.05, 0.08, 1.];
+            touched.response.wave_count = 1;
             let touched = render(ambience, &touched);
-            assert_ne!(still, touched, "{ambience:?} answers the pointer");
+            assert_eq!(
+                still != touched,
+                ambience.answers_pointer(),
+                "{ambience:?} answers the pointer only if it says so"
+            );
         }
     }
 

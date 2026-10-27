@@ -2,7 +2,9 @@
 //!
 //! The scene hangs on a spring from where it belongs: moving or resizing the window leaves it
 //! behind for a moment and it swings back, which each backdrop reads as parallax, nearer layers
-//! swinging further. The pointer is followed with a little lag and fades in and out as it
+//! swinging further. A move is let out over a few frames rather than all at once: during a drag
+//! macOS reports the window's place in uneven steps, and taking each step whole made the scene
+//! jump with it. The pointer is followed with a little lag and fades in and out as it
 //! enters and leaves, so whatever it touches eases rather than jumps; its speed is kept, smoothed,
 //! for what it drags along; and as it travels it leaves ripples that spread and fade.
 //!
@@ -16,6 +18,8 @@ const SPRING: f32 = 18.;
 const DAMPING: f32 = 4.2;
 /// How much of a move of the window the scene is left behind by.
 const LAG: f32 = 0.6;
+/// How quickly a move of the window is let out into the swing, per second.
+const CATCH: f32 = 14.;
 /// The furthest the scene is let swing, in units of the box's shorter side.
 const LIMIT: f32 = 0.2;
 /// How quickly the eased pointer catches up with the real one.
@@ -40,6 +44,8 @@ const SUBSTEP: f32 = 1. / 120.;
 pub(super) struct Sim {
     sway: [f32; 2],
     swing: [f32; 2],
+    /// What the window's moves have yet to leave behind.
+    pending: [f32; 2],
     focus: [f32; 2],
     presence: f32,
     velocity: [f32; 2],
@@ -92,10 +98,10 @@ impl Sim {
 
         // A moved window leaves the scene behind; a resized one leaves it off centre.
         if let Some(origin) = self.origin.replace(input.origin) {
-            self.sway = sub(self.sway, scale(sub(input.origin, origin), LAG));
+            self.pending = sub(self.pending, scale(sub(input.origin, origin), LAG));
         }
         if let Some(size) = self.size.replace(input.size) {
-            self.sway = sub(self.sway, scale(sub(input.size, size), 0.5 * LAG));
+            self.pending = sub(self.pending, scale(sub(input.size, size), 0.5 * LAG));
         }
 
         // The pointer: its speed, the ripples along its path, and where it is, eased.
@@ -137,7 +143,11 @@ impl Sim {
         // The swing back.
         let steps = (dt / SUBSTEP).ceil().max(1.);
         let h = dt / steps;
+        let taken = 1. - (-CATCH * h).exp();
         for _ in 0..steps as usize {
+            let step = scale(self.pending, taken);
+            self.pending = sub(self.pending, step);
+            self.sway = add(self.sway, step);
             let acceleration = sub(scale(self.sway, -SPRING), scale(self.swing, DAMPING));
             self.swing = add(self.swing, scale(acceleration, h));
             self.sway = add(self.sway, scale(self.swing, h));
@@ -146,9 +156,10 @@ impl Sim {
         if stray > LIMIT * unit {
             self.sway = scale(self.sway, LIMIT * unit / stray);
         }
-        if length(self.sway) < 0.2 && length(self.swing) < 0.5 {
+        if length(self.sway) < 0.2 && length(self.swing) < 0.5 && length(self.pending) < 0.2 {
             self.sway = [0., 0.];
             self.swing = [0., 0.];
+            self.pending = [0., 0.];
         }
 
         for wave in &mut self.waves {
@@ -165,6 +176,7 @@ impl Sim {
     pub fn moving(&self) -> bool {
         !self.waves.is_empty()
             || self.sway != [0., 0.]
+            || self.pending != [0., 0.]
             || self.velocity != [0., 0.]
             || (self.presence > 0. && self.presence < 1.)
             || self
@@ -264,6 +276,29 @@ mod tests {
         assert!(sim.response([1000., 600.]).sway[0] < 0.);
         frames(&mut sim, start, 3, 600, |_| ([80., 0.], None));
         assert!(!sim.moving(), "and settles back in under ten seconds");
+    }
+
+    #[test]
+    fn a_window_moved_in_uneven_steps_swings_smoothly() {
+        // A drag reported every fourth frame, 40 pixels at a time, as macOS can. Taking each
+        // report whole would jump the scene 24 pixels in one frame and not at all in the next.
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let mut places = Vec::new();
+        for frame in 0..40 {
+            frames(&mut sim, start, frame, 1, |frame| {
+                ([40. * (frame / 4) as f32, 0.], None)
+            });
+            places.push(sim.response([1000., 600.]).sway[0] * 600.);
+        }
+        let jolt = places
+            .windows(3)
+            .map(|w| (w[2] - 2. * w[1] + w[0]).abs())
+            .fold(0., f32::max);
+        assert!(
+            jolt < 8.,
+            "the scene's speed never changes by much at once: {jolt} px"
+        );
     }
 
     #[test]

@@ -110,9 +110,10 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   place, when chrome is too much: `Aurora` (curtains of light over a night sky and still water),
   `Dunes` (sheets of silk in layers), `Bloom` (clouds of colour melting together) or `Caustics`
   (light through water). Colours come from the theme. The same rules as the metal: fill the
-  welcome screen, put the words on a `Card`, nothing to wire up; it answers the pointer and the
-  window, `.phase(t)` draws one still frame, `.period(d)` changes the cycle. Without a GPU it is a
-  single still frame. Offer `Ambience::ALL` (with `label()`) if the person picks the scene.
+  welcome screen, put the words on a `Card`, nothing to wire up; it answers the window (and the
+  pointer too in `Bloom` and `Caustics`, see `answers_pointer()`), `.phase(t)` draws one still
+  frame, `.period(d)` changes the cycle. Without a GPU it is a single still frame. Offer
+  `Ambience::ALL` (with `label()`) if the person picks the scene.
 
 ## Overlays
 
