@@ -18,13 +18,15 @@ Read this page fully, then the reference for the part you touch.
 | [references/agent.md](references/agent.md) | Anything that shows the AI: panel, transcript, tool calls, approvals, composer, entry points. |
 | [references/motion.md](references/motion.md) | Animating anything; showing progress, loading or long-running tasks. |
 | [references/visualization.md](references/visualization.md) | Plots for sound: spectra, waveforms, spectrograms, vectorscopes, physical-model views. |
+| [references/plotting.md](references/plotting.md) | Plots for numbers on labelled axes: line, scatter, stem, histogram, fields with contours, 3-D surfaces, curves and point clouds. |
 | [references/adopting.md](references/adopting.md) | Adding Atelier to an app, or migrating an existing gpui UI (e.g. Auris Studio) onto it. |
 
 Before writing code, look at the crate itself (`src/` of the `atelier` dependency, or this
 repository) and at the examples that compose it into whole screens: `showcase` (a DAW and the
 component catalogue), `agent_desktop` (a coding-agent app), `instrument_lab` (physical-model
-views), `visualizer` (analysers), `node_editor` (a ComfyUI-style node graph) and
-`auris_screens` (Auris's project chooser and AI compose window).
+views), `visualizer` (analysers), `node_editor` (a ComfyUI-style node graph), `plot_lab`
+(MATLAB-style 2-D and 3-D plots) and `auris_screens` (Auris's project chooser and AI compose
+window).
 Do not invent a builder method because its name seems plausible: check the source.
 
 ## Non-negotiables

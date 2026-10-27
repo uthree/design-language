@@ -20,6 +20,7 @@ mod layout;
 mod media;
 pub mod motion;
 mod overlay;
+pub mod plot;
 mod progress;
 mod text;
 mod theme;
