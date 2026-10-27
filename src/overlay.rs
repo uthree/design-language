@@ -217,7 +217,7 @@ impl RenderOnce for MenuItem {
                 self.icon
                     .map(|icon| Icon::new(icon).size(px(15.)).color(text.opacity(0.8))),
             )
-            .child(div().flex_1().child(self.label))
+            .child(div().flex_1().min_w_0().truncate().child(self.label))
             .children(self.shortcut.map(|shortcut| {
                 Label::new(shortcut)
                     .size(TextSize::Small)

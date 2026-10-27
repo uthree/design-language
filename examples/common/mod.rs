@@ -1,7 +1,8 @@
 //! Start-up shared by the examples: the theme from the command line, a custom-framed window,
 //! and the direction/appearance switch each title bar carries.
 //!
-//! Every example accepts `--direction glass|studio|mono` and `--appearance dark|light`.
+//! Every example accepts `--direction glass|studio|mono`, `--appearance dark|light` and
+//! `--size WIDTHxHEIGHT` for the window's starting size.
 
 #![allow(dead_code)]
 
@@ -10,6 +11,11 @@ use gpui::{
     App, AppContext, Application, Bounds, Context, IntoElement, ParentElement, Render, Styled,
     TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
 };
+
+/// The smallest window every example lays out without overlapping or cutting off its controls.
+pub const MIN_WIDTH: f32 = 900.;
+/// See [`MIN_WIDTH`].
+pub const MIN_HEIGHT: f32 = 600.;
 
 /// The value after `name` on the command line.
 pub fn argument(name: &str) -> Option<String> {
@@ -32,6 +38,16 @@ pub fn choice_from_args() -> (Direction, Appearance) {
         _ => Appearance::Dark,
     };
     (direction, appearance)
+}
+
+/// The window size asked for with `--size WIDTHxHEIGHT`, or `width` × `height`.
+pub fn size_from_args(width: f32, height: f32) -> (f32, f32) {
+    argument("--size")
+        .and_then(|value| {
+            let (width, height) = value.split_once('x')?;
+            Some((width.parse().ok()?, height.parse().ok()?))
+        })
+        .unwrap_or((width, height))
 }
 
 /// A view whose theme the title-bar switch can change.
@@ -91,6 +107,7 @@ pub fn run<V: Themed>(
     build: impl FnOnce((Direction, Appearance), &mut Context<V>) -> V + 'static,
 ) {
     let choice = choice_from_args();
+    let (width, height) = size_from_args(width, height);
     Application::new()
         .with_assets(Assets::default())
         .run(move |cx: &mut App| {
@@ -101,6 +118,7 @@ pub fn run<V: Themed>(
             let options = atelier::custom_frame(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(MIN_WIDTH), px(MIN_HEIGHT))),
                     window_background: background,
                     titlebar: Some(TitlebarOptions {
                         title: Some(title.into()),

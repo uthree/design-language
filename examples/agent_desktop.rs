@@ -314,8 +314,11 @@ impl AgentDesktop {
 }
 
 impl Render for AgentDesktop {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
+        // The session list goes first when the window narrows, so the conversation keeps room
+        // to read.
+        let sidebar = window.viewport_size().width >= px(SIDEBAR_MIN_WINDOW);
         let switch = common::theme_switch(self, cx);
         let (title, _, status) = SESSIONS[self.session];
         WindowFrame::new()
@@ -348,7 +351,7 @@ impl Render for AgentDesktop {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.sidebar(cx))
+                    .when(sidebar, |row| row.child(self.sidebar(cx)))
                     .child(
                         div()
                             .flex()
@@ -407,6 +410,9 @@ impl Render for AgentDesktop {
             )
     }
 }
+
+/// Narrowest window that still shows the session list.
+const SIDEBAR_MIN_WINDOW: f32 = 1080.;
 
 fn main() {
     common::run("Agent", 1500., 940., |choice, _| AgentDesktop {

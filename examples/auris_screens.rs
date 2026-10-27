@@ -104,15 +104,14 @@ impl AurisScreens {
 
         let body = if self.chooser_page == 0 {
             let card = |index: usize, card: OptionCard, cx: &Context<Self>| {
-                div()
-                    .flex_1()
-                    .max_w(px(340.))
-                    .child(card.selected(self.start == index).on_click(cx.listener(
+                div().flex_1().min_w_0().max_w(px(340.)).child(
+                    card.selected(self.start == index).on_click(cx.listener(
                         move |this, _, _, cx| {
                             this.start = index;
                             cx.notify();
                         },
-                    )))
+                    )),
+                )
             };
             div()
                 .flex()
@@ -259,6 +258,7 @@ impl AurisScreens {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(theme.spacing.xs)
                     .children(tags.map(Badge::new)),
             )
@@ -283,6 +283,7 @@ impl AurisScreens {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(theme.spacing.sm)
                     .child(Button::new(("continue", index), "この曲で続ける").icon(IconName::Check))
                     .child(
@@ -314,6 +315,7 @@ impl AurisScreens {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(theme.spacing.xs)
                     .child(Badge::new("BPM 174"))
                     .child(Badge::new("F#m"))
@@ -357,6 +359,7 @@ impl AurisScreens {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(theme.spacing.sm)
                     .child(
                         Button::new("continue-3", "この曲で続ける")

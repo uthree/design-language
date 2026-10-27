@@ -71,7 +71,9 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   is hidden. Its empty space drags the window; children are shielded from the drag. On Windows it
   draws minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on
   macOS it leaves room for the traffic lights; on Linux it draws the three buttons too, and
-  right-click opens the window menu.
+  right-click opens the window menu. In a narrow window the title truncates first and the
+  children are cut off before they reach the trailing controls, so drop children you can do
+  without below a width rather than relying on the cut.
 - `WindowFrame::new()` — the window root. Paints `theme.window_fill()`; on Linux, where the
   window draws its own decorations, it adds the resize edges, the shadow and the rounded top
   corners around the content. Elsewhere, and on an X11 desktop without a compositor (which keeps

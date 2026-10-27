@@ -808,11 +808,12 @@ impl RenderOnce for ChatNotice {
                 .child(
                     div()
                         .flex_1()
+                        .min_w_0()
                         .text_size(theme.typography.size_sm)
                         .text_color(colors.text)
                         .child(self.text),
                 )
-                .children(self.action),
+                .children(self.action.map(|action| div().flex_none().child(action))),
         }
     }
 }

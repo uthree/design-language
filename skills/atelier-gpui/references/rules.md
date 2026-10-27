@@ -70,6 +70,21 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   frequent commands in it; leave its middle empty so it can be dragged.
 - Canvas first: the timeline/editor gets `flex_1` and `min_w_0`/`min_h_0`; inspectors and the
   agent panel are fixed-width, dismissible regions on the trailing edge.
+- Lay out for every window size between the minimum and a large display:
+  - Give the window a `window_min_size` (the examples use 900 × 600) and check the layout there
+    and on a 2560-wide screen.
+  - When the width runs out, hide whole regions in a fixed order instead of squeezing them: the
+    navigation sidebar first, then slim the agent panel (380 → 320) and the inspectors, then
+    drop the least-used title-bar controls and inspector sections. Decide from
+    `window.viewport_size()` in `render`.
+  - When the height runs out, scroll the region (`.id(..).overflow_y_scroll()` with
+    `flex_1().min_h_0()`); never let content run under a footer or off the window. Rows inside
+    a scrolling column are `flex_none`.
+  - When there is height to spare, give it to the plots and lanes (`flex_grow` on the cards,
+    `flex_1().min_h(..)` on the plot) rather than leaving an empty band at the bottom.
+  - Any `flex_1` element holding text in a row also gets `min_w_0`, or its text will not wrap
+    or truncate and pushes past its neighbours. CJK text counts as one long word.
+  - Rows of cards, chips or fields that can outgrow their container use `flex_wrap`.
 - Values are monospaced (`Label::mono`) and right-aligned where they are compared: timecode,
   dB, BPM, knob readouts.
 - Document colours (track, clip, palette) are data and may be literal; draw clip bodies with the

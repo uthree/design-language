@@ -8,6 +8,8 @@
 //!                                 [--page arrange|components] [--agent-closed]
 //! ```
 
+mod common;
+
 use std::time::Duration;
 
 use atelier::agent::{
@@ -29,10 +31,46 @@ use gpui::{
     WindowOptions, div, prelude::*, px, relative, rgb, size,
 };
 
+use common::argument;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Arrange,
     Components,
+}
+
+/// How the window's width is shared out. The track sidebar goes first when the window narrows,
+/// then the assistant panel slims down; the title bar and the inspector drop their least-used
+/// parts.
+#[derive(Clone, Copy)]
+struct Fit {
+    window: f32,
+    sidebar: bool,
+    agent_width: f32,
+    /// Width left for the arrangement and the inspector.
+    content: f32,
+}
+
+const SIDEBAR_WIDTH: f32 = 232.;
+/// The arrangement keeps at least this much before the sidebar is hidden.
+const MIN_CONTENT_WIDTH: f32 = 560.;
+
+impl Fit {
+    fn new(window: f32, agent_open: bool) -> Self {
+        let agent_width = match (agent_open, window >= 1200.) {
+            (false, _) => 0.,
+            (true, true) => 380.,
+            (true, false) => 320.,
+        };
+        let sidebar = window - agent_width - SIDEBAR_WIDTH >= MIN_CONTENT_WIDTH;
+        let content = window - agent_width - if sidebar { SIDEBAR_WIDTH } else { 0. };
+        Self {
+            window,
+            sidebar,
+            agent_width,
+            content,
+        }
+    }
 }
 
 struct Showcase {
@@ -123,7 +161,7 @@ impl Showcase {
         theme.install(cx);
     }
 
-    fn title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn title_bar(&self, fit: Fit, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let direction_index = Direction::ALL
             .iter()
@@ -134,7 +172,7 @@ impl Showcase {
             .title("Midnight Drive")
             .subtitle("Edited 2 min ago")
             .child(div().w(theme.spacing.lg))
-            .child(transport(cx))
+            .child(transport(fit, cx))
             .trailing(
                 SegmentedControl::new(
                     "direction",
@@ -176,7 +214,7 @@ impl Showcase {
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         Sidebar::new(Edge::Left)
-            .w(px(232.))
+            .w(px(SIDEBAR_WIDTH))
             .p(theme.spacing.sm)
             .gap(theme.spacing.xxs)
             .child(
@@ -226,10 +264,13 @@ impl Showcase {
             ))
     }
 
-    fn arrange(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn arrange(&self, fit: Fit, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let colors = &theme.colors;
         let header_width = px(196.);
+        // Number every other bar line when the bars get too narrow for their numbers.
+        let bar_width = (fit.content - 196.) / 8.;
+        let label_every = if bar_width < 40. { 2 } else { 1 };
         let lane = theme.density.row * 2.2;
         let ruler = div()
             .flex()
@@ -248,24 +289,34 @@ impl Showcase {
                     .px(theme.spacing.md)
                     .child(Label::caption("5 tracks")),
             )
-            .child(div().flex_1().relative().children((0..9).map(|bar| {
+            .child(
                 div()
-                    .absolute()
-                    .left(relative(bar as f32 / 8.))
-                    .top_0()
-                    .bottom_0()
-                    .pl(theme.spacing.xs)
-                    .border_l_1()
-                    .border_color(colors.border)
-                    .flex()
-                    .items_center()
-                    .child(
-                        Label::new(format!("{}", bar * 4 + 1))
-                            .size(TextSize::XSmall)
-                            .mono()
-                            .color(TextColor::Faint),
-                    )
-            })));
+                    .flex_1()
+                    .relative()
+                    .overflow_hidden()
+                    .children((0..8).map(|bar| {
+                        div()
+                            .absolute()
+                            .left(relative(bar as f32 / 8.))
+                            .w(relative(1. / 8.))
+                            .top_0()
+                            .bottom_0()
+                            .pl(theme.spacing.xs)
+                            .border_l_1()
+                            .border_color(colors.border)
+                            .flex()
+                            .items_center()
+                            .overflow_hidden()
+                            .when(bar % label_every == 0, |cell| {
+                                cell.child(
+                                    Label::new(format!("{}", bar * 4 + 1))
+                                        .size(TextSize::XSmall)
+                                        .mono()
+                                        .color(TextColor::Faint),
+                                )
+                            })
+                    })),
+            );
 
         let rows = TRACKS.iter().enumerate().map(|(index, track)| {
             let color = track_color(track);
@@ -274,6 +325,7 @@ impl Showcase {
             let solo = self.solo[index];
             div()
                 .flex()
+                .flex_none()
                 .h(lane)
                 .border_b_1()
                 .border_color(colors.separator)
@@ -392,21 +444,33 @@ impl Showcase {
             .flex_1()
             .min_h_0()
             .child(ruler)
+            // A short window scrolls the tracks; the inspector stays.
             .child(
                 div()
+                    .id("tracks")
                     .relative()
                     .flex()
                     .flex_col()
                     .flex_1()
                     .min_h_0()
+                    .overflow_y_scroll()
                     .bg(colors.background)
                     .children(rows)
                     .child(playhead),
             )
-            .child(self.inspector(cx))
+            .child(self.inspector(fit, cx))
     }
 
-    fn inspector(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn inspector(&self, fit: Fit, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        // The suggestions need room for their text and buttons; below that they wait in the
+        // assistant panel.
+        let suggestions = fit.content >= 860.;
+        // Whole knobs only: as many as fit beside the track controls and the meters.
+        let knobs = if suggestions {
+            5
+        } else {
+            ((fit.content - 340.) / 60.).clamp(1., 5.) as usize
+        };
         let theme = cx.theme();
         let colors = &theme.colors;
         let track = &TRACKS[self.selected_track];
@@ -424,6 +488,7 @@ impl Showcase {
                 div()
                     .flex()
                     .flex_col()
+                    .flex_none()
                     .w(px(220.))
                     .gap(theme.spacing.md)
                     .child(
@@ -439,54 +504,65 @@ impl Showcase {
                 div()
                     .flex()
                     .flex_col()
+                    .when(!suggestions, |eq| eq.flex_1())
+                    .min_w_0()
+                    .overflow_hidden()
                     .gap(theme.spacing.md)
                     .child(SectionHeader::caption("Channel EQ"))
                     .child(
-                        div()
-                            .flex()
-                            .gap(theme.spacing.lg)
-                            .child(Knob::new(0.62).label("Low").readout("+2.1"))
-                            .child(Knob::new(0.5).bipolar().label("Mid").readout("0.0"))
-                            .child(Knob::new(0.35).bipolar().label("High").readout("-1.8"))
-                            .child(Knob::new(0.8).color(color).label("Drive").readout("80 %"))
-                            .child(Knob::new(0.25).label("Mix").readout("25 %")),
-                    ),
-            )
-            .child(Divider::vertical().full())
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(theme.spacing.md)
-                    .child(
-                        SectionHeader::caption("Assistant suggestions").action(
-                            Badge::new("2 drafts")
-                                .tone(Tone::Agent)
-                                .icon(IconName::Sparkles),
+                        div().flex().gap(theme.spacing.lg).children(
+                            [
+                                Knob::new(0.62).label("Low").readout("+2.1"),
+                                Knob::new(0.5).bipolar().label("Mid").readout("0.0"),
+                                Knob::new(0.35).bipolar().label("High").readout("-1.8"),
+                                Knob::new(0.8).color(color).label("Drive").readout("80 %"),
+                                Knob::new(0.25).label("Mix").readout("25 %"),
+                            ]
+                            .into_iter()
+                            .take(knobs),
                         ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(theme.spacing.sm)
-                            .child(suggestion_row(
-                                theme,
-                                "Chorus voicing",
-                                "Opened the left hand to tenths in bars 17–24",
-                            ))
-                            .child(suggestion_row(
-                                theme,
-                                "Pad swell",
-                                "Added a strings pad under the chorus",
-                            )),
                     ),
             )
+            .when(suggestions, |inspector| {
+                inspector.child(Divider::vertical().full())
+            })
+            .when(suggestions, |inspector| {
+                inspector.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(theme.spacing.md)
+                        .child(
+                            SectionHeader::caption("Assistant suggestions").action(
+                                Badge::new("2 drafts")
+                                    .tone(Tone::Agent)
+                                    .icon(IconName::Sparkles),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(theme.spacing.sm)
+                                .child(suggestion_row(
+                                    theme,
+                                    "Chorus voicing",
+                                    "Opened the left hand to tenths in bars 17–24",
+                                ))
+                                .child(suggestion_row(
+                                    theme,
+                                    "Pad swell",
+                                    "Added a strings pad under the chorus",
+                                )),
+                        ),
+                )
+            })
             .child(
                 div()
                     .flex()
+                    .flex_none()
                     .gap(theme.spacing.xs)
                     .h_full()
                     .child(LevelMeter::new(0.74).peak(0.8))
@@ -494,7 +570,7 @@ impl Showcase {
             )
     }
 
-    fn agent_panel(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn agent_panel(&self, fit: Fit, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let border = cx.theme().colors.border;
         let piano = track_color(&TRACKS[1]);
         let panel = AgentPanel::new("agent", "Reharmonise the chorus")
@@ -567,7 +643,7 @@ impl Showcase {
             )
 ;
         div()
-            .w(px(380.))
+            .w(px(fit.agent_width))
             .flex_none()
             .border_l_1()
             .border_color(border)
@@ -723,7 +799,7 @@ impl Showcase {
             );
 
         let tasks = column()
-            .w(px(380.))
+            .w(px(420.))
             .child(Label::caption("Long-running tasks"))
             .child(
                 TaskProgress::new("task-render", "Export stems")
@@ -881,6 +957,7 @@ impl Showcase {
 
         let fields = div()
             .flex()
+            .flex_wrap()
             .gap(theme.spacing.md)
             .child(
                 div().w(px(240.)).child(
@@ -929,6 +1006,7 @@ impl Showcase {
 
         let surfaces = div()
             .flex()
+            .flex_wrap()
             .gap(theme.spacing.lg)
             .items_start()
             .child(
@@ -985,6 +1063,7 @@ impl Showcase {
 
         let agent = div()
             .flex()
+            .flex_wrap()
             .gap(theme.spacing.lg)
             .items_start()
             .child(
@@ -1052,7 +1131,11 @@ impl Showcase {
     }
 }
 
-fn transport(cx: &App) -> impl IntoElement + use<> {
+/// The transport. A narrower window keeps the position and drops the metronome, the metre and the
+/// tempo, in that order from the end.
+fn transport(fit: Fit, cx: &App) -> impl IntoElement + use<> {
+    let readout = fit.window >= 1100.;
+    let metre = fit.window >= 1320.;
     let theme = cx.theme();
     let colors = &theme.colors;
     div()
@@ -1072,37 +1155,43 @@ fn transport(cx: &App) -> impl IntoElement + use<> {
                 .selected(true)
                 .tint(colors.warning),
         )
-        .child(Button::icon_only("click", IconName::Metronome).tooltip("Metronome"))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(theme.spacing.md)
-                .ml(theme.spacing.sm)
-                .h(theme.density.control_md)
-                .px(theme.spacing.md)
-                .rounded(theme.control_radius(theme.density.control_md))
-                .bg(colors.sunken)
-                .border_1()
-                .border_color(colors.border)
-                .child(
-                    Label::new("013.2.1")
-                        .mono()
-                        .weight(theme.typography.label_weight),
-                )
-                .child(
-                    Label::new("120 BPM")
-                        .size(TextSize::Small)
-                        .mono()
-                        .color(TextColor::Muted),
-                )
-                .child(
-                    Label::new("4/4 · C maj")
-                        .size(TextSize::Small)
-                        .mono()
-                        .color(TextColor::Muted),
-                ),
-        )
+        .when(readout, |transport| {
+            transport.child(Button::icon_only("click", IconName::Metronome).tooltip("Metronome"))
+        })
+        .when(readout, |transport| {
+            transport.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.spacing.md)
+                    .ml(theme.spacing.sm)
+                    .h(theme.density.control_md)
+                    .px(theme.spacing.md)
+                    .rounded(theme.control_radius(theme.density.control_md))
+                    .bg(colors.sunken)
+                    .border_1()
+                    .border_color(colors.border)
+                    .child(
+                        Label::new("013.2.1")
+                            .mono()
+                            .weight(theme.typography.label_weight),
+                    )
+                    .child(
+                        Label::new("120 BPM")
+                            .size(TextSize::Small)
+                            .mono()
+                            .color(TextColor::Muted),
+                    )
+                    .when(metre, |readout| {
+                        readout.child(
+                            Label::new("4/4 · C maj")
+                                .size(TextSize::Small)
+                                .mono()
+                                .color(TextColor::Muted),
+                        )
+                    }),
+            )
+        })
 }
 
 fn clip(
@@ -1222,10 +1311,11 @@ fn suggestion_row(
 }
 
 impl Render for Showcase {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
+        let fit = Fit::new(f32::from(window.viewport_size().width), self.agent_open);
         let page = match self.page {
-            Page::Arrange => self.arrange(cx).into_any_element(),
+            Page::Arrange => self.arrange(fit, cx).into_any_element(),
             Page::Components => self.components(cx).into_any_element(),
         };
         let tabs = Tabs::new("pages", ["Arrange", "Components"], self.page as usize).on_select(
@@ -1244,13 +1334,13 @@ impl Render for Showcase {
             .size_full()
             .flex()
             .flex_col()
-            .child(self.title_bar(cx))
+            .child(self.title_bar(fit, cx))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.sidebar(cx))
+                    .when(fit.sidebar, |row| row.child(self.sidebar(cx)))
                     .child(
                         div()
                             .flex()
@@ -1270,34 +1360,27 @@ impl Render for Showcase {
                                     .child(tabs)
                                     .child(div().flex_1())
                                     .child(
-                                        Label::new(format!(
-                                            "{} · {}",
-                                            theme.name(),
-                                            if theme.material == atelier::Material::Translucent {
-                                                "translucent chrome"
-                                            } else {
-                                                "opaque chrome"
-                                            }
-                                        ))
-                                        .size(TextSize::XSmall)
-                                        .color(TextColor::Faint),
+                                        div().min_w_0().truncate().child(
+                                            Label::new(format!(
+                                                "{} · {}",
+                                                theme.name(),
+                                                if theme.material == atelier::Material::Translucent
+                                                {
+                                                    "translucent chrome"
+                                                } else {
+                                                    "opaque chrome"
+                                                }
+                                            ))
+                                            .size(TextSize::XSmall)
+                                            .color(TextColor::Faint),
+                                        ),
                                     ),
                             )
                             .child(page),
                     )
-                    .when(self.agent_open, |row| row.child(self.agent_panel(cx))),
+                    .when(self.agent_open, |row| row.child(self.agent_panel(fit, cx))),
             )
     }
-}
-
-fn argument(name: &str) -> Option<String> {
-    let mut args = std::env::args();
-    while let Some(arg) = args.next() {
-        if arg == name {
-            return args.next();
-        }
-    }
-    None
 }
 
 fn main() {
@@ -1313,6 +1396,7 @@ fn main() {
         _ => Page::Arrange,
     };
     let agent_open = !std::env::args().any(|arg| arg == "--agent-closed");
+    let (width, height) = common::size_from_args(1480., 920.);
 
     Application::new()
         .with_assets(Assets::default())
@@ -1320,10 +1404,11 @@ fn main() {
             let theme = Theme::new(direction, appearance);
             let background = theme.window_background();
             atelier::init(cx, theme);
-            let bounds = Bounds::centered(None, size(px(1480.), px(920.)), cx);
+            let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
             let options = atelier::custom_frame(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(common::MIN_WIDTH), px(common::MIN_HEIGHT))),
                     window_background: background,
                     titlebar: Some(TitlebarOptions {
                         title: Some("Atelier showcase".into()),

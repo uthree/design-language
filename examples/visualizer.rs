@@ -221,8 +221,9 @@ impl Visualizer {
             .child(
                 div()
                     .flex()
+                    .flex_1()
                     .gap(theme.spacing.sm)
-                    .h(px(220.))
+                    .min_h(px(200.))
                     .child(scale)
                     .child(
                         Self::plot(cx).flex_1().h_full().p(theme.spacing.xs).child(
@@ -261,12 +262,14 @@ impl Visualizer {
             .child(
                 div()
                     .flex()
+                    .flex_1()
                     .gap(theme.spacing.lg)
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .flex_1()
+                            .min_w_0()
                             .gap(theme.spacing.md)
                             .child(
                                 Readout {
@@ -320,7 +323,7 @@ impl Visualizer {
                         div()
                             .flex()
                             .gap(theme.spacing.xs)
-                            .h(px(230.))
+                            .min_h(px(230.))
                             .child(meter("meter-l", 0.))
                             .child(meter("meter-r", 0.013)),
                     ),
@@ -332,7 +335,7 @@ impl Visualizer {
         Self::panel("Spectrogram", "Last 3 seconds, high frequencies on top", cx)
             .flex_1()
             .min_w_0()
-            .child(Self::plot(cx).h(px(200.)).child(
+            .child(Self::plot(cx).flex_1().min_h(px(160.)).child(
                 Heatmap::new(HISTORY, SPECTROGRAM_ROWS, spectrogram_at(0.)).with_animation(
                     "spectrogram",
                     Animation::new(LOOP).repeat(),
@@ -378,7 +381,7 @@ impl Visualizer {
         Self::panel("Stereo", "Goniometer and phase correlation", cx)
             .w(px(300.))
             .flex_none()
-            .child(Self::plot(cx).h(px(200.)).child(
+            .child(Self::plot(cx).flex_1().min_h(px(160.)).child(
                 Vectorscope::new(stereo_at(0., 600, 3.)).with_animation(
                     "vectorscope",
                     Animation::new(LOOP).repeat(),
@@ -477,10 +480,12 @@ impl Visualizer {
             "Two cycles of the bass, triggered on its rising edge",
             cx,
         )
+        .flex_grow()
         .child(
             Self::plot(cx)
                 .relative()
-                .h(px(150.))
+                .flex_1()
+                .min_h(px(120.))
                 .child(div().absolute().inset_0().child(channel(true)))
                 .child(div().absolute().inset_0().child(channel(false))),
         )
@@ -546,9 +551,11 @@ impl Render for Visualizer {
                     .gap(theme.spacing.lg)
                     .p(theme.spacing.lg)
                     .bg(theme.colors.background)
+                    // Spare height goes to the plots; a short window scrolls instead.
                     .child(
                         div()
                             .flex()
+                            .flex_grow()
                             .gap(theme.spacing.lg)
                             .child(self.spectrum(cx))
                             .child(self.loudness(cx)),
@@ -556,6 +563,7 @@ impl Render for Visualizer {
                     .child(
                         div()
                             .flex()
+                            .flex_grow()
                             .gap(theme.spacing.lg)
                             .child(self.spectrogram(cx))
                             .child(self.stereo(cx)),

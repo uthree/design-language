@@ -19,7 +19,7 @@ use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ButtonVariant, ControlSize, Direction,
     Disclosure, Divider, Edge, Icon, IconName, Label, ListItem, SectionHeader, Segment,
     SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StatusDot, TaskProgress, TextColor,
-    TextField, TextSize, Theme, TitleBar, Tone, Tooltip,
+    TextField, TextSize, Theme, TitleBar, Tone, Tooltip, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -1629,7 +1629,7 @@ impl NodeEditor {
             )
     }
 
-    fn agent_panel(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn agent_panel(&self, width: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let panel = AgentPanel::new("agent", "Match my other tracks' loudness")
             .status(AgentStatus::Completed)
@@ -1687,7 +1687,7 @@ impl NodeEditor {
                     .model("Claude Opus 5.5"),
             );
         div()
-            .w(px(380.))
+            .w(px(width))
             .flex_none()
             .border_l_1()
             .border_color(theme.colors.border)
@@ -1717,9 +1717,13 @@ fn bezier(from: Point<Pixels>, to: Point<Pixels>, width: Pixels) -> Option<gpui:
 }
 
 impl Render for NodeEditor {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
+        // The node library goes first when the window narrows, and the assistant slims, so the
+        // canvas keeps room to work in.
+        let wide = window.viewport_size().width >= px(1180.);
+        let agent_width = if wide { 380. } else { 320. };
         let running = self.run.is_some();
         let missing = self
             .nodes
@@ -1750,13 +1754,11 @@ impl Render for NodeEditor {
                 .disabled(missing > 0)
                 .on_click(cx.listener(|this, _, _, cx| this.start_run(cx)))
         };
-        div()
+        WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
-            .size_full()
             .flex()
             .flex_col()
-            .bg(theme.window_fill())
             .child(
                 TitleBar::new()
                     .title("Pad textures")
@@ -1789,11 +1791,11 @@ impl Render for NodeEditor {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.library(cx))
+                    .when(wide, |row| row.child(self.library(cx)))
                     .child(self.graph(cx))
                     .map(|row| {
                         if self.agent_open {
-                            row.child(self.agent_panel(cx).into_any_element())
+                            row.child(self.agent_panel(agent_width, cx).into_any_element())
                         } else {
                             row.child(self.inspector(cx).into_any_element())
                         }

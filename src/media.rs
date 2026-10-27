@@ -108,11 +108,13 @@ impl RenderOnce for AudioPlayer {
         let scrubber = match self.peaks {
             Some(peaks) => div()
                 .flex_1()
+                .min_w_0()
                 .h(height - theme.spacing.md)
                 .child(PeakBars::new(peaks).progress(self.position))
                 .into_any_element(),
             None => div()
                 .flex_1()
+                .min_w_0()
                 .relative()
                 .h(px(4.))
                 .rounded(px(2.))

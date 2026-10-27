@@ -380,7 +380,7 @@ impl RenderOnce for SuggestionChip {
                 self.icon
                     .map(|icon| Icon::new(icon).size(px(14.)).color(colors.agent)),
             )
-            .child(div().flex_1().child(self.label));
+            .child(div().flex_1().min_w_0().child(self.label));
         if let Some(handler) = self.on_click {
             chip = chip.on_click(handler);
         }

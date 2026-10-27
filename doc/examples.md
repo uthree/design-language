@@ -1,8 +1,10 @@
 # Examples
 
 Each example is a mock: it shows fixed or synthesised data and is wired to nothing. All of them
-take `--direction glass|studio|mono` and `--appearance dark|light`, and carry the same switch in
-their title bar. Screenshots are Glass dark, captured on Windows with `PrintWindow`, which does
+take `--direction glass|studio|mono`, `--appearance dark|light` and `--size WIDTHxHEIGHT`, and
+carry the same switch in their title bar. Every example lays out from 900 × 600 (its minimum
+window size) up to a large display: narrower windows drop the sidebar first, and spare height
+goes to the plots. Screenshots are Glass dark, captured on Windows with `PrintWindow`, which does
 not include the desktop blur behind translucent chrome.
 
 ## showcase — a DAW arrangement view
