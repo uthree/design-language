@@ -1,5 +1,7 @@
-//! Liquid metal: polished, slowly flowing chrome for ornament — a ring around a button, the
-//! backdrop of a welcome screen, a mark beside a plan's name.
+//! Liquid metal: polished, slowly flowing chrome for the background of a welcome screen.
+//!
+//! It is kept to that one place on purpose. On controls — a ring round a button — it made
+//! sizes uneven and said too much; under work it would keep gpui redrawing the whole window.
 //!
 //! gpui has no custom shaders, so the metal is composed from the primitive its renderer already
 //! draws on the GPU with an anti-aliased edge: the rounded rectangle. A shape is painted as a
@@ -9,23 +11,21 @@
 //! exactly on the band. So the ramp is exact at any size, nothing bands, and every edge is
 //! anti-aliased by the same signed-distance shader that draws every other control.
 //!
-//! What the metal reflects depends on the height in the layer and on its depth into the shape:
-//! a ring is a tube, bright along its outer top and inner bottom with the dark horizon running
-//! round its middle; a solid shape is a sphere or a pill. The reflection flows by moving the
-//! horizon with time, travelling inwards like a ripple.
+//! What the metal reflects depends on the height in the shape and on the depth into it: a ring
+//! is a tube, bright along its outer top and inner bottom with the dark horizon running round
+//! its middle; a solid shape is a sphere or a pill. The reflection flows by moving the horizon
+//! with time, travelling inwards like a ripple, while the pieces drift.
 //!
-//! Metal is ornament, never information: put no text on it, give it no state to show, and use it
-//! for one thing per window. When [`crate::Motion::enabled`] is off it stands still. Flowing
-//! metal keeps gpui redrawing the whole window every frame, so it flows only where no work is on
-//! screen; elsewhere, draw a still frame with `.phase(..)`.
+//! Put the screen's words on a card above the metal, never on it. When
+//! [`crate::Motion::enabled`] is off it stands still.
 
 use std::f32::consts::{PI, TAU};
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ContentMask, Corners, Div, ElementId, Hsla, IntoElement,
-    ParentElement, Pixels, RenderOnce, StyleRefinement, Styled, Window, canvas, div,
-    linear_color_stop, linear_gradient, point, px, quad, size, transparent_black,
+    App, Bounds, BoxShadow, ContentMask, Corners, ElementId, Hsla, IntoElement, Pixels, RenderOnce,
+    Styled, Window, canvas, linear_color_stop, linear_gradient, point, px, quad, size,
+    transparent_black,
 };
 
 use crate::motion::looping;
@@ -34,9 +34,6 @@ use crate::theme::{ActiveTheme, mix};
 /// Where the stops of [`crate::Colors::metal`] fall, from the top of a surface (0) to its bottom
 /// (1). The horizon is the fifth stop, between the two coloured fringes.
 pub const STOPS: [f32; 9] = [0.0, 0.24, 0.4, 0.45, 0.5, 0.55, 0.64, 0.84, 1.0];
-
-/// The default flow cycle.
-const PERIOD: Duration = Duration::from_secs(7);
 
 /// The frame drawn when motion is off.
 const REST: f32 = 0.12;
@@ -56,216 +53,6 @@ struct Shape {
     radius: Option<Pixels>,
     liquid: f32,
     phase: f32,
-}
-
-/// A liquid-metal shape that fills its parent: a capsule (a sphere when square) by default, or
-/// a rounded rectangle with [`LiquidMetal::radius`]; with [`LiquidMetal::ring`], only a metal
-/// ring around a fill. See the [module documentation](self).
-#[derive(IntoElement)]
-pub struct LiquidMetal {
-    id: ElementId,
-    shape: Shape,
-    period: Duration,
-    fixed: bool,
-}
-
-impl LiquidMetal {
-    /// A flowing, solid metal capsule.
-    pub fn new(id: impl Into<ElementId>) -> Self {
-        Self {
-            id: id.into(),
-            shape: Shape {
-                body: Body::Solid,
-                radius: None,
-                liquid: 1.,
-                phase: REST,
-            },
-            period: PERIOD,
-            fixed: false,
-        }
-    }
-
-    /// Round the corners by `radius` instead of drawing a capsule.
-    pub fn radius(mut self, radius: Pixels) -> Self {
-        self.shape.radius = Some(radius);
-        self
-    }
-
-    /// Draw only a metal ring `width` wide, around the theme's surface colour.
-    pub fn ring(mut self, width: Pixels) -> Self {
-        self.shape.body = Body::Ring { width, fill: None };
-        self
-    }
-
-    /// The colour inside a ring.
-    pub fn fill(mut self, fill: Hsla) -> Self {
-        if let Body::Ring { width, .. } = self.shape.body {
-            self.shape.body = Body::Ring {
-                width,
-                fill: Some(fill),
-            };
-        }
-        self
-    }
-
-    /// How much the reflection flows, from 0 (still chrome) to 1. Defaults to 1.
-    pub fn liquid(mut self, liquid: f32) -> Self {
-        self.shape.liquid = liquid.clamp(0., 1.);
-        self
-    }
-
-    /// How long one flow cycle takes. Keep it slow; the default is seven seconds.
-    pub fn period(mut self, period: Duration) -> Self {
-        self.period = period;
-        self
-    }
-
-    /// Draw one still frame at `phase` (0 to 1) of the cycle instead of flowing.
-    pub fn phase(mut self, phase: f32) -> Self {
-        self.shape.phase = phase;
-        self.fixed = true;
-        self
-    }
-}
-
-impl RenderOnce for LiquidMetal {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let frame = Frame(self.shape);
-        if self.fixed || self.shape.liquid == 0. {
-            return frame.into_any_element();
-        }
-        looping(frame, self.id, self.period, REST, cx, |frame, phase| {
-            frame.at(phase)
-        })
-    }
-}
-
-#[derive(IntoElement)]
-struct Frame(Shape);
-
-impl Frame {
-    fn at(mut self, phase: f32) -> Self {
-        self.0.phase = phase;
-        self
-    }
-}
-
-impl RenderOnce for Frame {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let shape = self.0;
-        canvas(
-            |_, _, _| {},
-            move |bounds, _, window, cx| paint_shape(&shape, bounds, window, cx),
-        )
-        .size_full()
-    }
-}
-
-/// A metal ring around its children: a button, a tool palette, a segmented control. The ring
-/// sits outside the content, so wrap the control as it is.
-///
-/// ```ignore
-/// MetalFrame::new("new-frame").child(Button::new("new", "新しいプロジェクト").primary())
-/// ```
-#[derive(IntoElement)]
-pub struct MetalFrame {
-    id: ElementId,
-    base: Div,
-    width: Pixels,
-    radius: Option<Pixels>,
-    fill: Option<Hsla>,
-    liquid: f32,
-    phase: Option<f32>,
-}
-
-impl MetalFrame {
-    /// A 4 px ring that follows the theme's control shape.
-    pub fn new(id: impl Into<ElementId>) -> Self {
-        Self {
-            id: id.into(),
-            base: div(),
-            width: px(4.),
-            radius: None,
-            fill: None,
-            liquid: 1.,
-            phase: None,
-        }
-    }
-
-    /// The width of the ring.
-    pub fn width(mut self, width: Pixels) -> Self {
-        self.width = width;
-        self
-    }
-
-    /// The outer corner radius. Defaults to a capsule under capsule-shaped controls, otherwise
-    /// the control radius plus the ring, so the ring stays concentric with the control.
-    pub fn radius(mut self, radius: Pixels) -> Self {
-        self.radius = Some(radius);
-        self
-    }
-
-    /// The colour inside the ring, behind the content. Defaults to the theme's surface.
-    pub fn fill(mut self, fill: Hsla) -> Self {
-        self.fill = Some(fill);
-        self
-    }
-
-    /// How much the reflection flows, from 0 to 1.
-    pub fn liquid(mut self, liquid: f32) -> Self {
-        self.liquid = liquid;
-        self
-    }
-
-    /// Draw one still frame at `phase` instead of flowing.
-    pub fn phase(mut self, phase: f32) -> Self {
-        self.phase = Some(phase);
-        self
-    }
-}
-
-impl Styled for MetalFrame {
-    fn style(&mut self) -> &mut StyleRefinement {
-        self.base.style()
-    }
-}
-
-impl ParentElement for MetalFrame {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        self.base.extend(elements)
-    }
-}
-
-impl RenderOnce for MetalFrame {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let radius = self.radius.or_else(|| {
-            (!theme.shape.capsule_controls).then(|| theme.shape.radius_sm + self.width)
-        });
-        let mut metal = LiquidMetal::new(self.id)
-            .ring(self.width)
-            .fill(self.fill.unwrap_or(theme.colors.surface))
-            .liquid(self.liquid);
-        if let Some(radius) = radius {
-            metal = metal.radius(radius);
-        }
-        if let Some(phase) = self.phase {
-            metal = metal.phase(phase);
-        }
-        // The ring paints first, so the content sits on top of it.
-        div()
-            .relative()
-            .flex_none()
-            .child(div().absolute().inset_0().child(metal))
-            .child(
-                self.base
-                    .relative()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .p(self.width),
-            )
-    }
 }
 
 /// A welcome-screen backdrop: a few metal rings and drops drifting slowly over the window's
@@ -382,67 +169,91 @@ impl RenderOnce for Scene {
                 let shadow = theme.colors.shadow;
                 let dark = theme.appearance.is_dark();
                 window.paint_quad(gpui::fill(bounds, background));
-                let unit = f32::from(bounds.size.width.min(bounds.size.height));
-                let angle = phase * TAU;
-                for piece in &SCENE {
-                    let x = f32::from(bounds.left())
-                        + f32::from(bounds.size.width) * piece.x
-                        + unit * 0.025 * (angle + piece.drift).sin();
-                    let y = f32::from(bounds.top())
-                        + f32::from(bounds.size.height) * piece.y
-                        + unit * 0.02 * (angle * 2. + piece.drift).cos();
-                    let (w, h) = (unit * piece.width, unit * piece.height);
-                    let at = Bounds::new(point(px(x - w / 2.), px(y - h / 2.)), size(px(w), px(h)));
-                    let radius = px(w.min(h) / 2.);
-                    window.paint_shadows(
-                        at,
-                        Corners::all(radius),
-                        &[BoxShadow {
-                            color: shadow.opacity(if dark { 0.5 } else { 0.16 }),
-                            offset: point(px(0.), px(unit * 0.02)),
-                            blur_radius: px(unit * 0.04),
-                            spread_radius: px(0.),
-                        }],
-                    );
-                    let body = if piece.ring > 0. {
-                        Body::Ring {
-                            width: px(unit * piece.ring),
-                            fill: Some(background),
-                        }
-                    } else {
-                        Body::Solid
-                    };
-                    let shape = Shape {
-                        body,
-                        radius: None,
-                        liquid: 1.,
-                        phase: (phase * 3. + piece.drift / TAU).fract(),
-                    };
-                    paint_shape(&shape, at, window, cx);
-                }
+                // Pieces run off the edges; keep them, and their shadows, inside the box.
+                window.with_content_mask(Some(ContentMask { bounds }), |window| {
+                    let unit = f32::from(bounds.size.width.min(bounds.size.height));
+                    let angle = phase * TAU;
+                    for piece in &SCENE {
+                        let x = f32::from(bounds.left())
+                            + f32::from(bounds.size.width) * piece.x
+                            + unit * 0.025 * (angle + piece.drift).sin();
+                        let y = f32::from(bounds.top())
+                            + f32::from(bounds.size.height) * piece.y
+                            + unit * 0.02 * (angle * 2. + piece.drift).cos();
+                        let (w, h) = (unit * piece.width, unit * piece.height);
+                        let at =
+                            Bounds::new(point(px(x - w / 2.), px(y - h / 2.)), size(px(w), px(h)));
+                        let radius = px(w.min(h) / 2.);
+                        window.paint_shadows(
+                            at,
+                            Corners::all(radius),
+                            &[BoxShadow {
+                                color: shadow.opacity(if dark { 0.5 } else { 0.16 }),
+                                offset: point(px(0.), px(unit * 0.02)),
+                                blur_radius: px(unit * 0.04),
+                                spread_radius: px(0.),
+                            }],
+                        );
+                        let body = if piece.ring > 0. {
+                            Body::Ring {
+                                width: px(unit * piece.ring),
+                                fill: Some(background),
+                            }
+                        } else {
+                            Body::Solid
+                        };
+                        let shape = Shape {
+                            body,
+                            radius: None,
+                            liquid: 1.,
+                            phase: (phase * 3. + piece.drift / TAU).fract(),
+                        };
+                        paint_shape(&shape, at, window, cx);
+                    }
+                });
             },
         )
         .size_full()
     }
 }
 
-/// The ramp at `r`, extended flat past both ends so a moving horizon never runs out of colour.
-fn ramp_at(ramp: &[Hsla; 9], r: f32) -> Hsla {
-    if r <= STOPS[0] {
-        return ramp[0];
+/// The reflection the metal paints: the theme's ramp with a studio softbox added — a crisp,
+/// near-white highlight high in the sky and a faint second one in the ground — which is what
+/// makes polished metal glint rather than merely shine.
+fn reflection(ramp: &[Hsla; 9]) -> Vec<(f32, Hsla)> {
+    let white = gpui::white();
+    let mut stops = vec![
+        (0., ramp[0]),
+        (0.1, mix(ramp[0], ramp[1], 0.4)),
+        (0.135, mix(ramp[1], white, 0.85)),
+        (0.17, white),
+        (0.195, mix(ramp[1], white, 0.7)),
+    ];
+    stops.extend(STOPS.iter().copied().zip(ramp.iter().copied()).skip(1));
+    // The second softbox, reflected in the floor just above the bounce light.
+    stops.insert(stops.len() - 1, (0.92, mix(ramp[8], white, 0.45)));
+    stops
+}
+
+/// The reflection at `r`, extended flat past both ends so a moving horizon never runs out of
+/// colour.
+fn reflection_at(stops: &[(f32, Hsla)], r: f32) -> Hsla {
+    if r <= stops[0].0 {
+        return stops[0].1;
     }
-    for index in 1..STOPS.len() {
-        if r <= STOPS[index] {
-            let t = (r - STOPS[index - 1]) / (STOPS[index] - STOPS[index - 1]);
-            return mix(ramp[index - 1], ramp[index], t);
+    for pair in stops.windows(2) {
+        let ((from, a), (to, b)) = (pair[0], pair[1]);
+        if r <= to {
+            return mix(a, b, (r - from) / (to - from));
         }
     }
-    ramp[8]
+    stops[stops.len() - 1].1
 }
 
 fn paint_shape(shape: &Shape, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
     let theme = cx.theme();
     let ramp = theme.colors.metal;
+    let stops = reflection(&ramp);
     let surface = theme.colors.surface;
     let scale = window.scale_factor();
     let pixel = 1. / scale;
@@ -514,9 +325,12 @@ fn paint_shape(shape: &Shape, bounds: Bounds<Pixels>, window: &mut Window, cx: &
         let to_shape = |v: f32| (inset + v * h) / height;
         let to_layer = |y: f32| (y * height - inset) / h;
         let color = |v: f32| -> Hsla {
-            let base = ramp_at(&ramp, mid + (to_shape(v) - 0.5) * slope);
+            let y = to_shape(v);
+            let base = reflection_at(&stops, mid + (y - 0.5) * slope);
             if edge > 0. {
-                mix(base, ramp[6], edge)
+                // The rim turns away: into the ground above, into the bounce light below.
+                let below = ((y - 0.55) / 0.35).clamp(0., 1.);
+                mix(base, mix(ramp[6], ramp[8], below), edge)
             } else {
                 base
             }
@@ -525,7 +339,7 @@ fn paint_shape(shape: &Shape, bounds: Bounds<Pixels>, window: &mut Window, cx: &
         // Where the reflection crosses a stop, in fractions of the layer's height.
         let mut cuts = vec![0., 1.];
         if slope.abs() > 1e-3 {
-            for stop in STOPS {
+            for (stop, _) in &stops {
                 let v = to_layer(0.5 + (stop - mid) / slope);
                 if v > 0. && v < 1. {
                     cuts.push(v);
@@ -583,22 +397,24 @@ fn paint_shape(shape: &Shape, bounds: Bounds<Pixels>, window: &mut Window, cx: &
             }
         }
         Body::Solid => {
-            // The softbox: a soft highlight on the upper left, drifting with the flow.
+            // Bloom: the softbox in the reflection is bright enough to glow a little past its
+            // edges, on the upper left where it peaks.
             let side = width.min(height);
-            let glint = Bounds::new(
+            let drift = flow * (wave + 0.6).sin();
+            let glow = Bounds::new(
                 point(
-                    bounds.left() + px(width * 0.5 - side * (0.24 - flow * (wave + 0.6).sin())),
-                    bounds.top() + px(height * 0.5 - side * 0.3),
+                    bounds.left() + px(width * 0.5 - side * (0.24 - drift)),
+                    bounds.top() + px(height * 0.5 - side * 0.36),
                 ),
-                size(px(side * 0.16), px(side * 0.07)),
+                size(px(side * 0.2), px(side * 0.06)),
             );
             window.paint_shadows(
-                glint,
-                Corners::all(px(side * 0.035)),
+                glow,
+                Corners::all(px(side * 0.03)),
                 &[BoxShadow {
-                    color: gpui::white().opacity(0.8),
+                    color: gpui::white().opacity(0.45),
                     offset: point(px(0.), px(0.)),
-                    blur_radius: px(side * 0.04),
+                    blur_radius: px(side * 0.07),
                     spread_radius: px(0.),
                 }],
             );

@@ -92,26 +92,23 @@ These two screenshots were captured on Linux under Xvfb.
 
 ![Plot lab, 3-D](images/plot-lab-3d.png)
 
-## liquid_metal — liquid metal as ornament
+## liquid_metal — a welcome screen over liquid metal
 
 ```bash
 cargo run --example liquid_metal
-cargo run --example liquid_metal -- --screen parts
 ```
 
-A welcome screen over `MetalBackdrop` (rings and drops drifting slowly), with the call to action
-in a `MetalFrame`; and the parts: the selected tool of a palette, a round add button and an
-export button in metal rings, a small `LiquidMetal` mark beside a plan, and the rules for where
-metal does not go. gpui has no custom shaders, so each shape is a stack of concentric rounded
-rectangles, one per device pixel of a ring, each painted in horizontal bands with two-stop
-gradients that follow the theme's `metal` ramp exactly. Every edge comes from gpui's own
-anti-aliased rounded-rectangle shader. Captured on Linux under Weston.
+`MetalBackdrop` behind a welcome card: chrome rings and drops drifting slowly, with a softbox
+glint and the theme's coloured fringes at the reflected horizon. Metal is kept to this one
+place; on controls it made sizes uneven and said too much. gpui has no custom shaders, so
+each shape is a stack of concentric rounded rectangles, one per device pixel of a ring, each
+painted in horizontal bands with two-stop gradients that follow the reflection exactly, and
+every edge comes from gpui's own anti-aliased rounded-rectangle shader.
+Captured on Linux under Weston.
 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)
 
-![Liquid metal parts, Glass light](images/liquid-metal-parts-glass-light.png)
-
-![Liquid metal welcome, Mono dark](images/liquid-metal-welcome-mono-dark.png)
+![Liquid metal welcome, Mono light](images/liquid-metal-welcome-mono-light.png)
 
 ## auris_screens — two Auris Studio windows redrawn
 

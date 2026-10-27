@@ -96,19 +96,11 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 
 ## Ornament
 
-Liquid metal, for ornament only (`atelier::metal`). Use it for one thing per window.
-
-- `MetalFrame::new(id).child(control)` — a metal ring around a control: the call to action, the
-  selected tool in a palette, an add button. `.width(px)` (default 4), `.radius(px)` (defaults to
-  the control shape plus the ring), `.fill(color)` behind the content (match the surface it sits
-  on). Selection must still show in the control's own fill; the ring only adorns it.
-- `MetalBackdrop::new(id)` — a welcome-screen backdrop of drifting metal rings and drops. Put the
-  words on a card above it, never on the metal.
-- `LiquidMetal::new(id)` — a solid metal capsule (a sphere when square) that fills its parent;
-  `.radius(px)` for a rounded rectangle, `.ring(px)` + `.fill(color)` for a ring. A small one
-  makes a plan mark beside its name.
-- All three flow slowly; `.phase(t)` draws one still frame. Keep flowing metal out of editing
-  windows (a still frame is fine there) and never put text on it.
+- `MetalBackdrop::new(id)` — liquid metal (`atelier::metal`) for the background of a welcome
+  screen only: chrome rings and drops drifting slowly, with a softbox glint and coloured fringes
+  at the reflected horizon. Fill the screen with it and put the words and actions on a `Card`
+  above it, never on the metal. `.phase(t)` draws one still frame. Do not use metal on controls
+  (a ring round a button makes sizes uneven and says too much) or anywhere work happens.
 
 ## Overlays
 
