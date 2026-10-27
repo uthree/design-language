@@ -66,6 +66,30 @@ Port and wire colours come from `colors.ports`, with the type also named on the 
 and in the legend. The loudness node was added by the assistant: it is drawn dashed in the agent
 colour with Keep and Undo on the node, and the assistant panel holds the conversation.
 
+## plot_lab — a numerical workbench
+
+```bash
+cargo run --example plot_lab
+cargo run --example plot_lab -- --figure 3d
+```
+
+Plots for maths and physics in the manner of MATLAB, built on `atelier::plot`, with a
+workspace of variables and the command history on the left. Everything runs on one simulation
+clock, recomputed each frame; the title bar pauses it, restarts it and shows `t`. Figure 1 is
+2-D: a damped oscillator at three damping ratios traced in real time, a histogram filling with
+molecular speeds until it matches the Maxwell–Boltzmann density, three Van der Pol trajectories
+winding onto their limit cycle, a square wave's Fourier coefficients (stems) and its partial sum
+travelling (the term count is switchable), and a turning dipole's potential with equipotentials,
+a colour bar and cuts through it. Figure 2 is 3-D: a square drum head with five modes ringing,
+the Lorenz attractor with a comet tail running round it, and three point clusters drifting.
+Drag any of them to turn all three; the inspector has the standard views, the shading
+(faceted, smooth, mesh) and a turntable.
+These two screenshots were captured on Linux under Xvfb.
+
+![Plot lab, 2-D](images/plot-lab-2d.png)
+
+![Plot lab, 3-D](images/plot-lab-3d.png)
+
 ## auris_screens — two Auris Studio windows redrawn
 
 ```bash

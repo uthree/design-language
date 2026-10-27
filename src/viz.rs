@@ -49,7 +49,7 @@ fn paint_grid(
     }
 }
 
-fn polyline(points: &[Point<Pixels>], width: Pixels) -> Option<gpui::Path<Pixels>> {
+pub(crate) fn polyline(points: &[Point<Pixels>], width: Pixels) -> Option<gpui::Path<Pixels>> {
     let (first, rest) = points.split_first()?;
     let mut builder = PathBuilder::stroke(width);
     builder.move_to(*first);
@@ -59,7 +59,7 @@ fn polyline(points: &[Point<Pixels>], width: Pixels) -> Option<gpui::Path<Pixels
     builder.build().ok()
 }
 
-fn area(points: &[Point<Pixels>], baseline: Pixels) -> Option<gpui::Path<Pixels>> {
+pub(crate) fn area(points: &[Point<Pixels>], baseline: Pixels) -> Option<gpui::Path<Pixels>> {
     let (first, last) = (points.first()?, points.last()?);
     let mut builder = PathBuilder::fill();
     builder.move_to(point(first.x, baseline));
