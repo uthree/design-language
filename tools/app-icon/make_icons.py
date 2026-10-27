@@ -52,6 +52,10 @@ MAX_SYMBOL_WIDTH = 0.70
 OPTICAL_LIFT = 0.01
 NUMBER_CAP = 0.075
 NUMBER_INSET = 0.13
+NAME_CAP = 0.058
+NAME_BASELINE = 0.875  # from the tile's top
+MAX_NAME_WIDTH = 0.74
+CORNER_OPACITY = 0.72
 RIM = 0.012
 SQUIRCLE_EXPONENT = 5.0
 TRACKING = -0.02  # of the em, between the two letters
@@ -208,6 +212,12 @@ class Mark:
     symbol: str
     number: int | None
     element: str
+    version: str | None = None
+    name: str | None = None
+
+
+def mark_of(app: dict) -> Mark:
+    return Mark(app["symbol"], app.get("number"), app["element"], app.get("version"), app.get("name"))
 
 
 def draw(
@@ -215,7 +225,8 @@ def draw(
     faces: dict[str, Face],
     *,
     form: str = "standard",  # standard | macos
-    detail: str = "full",  # full (>= 128 px) | medium (48-64 px) | small (<= 32 px)
+    # full (>= 256 px) | corners (128 px) | medium (48-64 px) | small (<= 32 px)
+    detail: str = "full",
     finish: str = "flat",  # flat | metal
     guides: bool = False,
 ) -> str:
@@ -294,16 +305,31 @@ def draw(
         glyph_fill = hex_of(p.glyph)
     body.append(f'<path transform="translate({gx:.2f} {baseline:.2f})" d="{path}" fill="{glyph_fill}"/>')
 
-    if detail == "full" and mark.number is not None:
-        semi = faces["SemiBold"]
+    # The cell's readings, as a periodic table prints them: the number top left, the version
+    # top right (where a table puts the atomic weight), the full name along the bottom.
+    semi = faces["SemiBold"]
+    ink = f'fill="{hex_of(p.glyph)}" fill-opacity="{CORNER_OPACITY}"'
+    if detail in ("full", "corners"):
         ncap = NUMBER_CAP * size
-        npath, nleft, _ = semi.outline(str(mark.number), ncap)
-        nx = x0 + NUMBER_INSET * size - nleft
-        ny = y0 + NUMBER_INSET * size + ncap
-        body.append(
-            f'<path transform="translate({nx:.2f} {ny:.2f})" d="{npath}" '
-            f'fill="{hex_of(p.glyph)}" fill-opacity="0.72"/>'
-        )
+        top = y0 + NUMBER_INSET * size + ncap
+        if mark.number is not None:
+            npath, nleft, _ = semi.outline(str(mark.number), ncap)
+            nx = x0 + NUMBER_INSET * size - nleft
+            body.append(f'<path transform="translate({nx:.2f} {top:.2f})" d="{npath}" {ink}/>')
+        if mark.version:
+            vpath, _, vright = semi.outline(mark.version, ncap)
+            vx = x0 + size - NUMBER_INSET * size - vright
+            body.append(f'<path transform="translate({vx:.2f} {top:.2f})" d="{vpath}" {ink}/>')
+    if detail == "full" and mark.name:
+        ncap = NAME_CAP * size
+        npath, nleft, nright = semi.outline(mark.name, ncap)
+        limit = MAX_NAME_WIDTH * size
+        if nright - nleft > limit:
+            ncap *= limit / (nright - nleft)
+            npath, nleft, nright = semi.outline(mark.name, ncap)
+        nx = x0 + (size - (nright - nleft)) / 2 - nleft
+        ny = y0 + NAME_BASELINE * size
+        body.append(f'<path transform="translate({nx:.2f} {ny:.2f})" d="{npath}" {ink}/>')
 
     if guides:
         body.append(guide_lines(x0, y0, size, cap, baseline, gx + left, width))
@@ -338,6 +364,17 @@ def guide_lines(x0, y0, size, cap, baseline, ink_left, width) -> str:
         f'<rect x="{x0 + n:.1f}" y="{y0 + n:.1f}" width="{NUMBER_CAP * size * 2.2:.1f}" '
         f'height="{NUMBER_CAP * size:.1f}" fill="none" stroke="{c}" stroke-width="3"/>'
     )
+    lines.append(
+        f'<rect x="{x0 + size - n - NUMBER_CAP * size * 2.2:.1f}" y="{y0 + n:.1f}" '
+        f'width="{NUMBER_CAP * size * 2.2:.1f}" height="{NUMBER_CAP * size:.1f}" '
+        f'fill="none" stroke="{c}" stroke-width="3"/>'
+    )
+    name_margin = (1 - MAX_NAME_WIDTH) / 2 * size
+    lines.append(
+        f'<rect x="{x0 + name_margin:.1f}" y="{y0 + (NAME_BASELINE - NAME_CAP) * size:.1f}" '
+        f'width="{MAX_NAME_WIDTH * size:.1f}" height="{NAME_CAP * size:.1f}" '
+        f'fill="none" stroke="{c}" stroke-width="3"/>'
+    )
     return "".join(lines)
 
 
@@ -369,6 +406,8 @@ def detail_for(px: int) -> str:
         return "small"
     if px <= 64:
         return "medium"
+    if px < 256:
+        return "corners"
     return "full"
 
 
@@ -380,17 +419,19 @@ ICNS_SIZES = [16, 32, 64, 128, 256, 512, 1024]
 
 
 def write_app(app: dict, faces, out: Path):
-    mark = Mark(app["symbol"], app.get("number"), app["element"])
+    mark = mark_of(app)
     out.mkdir(parents=True, exist_ok=True)
     (out / "png").mkdir(exist_ok=True)
     svgs = {
         "icon.svg": draw(mark, faces),
+        "icon-corners.svg": draw(mark, faces, detail="corners"),
         "icon-medium.svg": draw(mark, faces, detail="medium"),
         "icon-small.svg": draw(mark, faces, detail="small"),
         "icon-macos.svg": draw(mark, faces, form="macos"),
-        "icon-metal.svg": draw(mark, faces, finish="metal"),
         "symbolic.svg": symbolic(mark, faces),
     }
+    if app.get("metal"):
+        svgs["icon-metal.svg"] = draw(mark, faces, finish="metal")
     for name, svg in svgs.items():
         (out / name).write_text(svg + "\n")
     images = {}
@@ -416,7 +457,7 @@ def label_font(face: Face, px: int):
 
 def sheet_suite(apps, faces, out: Path):
     apps = [a for a in apps if a["slug"] != "auris-studio-family"]
-    cell, pad, icon = 300, 40, 200
+    cell, pad, icon = 320, 40, 256
     width = pad * 2 + cell * len(apps)
     height = 2 * (icon + 120)
     img = Image.new("RGB", (width, height), DESK_DARK)
@@ -425,7 +466,7 @@ def sheet_suite(apps, faces, out: Path):
     name_font = label_font(faces["SemiBold"], 22)
     for row, (bg, fg) in enumerate([(DESK_DARK, (235, 235, 240)), (DESK_LIGHT, (40, 40, 46))]):
         for i, app in enumerate(apps):
-            mark = Mark(app["symbol"], app.get("number"), app["element"])
+            mark = mark_of(app)
             x = pad + i * cell + (cell - icon) // 2
             y = row * (height // 2) + 30
             img.paste(raster(draw(mark, faces), icon), (x, y), raster(draw(mark, faces), icon))
@@ -438,12 +479,11 @@ def sheet_suite(apps, faces, out: Path):
 def sheet_auris(apps, faces, out: Path):
     by = {a["slug"]: a for a in apps}
     au = by["auris-studio"]
-    au = Mark(au["symbol"], au.get("number"), au["element"])
+    au = mark_of(au)
     fam = by["auris-studio-family"]
-    fam = Mark(fam["symbol"], fam.get("number"), fam["element"])
+    fam = mark_of(fam)
     items = [
         ("Au · standard", raster(draw(au, faces), 256)),
-        ("Au · metal finish", raster(draw(au, faces, finish="metal"), 256)),
         ("Au · macOS form", raster(draw(au, faces, form="macos"), 256)),
         ("As · family form", raster(draw(fam, faces), 256)),
     ]
@@ -467,7 +507,7 @@ def sheet_auris(apps, faces, out: Path):
 
 def sheet_sizes(apps, faces, out: Path):
     a = next(a for a in apps if a["slug"] == "auris-studio")
-    mark = Mark(a["symbol"], a.get("number"), a["element"])
+    mark = mark_of(a)
     sizes = [16, 24, 32, 48, 64, 128, 256]
     pad, gap = 40, 36
     width = pad * 2 + sum(sizes) + gap * (len(sizes) - 1)
@@ -491,7 +531,7 @@ def sheet_sizes(apps, faces, out: Path):
 
 def sheet_anatomy(apps, faces, out: Path):
     a = next(a for a in apps if a["slug"] == "auris-studio")
-    mark = Mark(a["symbol"], a.get("number"), a["element"])
+    mark = mark_of(a)
     im = raster(draw(mark, faces, guides=True), 640)
     img = Image.new("RGB", (720, 720), DESK_LIGHT)
     img.paste(im, (40, 40), im)
