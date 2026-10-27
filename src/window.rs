@@ -13,6 +13,11 @@
 //! });
 //! ```
 //!
+//! On Windows, gpui blurs through the accent policy DWM applies to the window, and DWM drops that
+//! accent while it plays the maximize, restore and snap transitions: for the length of the
+//! animation the window is plainly transparent. [`set_window_background`] turns those
+//! transitions off for a blurred window, so it changes size at once and stays frosted.
+//!
 //! Call it again whenever a different theme is installed: leaving a translucent material and
 //! coming back to it makes gpui build a fresh blur view.
 //!
@@ -45,6 +50,8 @@ pub fn set_window_background(window: &mut Window, theme: &Theme) {
     window.set_background_appearance(background);
     #[cfg(target_os = "macos")]
     macos::restore_blur_material(window);
+    #[cfg(target_os = "windows")]
+    windows::keep_blur_through_transitions(window, background);
 }
 
 /// Whether a window asking for `WindowBackgroundAppearance::Blurred` actually gets a blurred
@@ -118,6 +125,55 @@ mod macos {
                     let _: () = msg_send![subview, setMaterial: UNDER_WINDOW_BACKGROUND];
                 }
             }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows {
+    use std::ffi::c_void;
+
+    use gpui::{Window, WindowBackgroundAppearance};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    /// `DWMWA_TRANSITIONS_FORCEDISABLED`: turns off the window's open, close, minimize, maximize
+    /// and restore animations.
+    const DWMWA_TRANSITIONS_FORCEDISABLED: u32 = 3;
+
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmSetWindowAttribute(
+            hwnd: isize,
+            attribute: u32,
+            value: *const c_void,
+            size: u32,
+        ) -> i32;
+    }
+
+    /// Turn DWM's window transitions off while the window is blurred, and back on otherwise.
+    ///
+    /// DWM draws a transition from a snapshot of the window without its acrylic accent, so a
+    /// double-click on the title bar would show the desktop sharp behind the chrome until the
+    /// animation ends.
+    pub(super) fn keep_blur_through_transitions(
+        window: &Window,
+        background: WindowBackgroundAppearance,
+    ) {
+        let Ok(handle) = HasWindowHandle::window_handle(window) else {
+            return;
+        };
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return;
+        };
+        // A Win32 `BOOL`.
+        let disabled = i32::from(background == WindowBackgroundAppearance::Blurred);
+        unsafe {
+            DwmSetWindowAttribute(
+                handle.hwnd.get(),
+                DWMWA_TRANSITIONS_FORCEDISABLED,
+                (&raw const disabled).cast(),
+                size_of::<i32>() as u32,
+            );
         }
     }
 }
