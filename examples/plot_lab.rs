@@ -1,9 +1,9 @@
 //! A mock numerical workbench in the spirit of MATLAB: a workspace of variables, and two
 //! figures of plots computed from textbook physics as they run — a damped oscillator, thermal
 //! speeds, a limit cycle, a travelling Fourier series and a turning dipole in 2-D; a ringing
-//! membrane, the Lorenz attractor and drifting point clusters in 3-D. Every plot is recomputed
-//! each frame from one simulation clock, which the title bar pauses and restarts. Drag a 3-D
-//! plot to turn it.
+//! membrane, the Lorenz attractor with a swarm of particles spreading over it, and drifting
+//! point clusters in 3-D. Every plot is recomputed each frame from one simulation clock, which
+//! the title bar pauses and restarts. Drag a 3-D plot to turn it.
 //!
 //! ```text
 //! cargo run --example plot_lab -- [--figure 2d|3d] [--direction glass|studio|mono] [--appearance dark|light]
@@ -110,17 +110,49 @@ fn van_der_pol(start: (f32, f32), mu: f32) -> Vec<(f32, f32)> {
     points
 }
 
-/// The Lorenz attractor at its classic parameters, after the transient has died away.
+/// The Lorenz system at its classic parameters.
+fn lorenz_field([x, y, z]: [f32; 3]) -> [f32; 3] {
+    [10. * (y - x), x * (28. - z) - y, x * y - 8. / 3. * z]
+}
+
+/// The time step of the attractor's samples.
+const LORENZ_STEP: f32 = 0.008;
+
+/// The Lorenz attractor, after the transient has died away.
 fn lorenz() -> Vec<[f32; 3]> {
-    let field = |[x, y, z]: [f32; 3]| [10. * (y - x), x * (28. - z) - y, x * y - 8. / 3. * z];
     let mut state = [1., 1., 1.];
     (0..6400)
         .map(|_| {
-            state = rk4(field, state, 0.008);
+            state = rk4(lorenz_field, state, LORENZ_STEP);
             state
         })
         .skip(400)
         .collect()
+}
+
+/// Particles in the swarm, and how often it starts again from a small ball at the moving point.
+const SWARM: usize = 2400;
+const SWARM_CYCLE: f32 = 12.;
+
+/// The swarm's start: a ball half a unit across round `centre`, ordered along x, so the heat
+/// ramp across it shows how the attractor stretches and folds it.
+fn swarm_at(centre: [f32; 3]) -> Vec<[f32; 3]> {
+    let mut points: Vec<[f32; 3]> = (0..SWARM)
+        .map(|index| {
+            // A low-discrepancy fill of the ball: a Fibonacci sphere at a cube-root radius.
+            let t = (index as f32 + 0.5) / SWARM as f32;
+            let radius = 0.25 * t.cbrt();
+            let polar = (1. - 2. * ((index as f32 * 0.618_034).fract())).acos();
+            let around = index as f32 * 2.399_963;
+            [
+                centre[0] + radius * polar.sin() * around.cos(),
+                centre[1] + radius * polar.sin() * around.sin(),
+                centre[2] + radius * polar.cos(),
+            ]
+        })
+        .collect();
+    points.sort_by(|a, b| a[0].total_cmp(&b[0]));
+    points
 }
 
 /// Lorenz steps the moving point advances per second, and how many trail behind it.
@@ -246,6 +278,10 @@ struct PlotLab {
     speeds: Vec<f32>,
     cycles: Vec<Vec<(f32, f32)>>,
     attractor: Vec<[f32; 3]>,
+    /// The swarm, which cycle of it this is, and the fraction of a step not yet taken.
+    swarm: Vec<[f32; 3]>,
+    swarm_cycle: Option<usize>,
+    swarm_carry: f32,
     clusters: [Vec<[f32; 3]>; 3],
 }
 
@@ -277,7 +313,35 @@ impl PlotLab {
                 .map(|start| van_der_pol(start, 1.2))
                 .collect(),
             attractor: lorenz(),
+            swarm: Vec::new(),
+            swarm_cycle: None,
+            swarm_carry: 0.,
             clusters: clusters(),
+        }
+    }
+
+    /// Where the comet's head is on the attractor at `time`.
+    fn head(&self, time: f32) -> usize {
+        (time * LORENZ_RATE) as usize % self.attractor.len()
+    }
+
+    /// Move the swarm on by `step` seconds of the clock, at the comet's pace, starting it again
+    /// at the comet's head each cycle.
+    fn advance_swarm(&mut self, step: f32) {
+        let cycle = (self.time / SWARM_CYCLE) as usize;
+        if self.swarm_cycle != Some(cycle) {
+            self.swarm = swarm_at(self.attractor[self.head(cycle as f32 * SWARM_CYCLE)]);
+            self.swarm_cycle = Some(cycle);
+            self.swarm_carry = (self.time - cycle as f32 * SWARM_CYCLE) * LORENZ_RATE;
+        } else {
+            self.swarm_carry += step * LORENZ_RATE;
+        }
+        let steps = self.swarm_carry.floor();
+        self.swarm_carry -= steps;
+        for point in &mut self.swarm {
+            for _ in 0..steps as usize {
+                *point = rk4(lorenz_field, *point, LORENZ_STEP);
+            }
         }
     }
 
@@ -725,13 +789,14 @@ impl PlotLab {
             );
         }
         // The whole attractor stays faint behind a comet: the last steps in the heat ramp,
-        // brightest at the moving point.
-        let count = self.attractor.len();
-        let head = (self.time * LORENZ_RATE) as usize % count;
+        // brightest at the moving point. A swarm of particles leaves the comet's head as a tight
+        // ball each cycle and spreads over the whole attractor.
+        let head = self.head(self.time);
         let tail = self.attractor[head.saturating_sub(LORENZ_TAIL)..=head].to_vec();
         let attractor = Plot3d::new()
             .curve(self.attractor.clone(), Some(theme.colors.grid_faint))
             .curve(tail, None)
+            .particles(self.swarm.clone(), None)
             .scatter(vec![self.attractor[head]], Some(theme.colors.text))
             .labels("x", "y", "z");
         div()
@@ -762,7 +827,7 @@ impl PlotLab {
                     .child(
                         Self::panel(
                             "Lorenz attractor",
-                            "σ = 10, ρ = 28, β = 8/3; the last 700 steps trail the moving point",
+                            "σ = 10, ρ = 28, β = 8/3; the last 700 steps trail the moving point, and 2,400 particles spread from it",
                             cx,
                         )
                         .flex_1()
@@ -913,11 +978,12 @@ impl Render for PlotLab {
         let workspace = width >= px(1180.);
         let clock = width >= px(1100.);
         // Advance the clock by the time since the last frame, and ask for the next one.
+        let mut step = 0.;
         if self.playing {
             let now = Instant::now();
             if let Some(last) = self.last_frame {
                 // A long gap (the window was hidden) counts as one frame, not a jump.
-                let step = (now - last).as_secs_f32().min(0.1);
+                step = (now - last).as_secs_f32().min(0.1);
                 self.time += step;
                 if self.spin {
                     self.azimuth = (self.azimuth + TURN_RATE * step + 180.).rem_euclid(360.) - 180.;
@@ -927,6 +993,9 @@ impl Render for PlotLab {
             window.request_animation_frame();
         } else {
             self.last_frame = None;
+        }
+        if self.figure == 1 {
+            self.advance_swarm(step);
         }
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
@@ -978,6 +1047,7 @@ impl Render for PlotLab {
                                 .tooltip("Restart from t = 0")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.time = 0.;
+                                    this.swarm_cycle = None;
                                     cx.notify();
                                 })),
                         )

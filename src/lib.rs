@@ -15,6 +15,7 @@ mod button;
 mod controls;
 mod display;
 mod frame;
+mod gpu;
 mod icon;
 mod layout;
 mod media;
