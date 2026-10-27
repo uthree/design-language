@@ -12,7 +12,7 @@ use atelier::agent::{AssistantMessage, Composer, UserMessage};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ControlSize, Direction, Divider, Edge,
     IconName, Label, ListItem, OptionCard, ProgressBar, SectionHeader, Segment, SegmentedControl,
-    Sidebar, Spinner, StepList, StepState, Switch, TextColor, TextSize, TitleBar,
+    Sidebar, Spinner, StepList, StepState, Switch, TextColor, TextSize, TitleBar, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -492,13 +492,12 @@ impl Render for AurisScreens {
             Screen::Chooser => self.chooser(cx),
             Screen::Compose => self.compose(cx),
         };
-        div()
+        WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.window_fill())
             .child(
                 TitleBar::new()
                     .title(title)

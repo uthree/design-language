@@ -14,7 +14,7 @@ use atelier::agent::{
 use atelier::{
     ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider, Edge,
     IconName, Label, ListItem, Sidebar, StepList, StepState, Tabs, TaskProgress, TextColor,
-    TextField, TextSize, TitleBar, Tone,
+    TextField, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px};
@@ -318,13 +318,12 @@ impl Render for AgentDesktop {
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
         let (title, _, status) = SESSIONS[self.session];
-        div()
+        WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.window_fill())
             .child(
                 TitleBar::new()
                     .leading(
