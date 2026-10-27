@@ -277,11 +277,18 @@ fn params(width: u32, height: u32, phase: f32, studio: &Studio) -> [f32; PARAMS_
     let colors = [studio.background, studio.behind, studio.front]
         .into_iter()
         .chain(studio.ramp);
-    for (slot, color) in words[8..8 + 12 * 4].chunks_exact_mut(4).zip(colors) {
+    for (slot, color) in words[8..8 + 12 * 4]
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(colors)
+    {
         slot[..3].copy_from_slice(&color);
     }
     for (slot, (x, y, reach)) in words[8 + 12 * 4..]
-        .chunks_exact_mut(4)
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
         .zip(drops_at(w, h, phase))
     {
         slot[..3].copy_from_slice(&[x, y, reach]);
