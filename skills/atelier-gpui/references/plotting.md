@@ -19,8 +19,8 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `LinePlot` + `Series::line` | `plot` | `(x, y)` points per series | `.style(Line \| Markers \| LineMarkers \| Stems \| Steps \| Area)`, `.name()`, `.color()`, `.faint()`; plot: `.x_range()`, `.y_range()`, `.x_label()`, `.y_label()`, `.legend()`, `.grid()` |
 | `Series::markers` | `scatter` | `(x, y)` points | as above |
 | `Series::stems` | `stem` | `(n, value)` | the y range always includes 0 |
-| `Histogram::new(samples)` | `histogram` | raw samples | `.bins()`, `.range()`, `.y_range()`, `.density()`, `.overlay(curve, name)` for the expected distribution, `.name()` |
-| `FieldPlot::new(cols, rows, values)` | `imagesc` + `contour` | row-major, **first row at y minimum** | `.x_range()`, `.y_range()`, `.value_range()`, `.signed()`, `.contours(n)` |
+| `Histogram::new(samples)` | `histogram` | raw samples | `.bins()`, `.range()`, `.y_range()`, `.density()`, `.overlay(curve, name)` for the expected distribution, `.name()`, `.x_label()`, `.y_label()` |
+| `FieldPlot::new(cols, rows, values)` | `imagesc` + `contour` | row-major, **first row at y minimum** | `.x_range()`, `.y_range()`, `.value_range()`, `.signed()`, `.contours(n)`, `.x_label()`, `.y_label()` |
 | `Colorbar::new(min, max)` | `colorbar` | — | `.signed()`, `.label()`; give it a 64 px wide column beside the plot it explains |
 | `Plot3d::new().surface(cols, rows, z, x, y)` | `surf`, `mesh` | heights, row-major, first row at y minimum | `.shading(Faceted \| Smooth \| Mesh)` |
 | `Plot3d::new().curve(points, color)` | `plot3` | `[x, y, z]` | no colour: the heat ramp runs along the curve, so direction shows |
@@ -29,7 +29,7 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `nice_ticks`, `format_tick` | — | — | the tick rule, for custom painting |
 
 `Plot3d` takes `.view(azimuth, elevation)` in degrees, in MATLAB's convention (default
-−37.5°, 30°; top is `(0, 90)`), `.labels(x, y, z)` and `.x_range()`, `.y_range()`,
+−37.5°, 30°; top is `(0, 90)`; `.azimuth()` turns it alone), `.labels(x, y, z)` and `.x_range()`, `.y_range()`,
 `.z_range()`; a fixed z range also fixes a surface's colour scale. It is orthographic, draws
 its back walls with the grid, and labels the two front floor edges and the leftmost upright.
 

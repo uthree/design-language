@@ -2,8 +2,8 @@
 
 A design language and component kit for [gpui](https://crates.io/crates/gpui) creator tools with
 built-in AI agents: theme tokens in three candidate directions (Glass, adopted; Studio and Mono
-as alternatives), basic controls, creator controls (knobs, meters, transport), and the agent side panel, transcript and
-composer. It ships as a Rust crate and as an agent Skill for Claude Code and Codex.
+as alternatives), basic controls, creator controls (knobs, meters, transport), audio visualisations, 2-D and 3-D
+plots, welcome-screen backdrops, and the agent side panel, transcript and composer. It ships as a Rust crate and as an agent Skill for Claude Code and Codex.
 
 ![Glass light](doc/images/arrange-glass-light.png)
 

@@ -135,8 +135,9 @@ front of another, each lit from above with a sheen on its slopes and a soft shad
 behind. **Bloom** melts great clouds of colour into one another, stirred by slow eddies under a
 frosted sheen. **Caustics** plays light through moving water over a deep floor, the colours
 bending apart into thin fringes, with shafts of light from the surface. Every scene takes its
-colours from the theme — background, agent gradient and accent — as light over the dark in a dark
-appearance and as washes of colour in a light one.
+colours from the theme — background, agent gradient and accent — or from the palette picked
+below the card, as light over the dark in a dark appearance and as washes of colour in a light
+one.
 
 Each is a WGSL shader on the crate's wgpu device, shaded off screen and read back like the metal.
 Each answers the window: moving or resizing it leaves the scene behind for a moment, nearer
