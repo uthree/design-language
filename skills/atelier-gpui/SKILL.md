@@ -23,8 +23,8 @@ Read this page fully, then the reference for the part you touch.
 Before writing code, look at the crate itself (`src/` of the `atelier` dependency, or this
 repository) and at the examples that compose it into whole screens: `showcase` (a DAW and the
 component catalogue), `agent_desktop` (a coding-agent app), `instrument_lab` (physical-model
-views), `visualizer` (analysers) and `auris_screens` (Auris's project chooser and AI compose
-window).
+views), `visualizer` (analysers), `node_editor` (a ComfyUI-style node graph) and
+`auris_screens` (Auris's project chooser and AI compose window).
 Do not invent a builder method because its name seems plausible: check the source.
 
 ## Non-negotiables
