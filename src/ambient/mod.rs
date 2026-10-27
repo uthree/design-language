@@ -357,3 +357,69 @@ fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
         a[2] + (b[2] - a[2]) * t,
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    /// Films each scene answering a pointer that sweeps across it and a window that is moved,
+    /// writing raw BGRA frames (with a ring for the pointer) to `$ATELIER_AMBIENT_FILM`.
+    #[test]
+    #[ignore = "needs a GPU; run with --release --ignored"]
+    fn film() {
+        let Ok(dir) = std::env::var("ATELIER_AMBIENT_FILM") else {
+            return;
+        };
+        let (width, height, fps, seconds) = (960u32, 540u32, 30., 8.);
+        let size = [width as f32, height as f32];
+        let theme = Theme::new(Direction::Glass, Appearance::Dark);
+        for ambience in Ambience::ALL {
+            let mut sim = sim::Sim::default();
+            let start = Instant::now();
+            for n in 0..(seconds * fps) as usize {
+                let t = n as f32 / fps;
+                // The pointer sweeps across from 0.5 s to 3.5 s, then leaves; the window is
+                // dragged 160 pixels right and 60 up at 4.5 s.
+                let pointer = (0.5..3.5).contains(&t).then(|| {
+                    let u = (t - 0.5) / 3.;
+                    [
+                        width as f32 * (0.15 + 0.7 * u),
+                        height as f32 * (0.5 + 0.25 * (u * std::f32::consts::TAU).sin()),
+                    ]
+                });
+                let drag = ((t - 4.5) / 0.35).clamp(0., 1.);
+                let origin = [160. * drag, -60. * drag];
+                sim.step(sim::Input {
+                    now: start + Duration::from_secs_f32(t),
+                    origin,
+                    size,
+                    pointer,
+                });
+                let phase = REST + t / ambience.period().as_secs_f32();
+                let frame = Frame {
+                    width,
+                    height,
+                    time: phase * std::f32::consts::TAU,
+                    palette: Palette::new(&theme),
+                    response: sim.response(size),
+                };
+                let mut pixels = gpu::render(ambience, &frame).expect("a GPU");
+                if let Some([x, y]) = pointer {
+                    for py in (y as i32 - 12).max(0)..(y as i32 + 12).min(height as i32) {
+                        for px in (x as i32 - 12).max(0)..(x as i32 + 12).min(width as i32) {
+                            let d = ((px as f32 - x).powi(2) + (py as f32 - y).powi(2)).sqrt();
+                            let ring = (1.5 - (d - 9.).abs()).clamp(0., 1.);
+                            let i = (py as u32 * width + px as u32) as usize * 4;
+                            for c in &mut pixels[i..i + 3] {
+                                *c = (*c as f32 + (255. - *c as f32) * ring * 0.9) as u8;
+                            }
+                        }
+                    }
+                }
+                std::fs::write(format!("{dir}/{ambience:?}-{n:04}.bgra"), pixels).unwrap();
+            }
+        }
+    }
+}
