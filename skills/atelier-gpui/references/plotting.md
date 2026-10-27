@@ -25,12 +25,21 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `Plot3d::new().surface(cols, rows, z, x, y)` | `surf`, `mesh` | heights, row-major, first row at y minimum | `.shading(Faceted \| Smooth \| Mesh)` |
 | `Plot3d::new().curve(points, color)` | `plot3` | `[x, y, z]` | no colour: the heat ramp runs along the curve, so direction shows |
 | `Plot3d::new().scatter(points, color)` | `scatter3` | `[x, y, z]` | one call per class, in series colours |
+| `Plot3d::new().particles(points, color)` | — | `[x, y, z]` | a glowing swarm or flow, thousands of points; the colour's opacity sets the brightness |
 | `nice_ticks`, `format_tick` | — | — | the tick rule, for custom painting |
 
 `Plot3d` takes `.view(azimuth, elevation)` in degrees, in MATLAB's convention (default
 −37.5°, 30°; top is `(0, 90)`), `.labels(x, y, z)` and `.x_range()`, `.y_range()`,
 `.z_range()`; a fixed z range also fixes a surface's colour scale. It is orthographic, draws
 its back walls with the grid, and labels the two front floor edges and the leftmost upright.
+
+Where there is a GPU, `Plot3d` shades its surface, curves and points off screen with wgpu at
+the display's resolution, four samples a pixel and a depth buffer, and gpui draws the result as
+one image between the walls and the labels: the surface is lit per pixel, its edges stay one
+width at any angle, curves and points hide behind it, markers are small lit beads, and
+particles glow (adding up on dark themes). Without one, or with `ATELIER_GPU=off`, it draws
+the same plot with gpui paths: flat facets, painter's order, particles as faint dots. Nothing
+in the API changes between the two, so do not branch on it.
 
 ## Axes
 

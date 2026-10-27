@@ -9,13 +9,20 @@
 //!
 //! The 3-D view is orthographic and is turned with [`Plot3d::view`], in MATLAB's convention:
 //! azimuth about the vertical axis from the −y side, elevation above the x–y plane, in degrees.
+//! Its surface, curves and points are shaded on the GPU where there is one (see `gpu.rs`), and
+//! drawn with gpui paths where there isn't.
 
 use std::f32::consts::PI;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use gpui::{
-    App, Bounds, ContentMask, Font, Hsla, IntoElement, PathBuilder, Pixels, Point, RenderOnce,
-    SharedString, Styled, TextRun, Window, canvas, fill, point, px, size,
+    App, Bounds, ContentMask, Font, Hsla, IntoElement, PathBuilder, Pixels, Point, RenderImage,
+    RenderOnce, Rgba, SharedString, Styled, TextRun, Window, canvas, fill, point, px, size,
 };
+use image::ImageBuffer;
+
+mod gpu;
 
 use crate::theme::{ActiveTheme, Theme, mix};
 use crate::viz::{heat_color, polyline};
@@ -1224,15 +1231,28 @@ struct Surface {
 struct Curve {
     points: Vec<[f32; 3]>,
     color: Option<Hsla>,
-    markers: bool,
+    mark: Mark,
 }
+
+/// How a [`Curve`]'s points are drawn.
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    Line,
+    Markers,
+    Particles,
+}
+
+/// Marker and particle radii, in pixels.
+const MARKER_RADIUS: f32 = 2.5;
+const PARTICLE_RADIUS: f32 = 1.6;
 
 /// How much shorter the vertical axis is than the horizontal ones, as in MATLAB's default
 /// 3-D box.
 const Z_ASPECT: f32 = 0.75;
 
 /// A 3-D view on a box with gridded back walls: a surface over an x–y grid (`surf`, `mesh`),
-/// curves (`plot3`) and point clouds (`scatter3`), seen from a chosen azimuth and elevation.
+/// curves (`plot3`), point clouds (`scatter3`) and glowing particles, seen from a chosen
+/// azimuth and elevation.
 #[derive(IntoElement)]
 pub struct Plot3d {
     surface: Option<Surface>,
@@ -1284,7 +1304,7 @@ impl Plot3d {
         self.curves.push(Curve {
             points,
             color,
-            markers: false,
+            mark: Mark::Line,
         });
         self
     }
@@ -1294,7 +1314,20 @@ impl Plot3d {
         self.curves.push(Curve {
             points,
             color,
-            markers: true,
+            mark: Mark::Markers,
+        });
+        self
+    }
+
+    /// A small glowing particle at each of `points`, for a swarm or a flow: thousands of them
+    /// stay cheap on the GPU, where they glow and, on dark themes, add up where they crowd.
+    /// Without a colour they run along the heat ramp like [`Plot3d::scatter`]; the colour's
+    /// opacity sets how bright each one is. Without a GPU they are small faint dots.
+    pub fn particles(mut self, points: Vec<[f32; 3]>, color: Option<Hsla>) -> Self {
+        self.curves.push(Curve {
+            points,
+            color,
+            mark: Mark::Particles,
         });
         self
     }
@@ -1454,6 +1487,253 @@ fn segment(window: &mut Window, a: Point<Pixels>, b: Point<Pixels>, width: Pixel
     }
 }
 
+/// What a [`Plot3d`] shows inside its box.
+struct Contents<'a> {
+    theme: &'a Theme,
+    camera: &'a Camera,
+    surface: Option<&'a Surface>,
+    /// The range of heights the surface's colours span.
+    heights: (f32, f32),
+    shading: Shading,
+    curves: &'a [Curve],
+}
+
+fn rgba(color: Hsla) -> [f32; 4] {
+    let Rgba { r, g, b, a } = color.into();
+    [r, g, b, a]
+}
+
+/// The light on a surface, in the box: above, to the front left.
+const LIGHT: [f32; 3] = [-0.4, -0.6, 0.7];
+
+/// Shade `contents` on the GPU and paint them as one image over `bounds`, or return false if
+/// the GPU couldn't.
+fn paint_on_gpu(
+    contents: &Contents,
+    bounds: Bounds<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
+    let density = window.scale_factor();
+    let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+    let (width, height) = ((w * density).ceil() as u32, (h * density).ceil() as u32);
+    if width == 0 || height == 0 || !gpu::fits(width, height) {
+        return false;
+    }
+    let frame = gpu_frame(contents, bounds, density, width, height);
+    let mut hasher = std::hash::DefaultHasher::new();
+    let words = frame
+        .params
+        .iter()
+        .chain(&frame.segments)
+        .chain(&frame.points);
+    let words = words.chain(frame.surface.iter().flat_map(|(vertices, _)| vertices));
+    for word in words {
+        word.to_bits().hash(&mut hasher);
+    }
+    for draw in &frame.draws {
+        let (kind, range) = match draw {
+            gpu::Draw::Curve(range) => (0, range),
+            gpu::Draw::Markers(range) => (1, range),
+            gpu::Draw::Particles(range) => (2, range),
+        };
+        (kind, range.start, range.end).hash(&mut hasher);
+    }
+    (width, height, frame.additive).hash(&mut hasher);
+    let image = crate::gpu::Frames::get(hasher.finish(), window, cx, || {
+        let pixels = gpu::render(&frame)?;
+        let buffer = ImageBuffer::from_raw(width, height, pixels)?;
+        Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+    });
+    let Some(image) = image else {
+        return false;
+    };
+    window
+        .paint_image(bounds, Default::default(), image, 0, false)
+        .is_ok()
+}
+
+/// The GPU's frame for `contents` in `bounds`, `width` × `height` device pixels.
+fn gpu_frame(
+    contents: &Contents,
+    bounds: Bounds<Pixels>,
+    density: f32,
+    width: u32,
+    height: u32,
+) -> gpu::Frame {
+    let Contents {
+        theme,
+        camera,
+        surface,
+        heights,
+        shading,
+        curves,
+    } = *contents;
+    let colors = &theme.colors;
+    let centre = camera.center - bounds.origin;
+    let mut params = [0f32; gpu::PARAMS_LEN];
+    params[..16].copy_from_slice(&[
+        camera.cos_a,
+        camera.sin_a,
+        camera.cos_e,
+        camera.sin_e,
+        camera.scale,
+        camera.offset.0,
+        camera.offset.1,
+        density,
+        f32::from(centre.x),
+        f32::from(centre.y),
+        f32::from(bounds.size.width),
+        f32::from(bounds.size.height),
+        LIGHT[0],
+        LIGHT[1],
+        LIGHT[2],
+        match shading {
+            Shading::Faceted => 0.,
+            Shading::Smooth => 1.,
+            Shading::Mesh => 2.,
+        },
+    ]);
+    params[16..20].copy_from_slice(&rgba(colors.sunken.opacity(0.6)));
+    params[20..].copy_from_slice(&rgba(colors.sunken));
+
+    let surface = surface
+        .filter(|surface| {
+            surface.columns >= 2
+                && surface.rows >= 2
+                && surface.values.len() >= surface.columns * surface.rows
+        })
+        .map(|surface| {
+            let (columns, rows) = (surface.columns, surface.rows);
+            let at = |column: usize, row: usize| {
+                let x = surface.x.0
+                    + (surface.x.1 - surface.x.0) * column as f32 / (columns - 1) as f32;
+                let y = surface.y.0 + (surface.y.1 - surface.y.0) * row as f32 / (rows - 1) as f32;
+                camera.normalize([x, y, surface.values[row * columns + column]])
+            };
+            let grid: Vec<[f32; 3]> = (0..rows)
+                .flat_map(|row| (0..columns).map(move |column| (column, row)))
+                .map(|(column, row)| at(column, row))
+                .collect();
+            let point = |column: usize, row: usize| grid[row * columns + column];
+            let mut vertices = Vec::with_capacity(columns * rows * gpu::SURFACE_VERTEX);
+            for row in 0..rows {
+                for column in 0..columns {
+                    // The normal from the neighbours on either side, or the one side at the rim.
+                    let across = difference(
+                        point((column + 1).min(columns - 1), row),
+                        point(column.saturating_sub(1), row),
+                    );
+                    let along = difference(
+                        point(column, (row + 1).min(rows - 1)),
+                        point(column, row.saturating_sub(1)),
+                    );
+                    let normal = cross(across, along);
+                    let value = surface.values[row * columns + column];
+                    let level = (value - heights.0) / (heights.1 - heights.0);
+                    vertices.extend(point(column, row));
+                    vertices.extend(normal);
+                    vertices.extend(rgba(field_color(theme, level, false)));
+                    vertices.extend([column as f32, row as f32]);
+                }
+            }
+            let mut indices = Vec::with_capacity((columns - 1) * (rows - 1) * 6);
+            for row in 0..rows - 1 {
+                for column in 0..columns - 1 {
+                    let corner = (row * columns + column) as u32;
+                    let (right, up) = (corner + 1, corner + columns as u32);
+                    indices.extend([corner, right, up + 1, corner, up + 1, up]);
+                }
+            }
+            (vertices, indices)
+        });
+
+    let mut segments = Vec::new();
+    let mut points = Vec::new();
+    let mut draws = Vec::new();
+    for curve in curves {
+        let count = curve.points.len();
+        let at: Vec<[f32; 3]> = curve
+            .points
+            .iter()
+            .map(|at| camera.normalize(*at))
+            .collect();
+        match curve.mark {
+            Mark::Line => {
+                // Without a colour, the heat ramp from start to end, smoothly along it.
+                let width = if curve.color.is_some() { 1.5 } else { 1.25 };
+                let color_at = |index: usize| {
+                    rgba(curve.color.unwrap_or_else(|| {
+                        heat_color(theme, 0.2 + 0.8 * index as f32 / (count.max(2) - 1) as f32)
+                    }))
+                };
+                let start = (segments.len() / gpu::SEGMENT) as u32;
+                for (index, pair) in at.windows(2).enumerate() {
+                    segments.extend(pair[0]);
+                    segments.push(width);
+                    segments.extend(pair[1]);
+                    segments.push(0.);
+                    segments.extend(color_at(index));
+                    segments.extend(color_at(index + 1));
+                }
+                draws.push(gpu::Draw::Curve(
+                    start..(segments.len() / gpu::SEGMENT) as u32,
+                ));
+            }
+            Mark::Markers | Mark::Particles => {
+                let (radius, opacity) = match curve.mark {
+                    Mark::Markers => (MARKER_RADIUS, 0.85),
+                    _ => (PARTICLE_RADIUS, 0.3),
+                };
+                // Farthest first, so the nearer ones blend over them.
+                let mut order: Vec<usize> = (0..count).collect();
+                if curve.mark == Mark::Markers {
+                    order.sort_by(|a, b| camera.depth(at[*b]).total_cmp(&camera.depth(at[*a])));
+                }
+                let start = (points.len() / gpu::POINT) as u32;
+                for index in order {
+                    let color = curve.color.unwrap_or_else(|| {
+                        heat_color(
+                            theme,
+                            0.25 + 0.75 * index as f32 / (count.max(2) - 1) as f32,
+                        )
+                    });
+                    points.extend(at[index]);
+                    points.push(radius);
+                    points.extend(rgba(color.opacity(color.a * opacity)));
+                }
+                let range = start..(points.len() / gpu::POINT) as u32;
+                draws.push(match curve.mark {
+                    Mark::Markers => gpu::Draw::Markers(range),
+                    _ => gpu::Draw::Particles(range),
+                });
+            }
+        }
+    }
+    gpu::Frame {
+        width,
+        height,
+        params,
+        surface,
+        segments,
+        points,
+        draws,
+        additive: theme.appearance.is_dark(),
+    }
+}
+
+fn difference(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
 impl RenderOnce for Plot3d {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -1589,142 +1869,170 @@ impl RenderOnce for Plot3d {
                     line3(window, a, b, colors.grid);
                 }
 
-                if let Some(surface) = &surface
-                    && surface.columns >= 2
-                    && surface.rows >= 2
-                    && surface.values.len() >= surface.columns * surface.rows
-                {
-                    let (columns, rows) = (surface.columns, surface.rows);
-                    let grid: Vec<[f32; 3]> = (0..rows)
-                        .flat_map(|row| (0..columns).map(move |column| (column, row)))
-                        .map(|(column, row)| {
-                            let x = surface.x.0
-                                + (surface.x.1 - surface.x.0) * column as f32
-                                    / (columns - 1) as f32;
-                            let y = surface.y.0
-                                + (surface.y.1 - surface.y.0) * row as f32 / (rows - 1) as f32;
-                            camera.normalize([x, y, surface.values[row * columns + column]])
-                        })
-                        .collect();
-                    let mut cells: Vec<(f32, usize)> = (0..rows - 1)
-                        .flat_map(|row| (0..columns - 1).map(move |column| row * columns + column))
-                        .map(|index| {
+                let contents = Contents {
+                    theme: &theme,
+                    camera: &camera,
+                    surface: surface.as_ref(),
+                    heights,
+                    shading,
+                    curves: &curves,
+                };
+                if !(gpu::available() && paint_on_gpu(&contents, bounds, window, cx)) {
+                    if let Some(surface) = &surface
+                        && surface.columns >= 2
+                        && surface.rows >= 2
+                        && surface.values.len() >= surface.columns * surface.rows
+                    {
+                        let (columns, rows) = (surface.columns, surface.rows);
+                        let grid: Vec<[f32; 3]> = (0..rows)
+                            .flat_map(|row| (0..columns).map(move |column| (column, row)))
+                            .map(|(column, row)| {
+                                let x = surface.x.0
+                                    + (surface.x.1 - surface.x.0) * column as f32
+                                        / (columns - 1) as f32;
+                                let y = surface.y.0
+                                    + (surface.y.1 - surface.y.0) * row as f32 / (rows - 1) as f32;
+                                camera.normalize([x, y, surface.values[row * columns + column]])
+                            })
+                            .collect();
+                        let mut cells: Vec<(f32, usize)> = (0..rows - 1)
+                            .flat_map(|row| {
+                                (0..columns - 1).map(move |column| row * columns + column)
+                            })
+                            .map(|index| {
+                                let corners =
+                                    [index, index + 1, index + columns + 1, index + columns];
+                                let depth = corners
+                                    .iter()
+                                    .map(|corner| camera.depth(grid[*corner]))
+                                    .sum::<f32>();
+                                (depth, index)
+                            })
+                            .collect();
+                        // Painter's order: farthest first.
+                        cells.sort_by(|a, b| b.0.total_cmp(&a.0));
+                        let light = {
+                            let (x, y, z) = (-0.4f32, -0.6f32, 0.7f32);
+                            let length = (x * x + y * y + z * z).sqrt();
+                            [x / length, y / length, z / length]
+                        };
+                        let edge = colors.sunken.opacity(0.6);
+                        for (_, index) in cells {
                             let corners = [index, index + 1, index + columns + 1, index + columns];
-                            let depth = corners
+                            let at = corners.map(|corner| grid[corner]);
+                            let height = corners
                                 .iter()
-                                .map(|corner| camera.depth(grid[*corner]))
-                                .sum::<f32>();
-                            (depth, index)
-                        })
-                        .collect();
-                    // Painter's order: farthest first.
-                    cells.sort_by(|a, b| b.0.total_cmp(&a.0));
-                    let light = {
-                        let (x, y, z) = (-0.4f32, -0.6f32, 0.7f32);
-                        let length = (x * x + y * y + z * z).sqrt();
-                        [x / length, y / length, z / length]
-                    };
-                    let edge = colors.sunken.opacity(0.6);
-                    for (_, index) in cells {
-                        let corners = [index, index + 1, index + columns + 1, index + columns];
-                        let at = corners.map(|corner| grid[corner]);
-                        let height = corners
-                            .iter()
-                            .map(|corner| surface.values[*corner])
-                            .sum::<f32>()
-                            / 4.;
-                        let level = (height - heights.0) / (heights.1 - heights.0);
-                        let a = [
-                            at[1][0] - at[0][0],
-                            at[1][1] - at[0][1],
-                            at[1][2] - at[0][2],
-                        ];
-                        let b = [
-                            at[3][0] - at[0][0],
-                            at[3][1] - at[0][1],
-                            at[3][2] - at[0][2],
-                        ];
-                        let normal = [
-                            a[1] * b[2] - a[2] * b[1],
-                            a[2] * b[0] - a[0] * b[2],
-                            a[0] * b[1] - a[1] * b[0],
-                        ];
-                        let length = (normal.iter().map(|n| n * n).sum::<f32>()).sqrt().max(1e-6);
-                        let lambert =
-                            (normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2])
+                                .map(|corner| surface.values[*corner])
+                                .sum::<f32>()
+                                / 4.;
+                            let level = (height - heights.0) / (heights.1 - heights.0);
+                            let a = [
+                                at[1][0] - at[0][0],
+                                at[1][1] - at[0][1],
+                                at[1][2] - at[0][2],
+                            ];
+                            let b = [
+                                at[3][0] - at[0][0],
+                                at[3][1] - at[0][1],
+                                at[3][2] - at[0][2],
+                            ];
+                            let normal = [
+                                a[1] * b[2] - a[2] * b[1],
+                                a[2] * b[0] - a[0] * b[2],
+                                a[0] * b[1] - a[1] * b[0],
+                            ];
+                            let length =
+                                (normal.iter().map(|n| n * n).sum::<f32>()).sqrt().max(1e-6);
+                            let lambert = (normal[0] * light[0]
+                                + normal[1] * light[1]
+                                + normal[2] * light[2])
                                 .abs()
                                 / length;
-                        let color = mix(
-                            field_color(&theme, level, false),
-                            gpui::black(),
-                            (1. - lambert) * 0.35,
-                        );
-                        let screen = at.map(|corner| camera.screen(corner).0);
-                        let mut builder = PathBuilder::fill();
-                        builder.move_to(screen[0]);
-                        for corner in &screen[1..] {
-                            builder.line_to(*corner);
-                        }
-                        builder.close();
-                        let face = match shading {
-                            Shading::Mesh => colors.sunken,
-                            _ => color,
-                        };
-                        if let Ok(path) = builder.build() {
-                            window.paint_path(path, face);
-                        }
-                        let outline = match shading {
-                            Shading::Faceted => Some((edge, px(0.75))),
-                            Shading::Mesh => Some((field_color(&theme, level, false), px(1.))),
-                            // A hairline in the face colour hides seams between facets.
-                            Shading::Smooth => Some((color, px(0.6))),
-                        };
-                        if let Some((color, width)) = outline {
-                            let mut ring = screen.to_vec();
-                            ring.push(screen[0]);
-                            if let Some(path) = polyline(&ring, width) {
-                                window.paint_path(path, color);
+                            let color = mix(
+                                field_color(&theme, level, false),
+                                gpui::black(),
+                                (1. - lambert) * 0.35,
+                            );
+                            let screen = at.map(|corner| camera.screen(corner).0);
+                            let mut builder = PathBuilder::fill();
+                            builder.move_to(screen[0]);
+                            for corner in &screen[1..] {
+                                builder.line_to(*corner);
+                            }
+                            builder.close();
+                            let face = match shading {
+                                Shading::Mesh => colors.sunken,
+                                _ => color,
+                            };
+                            if let Ok(path) = builder.build() {
+                                window.paint_path(path, face);
+                            }
+                            let outline = match shading {
+                                Shading::Faceted => Some((edge, px(0.75))),
+                                Shading::Mesh => Some((field_color(&theme, level, false), px(1.))),
+                                // A hairline in the face colour hides seams between facets.
+                                Shading::Smooth => Some((color, px(0.6))),
+                            };
+                            if let Some((color, width)) = outline {
+                                let mut ring = screen.to_vec();
+                                ring.push(screen[0]);
+                                if let Some(path) = polyline(&ring, width) {
+                                    window.paint_path(path, color);
+                                }
                             }
                         }
                     }
-                }
 
-                for curve in &curves {
-                    let points: Vec<_> = curve
-                        .points
-                        .iter()
-                        .map(|at| camera.screen(camera.normalize(*at)))
-                        .collect();
-                    let count = points.len().max(2);
-                    if curve.markers {
-                        let mut order: Vec<usize> = (0..points.len()).collect();
-                        order.sort_by(|a, b| points[*b].1.total_cmp(&points[*a].1));
-                        for index in order {
-                            let color = curve.color.unwrap_or_else(|| {
-                                heat_color(&theme, 0.25 + 0.75 * index as f32 / (count - 1) as f32)
-                            });
-                            paint_marker(window, points[index].0, px(2.5), color.opacity(0.85));
-                        }
-                    } else if let Some(color) = curve.color {
-                        let at: Vec<_> = points.iter().map(|(at, _)| *at).collect();
-                        if let Some(path) = polyline(&at, px(1.5)) {
-                            window.paint_path(path, color);
-                        }
-                    } else {
-                        // Runs of one colour each, so a long curve is a few dozen paths.
-                        let runs = 48;
-                        let length = points.len();
-                        for run in 0..runs {
-                            let start = length * run / runs;
-                            let end = (length * (run + 1) / runs + 1).min(length);
-                            if end <= start + 1 {
-                                continue;
+                    for curve in &curves {
+                        let points: Vec<_> = curve
+                            .points
+                            .iter()
+                            .map(|at| camera.screen(camera.normalize(*at)))
+                            .collect();
+                        let count = points.len().max(2);
+                        if curve.mark != Mark::Line {
+                            let (radius, opacity) = match curve.mark {
+                                Mark::Particles => (px(1.5), 0.55),
+                                _ => (px(MARKER_RADIUS), 0.85),
+                            };
+                            let mut order: Vec<usize> = (0..points.len()).collect();
+                            order.sort_by(|a, b| points[*b].1.total_cmp(&points[*a].1));
+                            for index in order {
+                                let color = curve.color.unwrap_or_else(|| {
+                                    heat_color(
+                                        &theme,
+                                        0.25 + 0.75 * index as f32 / (count - 1) as f32,
+                                    )
+                                });
+                                paint_marker(
+                                    window,
+                                    points[index].0,
+                                    radius,
+                                    color.opacity(color.a * opacity),
+                                );
                             }
-                            let at: Vec<_> = points[start..end].iter().map(|(at, _)| *at).collect();
-                            let color =
-                                heat_color(&theme, 0.2 + 0.8 * run as f32 / (runs - 1) as f32);
-                            if let Some(path) = polyline(&at, px(1.25)) {
+                        } else if let Some(color) = curve.color {
+                            let at: Vec<_> = points.iter().map(|(at, _)| *at).collect();
+                            if let Some(path) = polyline(&at, px(1.5)) {
                                 window.paint_path(path, color);
+                            }
+                        } else {
+                            // Runs of one colour each, so a long curve is a few dozen paths.
+                            let runs = 48;
+                            let length = points.len();
+                            for run in 0..runs {
+                                let start = length * run / runs;
+                                let end = (length * (run + 1) / runs + 1).min(length);
+                                if end <= start + 1 {
+                                    continue;
+                                }
+                                let at: Vec<_> =
+                                    points[start..end].iter().map(|(at, _)| *at).collect();
+                                let color =
+                                    heat_color(&theme, 0.2 + 0.8 * run as f32 / (runs - 1) as f32);
+                                if let Some(path) = polyline(&at, px(1.25)) {
+                                    window.paint_path(path, color);
+                                }
                             }
                         }
                     }

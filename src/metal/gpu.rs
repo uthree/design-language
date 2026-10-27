@@ -1,6 +1,5 @@
-//! The metal on the GPU. gpui can't take a custom shader, so the backdrop has its own small
-//! wgpu device beside gpui's renderer: each frame is shaded into an off-screen texture by
-//! `liquid.wgsl`, read back, and handed to gpui as an image like any other.
+//! The metal on the GPU: each frame is shaded into an off-screen texture by `liquid.wgsl` on the
+//! crate's own wgpu device ([`crate::gpu`]), read back, and handed to gpui as an image.
 //!
 //! Only a hardware adapter is used. Without one, or if anything fails, [`render`] returns `None`
 //! and the backdrop falls back to the CPU.
@@ -13,12 +12,8 @@ use super::{DROPS, Studio, drop_shadow, relief};
 /// Turns of the ripples per cycle of the backdrop.
 const RIPPLE_TURNS: f32 = 6.;
 
-/// Rows of the read-back buffer start on multiples of this many bytes.
-const ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-
 struct Gpu {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    shared: &'static crate::gpu::Gpu,
     pipeline: wgpu::RenderPipeline,
     params: wgpu::Buffer,
     bindings: wgpu::BindGroup,
@@ -35,7 +30,7 @@ struct Target {
 
 fn gpu() -> Option<&'static Gpu> {
     static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
-    GPU.get_or_init(|| pollster::block_on(Gpu::new())).as_ref()
+    GPU.get_or_init(Gpu::new).as_ref()
 }
 
 /// Whether frames can be shaded on the GPU.
@@ -62,34 +57,13 @@ pub(super) fn render(
 }
 
 impl Gpu {
-    async fn new() -> Option<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
-                ..Default::default()
-            })
-            .await
-            .ok()?;
+    fn new() -> Option<Self> {
+        let shared = crate::gpu::gpu()?;
         // A software rasteriser is slower than the CPU path, which is tuned for it.
-        if adapter.get_info().device_type == wgpu::DeviceType::Cpu
-            && std::env::var_os("ATELIER_METAL_SOFTWARE_GPU").is_none()
-        {
+        if shared.software && std::env::var_os("ATELIER_METAL_SOFTWARE_GPU").is_none() {
             return None;
         }
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("atelier metal"),
-                required_limits: wgpu::Limits::downlevel_defaults()
-                    .using_resolution(adapter.limits()),
-                ..Default::default()
-            })
-            .await
-            .ok()?;
-
+        let device = &shared.device;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("liquid"),
             source: wgpu::ShaderSource::Wgsl(include_str!("liquid.wgsl").into()),
@@ -126,7 +100,7 @@ impl Gpu {
                 module: &shader,
                 entry_point: Some("fs"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::TextureFormat::Bgra8Unorm.into())],
+                targets: &[Some(crate::gpu::FORMAT.into())],
             }),
             primitive: Default::default(),
             depth_stencil: None,
@@ -149,8 +123,7 @@ impl Gpu {
             }],
         });
         Some(Self {
-            device,
-            queue,
+            shared,
             pipeline,
             params,
             bindings,
@@ -159,11 +132,11 @@ impl Gpu {
     }
 
     fn render(&self, width: u32, height: u32, params: &[f32]) -> Option<Vec<u8>> {
-        let largest = self.device.limits().max_texture_dimension_2d;
-        if width > largest || height > largest {
+        let shared = self.shared;
+        if !shared.fits(width, height) {
             return None;
         }
-        self.queue.write_buffer(
+        shared.queue.write_buffer(
             &self.params,
             0,
             &params
@@ -178,7 +151,7 @@ impl Gpu {
         }
         let target = slot.as_ref()?;
         let view = target.texture.create_view(&Default::default());
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = shared.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("liquid"),
@@ -196,75 +169,27 @@ impl Gpu {
             pass.set_bind_group(0, &self.bindings, &[]);
             pass.draw(0..3, 0..1);
         }
-        let row = padded_row(width);
-        encoder.copy_texture_to_buffer(
-            target.texture.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &target.readback,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(row),
-                    rows_per_image: Some(height),
-                },
-            },
-            extent(width, height),
-        );
-        self.queue.submit([encoder.finish()]);
-
-        let slice = target.readback.slice(..);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            sender.send(result).ok();
-        });
-        self.device.poll(wgpu::PollType::Wait).ok()?;
-        receiver.recv().ok()?.ok()?;
-        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
-        {
-            let mapped = slice.get_mapped_range();
-            for line in mapped.chunks(row as usize) {
-                pixels.extend_from_slice(&line[..(width * 4) as usize]);
-            }
-        }
-        target.readback.unmap();
-        Some(pixels)
+        shared.read_back(encoder, &target.texture, &target.readback)
     }
 
     fn target(&self, width: u32, height: u32) -> Target {
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        let texture = self.shared.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("liquid frame"),
-            size: extent(width, height),
+            size: crate::gpu::extent(width, height),
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8Unorm,
+            format: crate::gpu::FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
-        });
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("liquid readback"),
-            size: (padded_row(width) * height) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
         });
         Target {
             width,
             height,
             texture,
-            readback,
+            readback: self.shared.readback(width, height),
         }
     }
-}
-
-fn extent(width: u32, height: u32) -> wgpu::Extent3d {
-    wgpu::Extent3d {
-        width,
-        height,
-        depth_or_array_layers: 1,
-    }
-}
-
-fn padded_row(width: u32) -> u32 {
-    (width * 4).div_ceil(ROW_ALIGNMENT) * ROW_ALIGNMENT
 }
 
 /// The shader's `Params`, in 4-byte words.

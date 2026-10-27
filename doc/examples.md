@@ -83,7 +83,11 @@ molecular speeds until it matches the Maxwell–Boltzmann density, three Van der
 winding onto their limit cycle, a square wave's Fourier coefficients (stems) and its partial sum
 travelling (the term count is switchable), and a turning dipole's potential with equipotentials,
 a colour bar and cuts through it. Figure 2 is 3-D: a square drum head with five modes ringing,
-the Lorenz attractor with a comet tail running round it, and three point clusters drifting.
+the Lorenz attractor with a comet tail running round it and a swarm of 2,400 glowing particles
+that leaves the comet's head as a tight ball every twelve seconds and spreads over the whole
+attractor, and three point clusters drifting. With a GPU the 3-D plots are shaded with wgpu
+(per-pixel lighting, depth, four samples a pixel); `ATELIER_GPU=off` shows the gpui-path
+fallback.
 Drag any of them to turn all three; the inspector has the standard views, the shading
 (faceted, smooth, mesh) and a turntable.
 These two screenshots were captured on Linux under Xvfb.
