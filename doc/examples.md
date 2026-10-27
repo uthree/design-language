@@ -50,6 +50,22 @@ correlation, and a two-channel oscilloscope, driven by a synthesised programme.
 
 ![Visualizer](images/visualizer.png)
 
+## node_editor — a node-based workflow editor
+
+```bash
+cargo run --example node_editor
+```
+
+A ComfyUI-style graph for generating a pad: model loader, prompts, sampler, decoder and outputs,
+with the node library on the left and the selected node's inputs, parameters and the run queue on
+the right. Nodes drag; wires are pulled from an output onto an input of the same type (inputs of
+another type step back while a wire is held), and pulling a connected input picks its wire up
+again. Empty space or the scroll wheel pans. Run steps through the graph in dependency order,
+shows each node's state and the sampler's progress, and reuses unchanged nodes on the next run.
+Port and wire colours come from `colors.ports`, with the type also named on the port, in a tooltip
+and in the legend. The loudness node was added by the assistant: it is drawn dashed in the agent
+colour with Keep and Undo on the node, and the assistant panel holds the conversation.
+
 ## auris_screens — two Auris Studio windows redrawn
 
 ```bash

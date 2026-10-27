@@ -46,6 +46,9 @@ Accent: `accent`, `accent_hover`, `accent_text` (readable), `accent_wash`, `on_a
 Signals: `success`, `warning`, `danger`, `info`, each with `*_wash`.
 Agent: `agent`, `agent_wash`, `agent_gradient` (3 stops), `user_bubble`, `on_user_bubble`.
 Creator: `record`, `playhead`, `meter` (safe, hot, clip).
+Plots: `series` (4), `heat` (5-stop ramp), `grid`, `grid_faint`.
+Node graphs: `ports` (5), one per data type of a port and its wires; never the agent colour.
+Always label the type too (the port's name, a tooltip, a legend).
 `shadow` is used by `theme.elevation`.
 
 `theme.text_on(fill)` gives readable text on any fill, e.g. a track colour.

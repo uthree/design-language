@@ -204,6 +204,9 @@ pub struct Colors {
     pub grid: Hsla,
     /// Minor grid lines in plots.
     pub grid_faint: Hsla,
+    /// Colours for the data types of ports and wires in node graphs. None is the agent colour,
+    /// so a wire never reads as the AI's work.
+    pub ports: [Hsla; 5],
 
     /// Shadow colour; alpha is applied by [`Elevation`].
     pub shadow: Hsla,
@@ -665,6 +668,7 @@ fn colors(
     let warning = signal(seeds.warning);
     let danger = signal(seeds.danger);
     let info = signal(seeds.info);
+    let rose = signal(if dark { 0xff6fae } else { 0xc2185b });
     let wash = if dark { 0.18 } else { 0.11 };
 
     let agent = seeds.agent.map(c);
@@ -757,6 +761,17 @@ fn colors(
         },
         grid: tone.opacity(if dark { 0.12 } else { 0.14 }),
         grid_faint: tone.opacity(if dark { 0.05 } else { 0.06 }),
+        ports: [
+            match direction {
+                // Mono's accent is its agent violet, so its first port type stays neutral.
+                Direction::Mono => muted,
+                Direction::Studio | Direction::Glass => accent,
+            },
+            success,
+            warning,
+            info,
+            rose,
+        ],
         shadow: hsla(0., 0., 0., 1.),
     }
 }
@@ -1047,6 +1062,17 @@ mod tests {
             let colors = &theme.colors;
             for signal in [colors.success, colors.warning, colors.danger, colors.agent] {
                 assert!(contrast(signal, colors.surface) >= 3.0, "{}", theme.name());
+            }
+        }
+    }
+
+    #[test]
+    fn ports_stand_apart_from_the_agent() {
+        for theme in every_theme() {
+            let colors = &theme.colors;
+            for port in colors.ports {
+                assert!(contrast(port, colors.elevated) >= 3.0, "{}", theme.name());
+                assert_ne!(port, colors.agent, "{}", theme.name());
             }
         }
     }
