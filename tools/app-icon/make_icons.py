@@ -216,8 +216,17 @@ class Mark:
     name: str | None = None
 
 
+def edition(version: str | None) -> str | None:
+    """What the cell shows for an app's version: the major alone, or β before 1.0, so the icon
+    changes only at a major release."""
+    if not version:
+        return None
+    major = int(version.split(".")[0])
+    return str(major) if major >= 1 else "β"
+
+
 def mark_of(app: dict) -> Mark:
-    return Mark(app["symbol"], app.get("number"), app["element"], app.get("version"), app.get("name"))
+    return Mark(app["symbol"], app.get("number"), app["element"], edition(app.get("version")), app.get("name"))
 
 
 def draw(
@@ -305,7 +314,7 @@ def draw(
         glyph_fill = hex_of(p.glyph)
     body.append(f'<path transform="translate({gx:.2f} {baseline:.2f})" d="{path}" fill="{glyph_fill}"/>')
 
-    # The cell's readings, as a periodic table prints them: the number top left, the version
+    # The cell's readings, as a periodic table prints them: the number top left, the edition
     # top right (where a table puts the atomic weight), the full name along the bottom.
     semi = faces["SemiBold"]
     ink = f'fill="{hex_of(p.glyph)}" fill-opacity="{CORNER_OPACITY}"'
