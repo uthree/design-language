@@ -1,5 +1,6 @@
 // The liquid-metal backdrop, shaded per pixel. The same liquid and studio as the CPU fallback in
-// mod.rs, with four samples a pixel, dispersion, ripples on the surface and a second softbox.
+// mod.rs, with four samples a pixel, dispersion, ripples on the surface, the ripples the pointer
+// leaves, and a second softbox.
 //
 // Coordinates are pixels, x right and y down; directions are x right, y down, z towards the
 // viewer.
@@ -13,12 +14,20 @@ struct Params {
     shadow_scale: f32,
     shadow: f32,
     count: u32,
+    // The pointer's ripples: how many, their wavelength and the width of their band in pixels,
+    // and their height relative to the relief.
+    wave_count: u32,
+    wavelength: f32,
+    band: f32,
+    wave_height: f32,
     background: vec4f,
     behind: vec4f,
     front: vec4f,
     ramp: array<vec4f, 9>,
     // Each drop's centre and reach, in pixels.
     drops: array<vec4f, 16>,
+    // Each ripple's centre, how far it has spread, and its strength.
+    waves: array<vec4f, 8>,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -56,6 +65,27 @@ fn field(p: vec2f, offset: f32, scale: f32) -> vec3f {
         }
     }
     return result;
+}
+
+// The slope the pointer's ripples add at `p`: rings that spread from where it crossed the metal.
+fn waves(p: vec2f) -> vec2f {
+    var slope = vec2f(0.);
+    let k = 2. * PI / params.wavelength;
+    for (var i = 0u; i < params.wave_count; i++) {
+        let wave = params.waves[i];
+        let d = p - wave.xy;
+        let distance = max(length(d), 1e-3);
+        let x = distance - wave.z;
+        let u = x / params.band;
+        let envelope = exp(-u * u);
+        // Rings close to their centre are taller; they flatten as they spread.
+        let height = params.wave_height * params.relief * wave.w
+            * params.band / (params.band + wave.z);
+        let rise = height * envelope * (k * cos(k * x) - 2. * x / (params.band * params.band) * sin(k * x));
+        // Faded out at the centre, where the rings have no direction.
+        slope += rise * d / distance * ease(0., params.band, distance);
+    }
+    return slope;
 }
 
 // Hermite easing from `edge0` to `edge1`, either way round.
@@ -127,7 +157,7 @@ fn shade(p: vec2f) -> vec3f {
     let ripple = RIPPLE * params.relief * RIPPLE_FREQUENCY
         * cos(f.x * RIPPLE_FREQUENCY - params.time)
         * ease(0.02, 0.25, lift);
-    slope += f.yz * ripple;
+    slope += f.yz * ripple + waves(p) * ease(0.005, 0.12, lift);
     // Each channel bends a little differently.
     let red = look(reflect_view(normalize(vec3f(-slope * (1. + DISPERSION), 1.)))).r;
     let green = look(reflect_view(normalize(vec3f(-slope, 1.)))).g;

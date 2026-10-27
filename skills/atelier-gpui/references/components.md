@@ -100,10 +100,12 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   screen only: pools of chrome that merge, stretch and pinch off, shaded as a real reflective
   surface (darkening at the edges, a softbox glint, a rim light, the theme's coloured fringes at
   the horizon). Fill the screen with it and put the words and actions on a `Card` above it,
-  never on the metal. `.phase(t)` draws one still frame. It is shaded off screen on its own wgpu
-  device (on the CPU when there is no GPU) and read back at 30 frames a second, so keep it to the
-  welcome screen. Do
-  not use metal on controls or anywhere work happens.
+  never on the metal. It answers the pointer (drops pushed aside, ripples where it crosses the
+  metal) and the window (the liquid sloshes when the window is moved or resized); there is
+  nothing to wire up. `.phase(t)` draws one still frame and answers nothing. It is shaded off
+  screen on its own wgpu device (on the CPU when there is no GPU) and read back at 30 frames a
+  second, 60 while it answers, so keep it to the welcome screen. Do not use metal on controls or
+  anywhere work happens.
 
 ## Overlays
 

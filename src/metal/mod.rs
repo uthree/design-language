@@ -20,12 +20,17 @@
 //! four cores (release build). Either way it runs at 30 frames a second, a frame is reused until
 //! the clock moves on, and it costs nothing once the welcome screen closes.
 //!
+//! It answers the person in front of it. The pointer pushes drops aside and drags them along,
+//! leaving ripples where it crosses the metal; moving or resizing the window leaves the liquid
+//! behind for a moment and it sloshes back (see `sim.rs`). While it is answering, the GPU path
+//! renders at 60 frames a second.
+//!
 //! Put the screen's words on a card above the metal, never on it. When
-//! [`crate::Motion::enabled`] is off it stands still.
+//! [`crate::Motion::enabled`] is off it stands still and answers nothing.
 
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Bounds, ElementId, Entity, Hsla, IntoElement, Pixels, RenderImage, RenderOnce, Rgba,
@@ -34,6 +39,7 @@ use gpui::{
 use image::{Frame, ImageBuffer};
 
 mod gpu;
+mod sim;
 
 use crate::motion::looping;
 use crate::theme::{ActiveTheme, Appearance, Direction};
@@ -50,6 +56,8 @@ const CPU_DENSITY: f32 = 0.6;
 
 /// New frames per second while the metal flows.
 const FPS: f32 = 30.;
+/// New frames per second on the GPU while the metal answers the pointer or the window.
+const LIVELY_FPS: f32 = 60.;
 
 /// A welcome-screen backdrop: liquid chrome flowing slowly over the window's background. Put
 /// the screen's words on a card above it, never on the metal.
@@ -77,11 +85,13 @@ impl MetalBackdrop {
     }
 }
 
-/// The last frame rendered, kept so a redraw at the same moment reuses it.
+/// The last frame rendered, kept so a redraw at the same moment reuses it, and the liquid's
+/// response to the pointer and the window.
 #[derive(Default)]
 struct Cache {
     key: Option<Key>,
     image: Option<Arc<RenderImage>>,
+    sim: sim::Sim,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -89,6 +99,8 @@ struct Key {
     width: u32,
     height: u32,
     frame: u32,
+    /// While the liquid is answering the pointer or the window, its own clock, in frames.
+    lively: Option<u32>,
     direction: Direction,
     appearance: Appearance,
 }
@@ -100,6 +112,7 @@ impl RenderOnce for MetalBackdrop {
         let scene = Scene {
             phase: self.phase.unwrap_or(REST),
             frames,
+            interactive: self.phase.is_none() && cx.theme().motion.enabled,
             cache,
         };
         if self.phase.is_some() {
@@ -115,6 +128,8 @@ impl RenderOnce for MetalBackdrop {
 struct Scene {
     phase: f32,
     frames: f32,
+    /// Whether the liquid answers the pointer and the window: only while it flows.
+    interactive: bool,
     cache: Entity<Cache>,
 }
 
@@ -130,34 +145,75 @@ impl RenderOnce for Scene {
 
 fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
     let theme = cx.theme();
-    let background = theme.colors.background;
+    let (direction, appearance) = (theme.direction, theme.appearance);
+    let (background, metal) = (theme.colors.background, theme.colors.metal);
     window.paint_quad(fill(bounds, background));
 
     // On the GPU, one pixel per logical pixel, each from four samples; gpui's sampler scales it
     // up on dense displays. The CPU fallback shades a little over half a sample per logical pixel.
     let gpu = gpu::available();
     let density = if gpu { 1. } else { CPU_DENSITY }.min(window.scale_factor());
-    let width = (f32::from(bounds.size.width) * density).round().max(1.) as u32;
-    let height = (f32::from(bounds.size.height) * density).round().max(1.) as u32;
+    let size = [f32::from(bounds.size.width), f32::from(bounds.size.height)];
+    let width = (size[0] * density).round().max(1.) as u32;
+    let height = (size[1] * density).round().max(1.) as u32;
     let frame = ((scene.phase.rem_euclid(1.)) * scene.frames) as u32;
+    let phase = frame as f32 / scene.frames;
+
+    let orbits = drops_at(size[0], size[1], phase);
+    if scene.interactive {
+        let origin = window.bounds().origin;
+        let pointer = window
+            .is_window_hovered()
+            .then(|| window.mouse_position())
+            .filter(|pointer| bounds.contains(pointer))
+            .map(|pointer| {
+                let local = pointer - bounds.origin;
+                [f32::from(local.x), f32::from(local.y)]
+            });
+        let input = sim::Input {
+            now: Instant::now(),
+            origin: [f32::from(origin.x), f32::from(origin.y)],
+            size,
+            pointer,
+            drops: &orbits,
+        };
+        scene.cache.update(cx, |cache, _| cache.sim.step(input));
+    }
+
+    let cached = scene.cache.read(cx);
+    let lively_fps = if gpu { LIVELY_FPS } else { FPS };
     let key = Key {
         width,
         height,
         frame,
-        direction: theme.direction,
-        appearance: theme.appearance,
+        lively: cached
+            .sim
+            .moving()
+            .then(|| (cached.sim.clock() * lively_fps) as u32),
+        direction,
+        appearance,
     };
-
-    let cached = scene.cache.read(cx);
     let image = match (&cached.key, &cached.image) {
         (Some(cached_key), Some(image)) if *cached_key == key => image.clone(),
         _ => {
-            let studio = Studio::new(theme.colors.metal, background, theme.appearance);
-            let phase = frame as f32 / scene.frames;
+            let studio = Studio::new(metal, background, appearance);
+            let drops: Vec<_> = cached
+                .sim
+                .drops(&orbits)
+                .into_iter()
+                .map(|(x, y, reach)| (x * density, y * density, reach * density))
+                .collect();
+            let waves: Vec<_> = cached
+                .sim
+                .waves(size[0].min(size[1]))
+                .map(|[x, y, spread, strength]| {
+                    [x * density, y * density, spread * density, strength]
+                })
+                .collect();
             let pixels = gpu
-                .then(|| gpu::render(width, height, phase, &studio))
+                .then(|| gpu::render(width, height, phase, &drops, &waves, &studio))
                 .flatten()
-                .unwrap_or_else(|| render(width, height, phase, &studio));
+                .unwrap_or_else(|| render(width, height, &drops, &studio));
             let Some(buffer) = ImageBuffer::from_raw(width, height, pixels) else {
                 return;
             };
@@ -332,11 +388,10 @@ fn drop_shadow(unit: f32) -> (f32, f32) {
 }
 
 /// The CPU fallback, for when no GPU adapter is available: the same liquid and studio with a
-/// single sample per pixel, and without the dispersion, ripples and second softbox.
-fn render(width: u32, height: u32, phase: f32, studio: &Studio) -> Vec<u8> {
-    let (w, h) = (width as f32, height as f32);
-    let unit = w.min(h);
-    let drops = drops_at(w, h, phase);
+/// single sample per pixel, and without the dispersion, ripples and second softbox. `drops` are
+/// each drop's centre and reach in pixels.
+fn render(width: u32, height: u32, drops: &[(f32, f32, f32)], studio: &Studio) -> Vec<u8> {
+    let unit = (width as f32).min(height as f32);
     let relief = relief(unit);
     let drop_shadow = drop_shadow(unit);
 
@@ -349,7 +404,6 @@ fn render(width: u32, height: u32, phase: f32, studio: &Studio) -> Vec<u8> {
     let band = rows.div_ceil(threads);
     std::thread::scope(|scope| {
         for (chunk, out) in pixels.chunks_mut(band * width as usize * 4).enumerate() {
-            let drops = &drops;
             scope.spawn(move || {
                 let first = chunk * band;
                 let mut near = Vec::with_capacity(drops.len());
@@ -502,7 +556,7 @@ mod tests {
         let studio = studio();
         let start = std::time::Instant::now();
         for frame in 0..20 {
-            render(780, 450, frame as f32 / 20., &studio);
+            render(780, 450, &drops_at(780., 450., frame as f32 / 20.), &studio);
         }
         println!(
             "{:?} per 780 x 450 frame (a 1300 x 750 window)",
@@ -513,8 +567,8 @@ mod tests {
     #[test]
     fn a_frame_renders_and_loops() {
         let studio = studio();
-        let first = render(64, 40, 0., &studio);
-        let last = render(64, 40, 1., &studio);
+        let first = render(64, 40, &drops_at(64., 40., 0.), &studio);
+        let last = render(64, 40, &drops_at(64., 40., 1.), &studio);
         assert_eq!(first.len(), 64 * 40 * 4);
         let differing = first
             .iter()

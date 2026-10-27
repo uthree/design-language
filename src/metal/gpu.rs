@@ -7,7 +7,8 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use super::{DROPS, Studio, drop_shadow, drops_at, relief};
+use super::sim::WAVES;
+use super::{DROPS, Studio, drop_shadow, relief};
 
 /// Turns of the ripples per cycle of the backdrop.
 const RIPPLE_TURNS: f32 = 6.;
@@ -43,9 +44,21 @@ pub(super) fn available() -> bool {
 }
 
 /// One frame at `phase` of the cycle, `width` × `height` pixels, BGRA, or `None` if the GPU
-/// couldn't shade it.
-pub(super) fn render(width: u32, height: u32, phase: f32, studio: &Studio) -> Option<Vec<u8>> {
-    gpu()?.render(width, height, phase, studio)
+/// couldn't shade it. `drops` are each drop's centre and reach, and `waves` each ripple's centre,
+/// spread and strength, in pixels.
+pub(super) fn render(
+    width: u32,
+    height: u32,
+    phase: f32,
+    drops: &[(f32, f32, f32)],
+    waves: &[[f32; 4]],
+    studio: &Studio,
+) -> Option<Vec<u8>> {
+    gpu()?.render(
+        width,
+        height,
+        &params(width, height, phase, drops, waves, studio),
+    )
 }
 
 impl Gpu {
@@ -145,7 +158,7 @@ impl Gpu {
         })
     }
 
-    fn render(&self, width: u32, height: u32, phase: f32, studio: &Studio) -> Option<Vec<u8>> {
+    fn render(&self, width: u32, height: u32, params: &[f32]) -> Option<Vec<u8>> {
         let largest = self.device.limits().max_texture_dimension_2d;
         if width > largest || height > largest {
             return None;
@@ -153,7 +166,7 @@ impl Gpu {
         self.queue.write_buffer(
             &self.params,
             0,
-            &params(width, height, phase, studio)
+            &params
                 .iter()
                 .flat_map(|value| value.to_ne_bytes())
                 .collect::<Vec<_>>(),
@@ -255,16 +268,27 @@ fn padded_row(width: u32) -> u32 {
 }
 
 /// The shader's `Params`, in 4-byte words.
-const PARAMS_LEN: usize = 8 + 3 * 4 + 9 * 4 + 16 * 4;
+const PARAMS_LEN: usize = 12 + 3 * 4 + 9 * 4 + 16 * 4 + WAVES * 4;
+
+/// A ripple's wavelength and the width of its band, in units of the box's shorter side, and its
+/// height relative to the relief.
+const WAVE: (f32, f32, f32) = (0.028, 0.05, 0.009);
 
 /// The shader's `Params` for one frame, laid out as WGSL lays out the struct.
-fn params(width: u32, height: u32, phase: f32, studio: &Studio) -> [f32; PARAMS_LEN] {
+fn params(
+    width: u32,
+    height: u32,
+    phase: f32,
+    drops: &[(f32, f32, f32)],
+    waves: &[[f32; 4]],
+    studio: &Studio,
+) -> [f32; PARAMS_LEN] {
     const _: () = assert!(DROPS.len() <= 16);
     let (w, h) = (width as f32, height as f32);
     let unit = w.min(h);
     let (offset, scale) = drop_shadow(unit);
     let mut words = [0f32; PARAMS_LEN];
-    words[..7].copy_from_slice(&[
+    words[..12].copy_from_slice(&[
         w,
         h,
         phase * RIPPLE_TURNS * std::f32::consts::TAU,
@@ -272,26 +296,21 @@ fn params(width: u32, height: u32, phase: f32, studio: &Studio) -> [f32; PARAMS_
         offset,
         scale,
         studio.shadow,
+        f32::from_bits(drops.len().min(16) as u32),
+        f32::from_bits(waves.len().min(WAVES) as u32),
+        WAVE.0 * unit,
+        WAVE.1 * unit,
+        WAVE.2,
     ]);
-    words[7] = f32::from_bits(DROPS.len() as u32);
     let colors = [studio.background, studio.behind, studio.front]
         .into_iter()
-        .chain(studio.ramp);
-    for (slot, color) in words[8..8 + 12 * 4]
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .zip(colors)
-    {
-        slot[..3].copy_from_slice(&color);
-    }
-    for (slot, (x, y, reach)) in words[8 + 12 * 4..]
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .zip(drops_at(w, h, phase))
-    {
-        slot[..3].copy_from_slice(&[x, y, reach]);
+        .chain(studio.ramp)
+        .map(|[r, g, b]| [r, g, b, 0.]);
+    let drops = drops.iter().map(|&(x, y, reach)| [x, y, reach, 0.]);
+    let slots = words[12..].as_chunks_mut::<4>().0.iter_mut();
+    let colors_then_drops = colors.chain(drops.chain(std::iter::repeat([0.; 4])).take(16));
+    for (slot, value) in slots.zip(colors_then_drops.chain(waves.iter().copied())) {
+        *slot = value;
     }
     words
 }
@@ -313,12 +332,17 @@ mod tests {
         ] {
             let theme = Theme::new(direction, appearance);
             let studio = Studio::new(theme.colors.metal, theme.colors.background, appearance);
-            let Some(_) = render(1300, 750, 0.12, &studio) else {
+            let drops = super::super::drops_at(1300., 750., 0.12);
+            // Two ripples on the large pool, upper right, one fresh and one fading.
+            let (x, y, _) = drops[0];
+            let waves = [[x - 60., y, 50., 1.], [x + 40., y + 90., 160., 0.4]];
+            let frame = || render(1300, 750, 0.12, &drops, &waves, &studio);
+            let Some(_) = frame() else {
                 println!("no GPU");
                 return;
             };
             let start = std::time::Instant::now();
-            let pixels = render(1300, 750, 0.12, &studio).unwrap();
+            let pixels = frame().unwrap();
             println!(
                 "{direction:?} {appearance:?}: {:?} per 1300 x 750 frame",
                 start.elapsed()

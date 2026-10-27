@@ -106,8 +106,10 @@ edges darken as polished metal does. gpui takes no custom shaders, so the backdr
 frame with a WGSL shader on its own small wgpu device, off screen, and hands gpui the read-back
 frame as an image: four samples a pixel, thin dispersion fringes, ripples running over the
 surface and a second softbox. Without a hardware GPU it falls back to the CPU (about 7 ms per
-new frame for a 1300 × 750 window in a release build) with a single sample and no extras. Metal is kept to the welcome screen: on controls it
-made sizes uneven and said too much. Captured on Linux under Weston.
+new frame for a 1300 × 750 window in a release build) with a single sample and no extras. The
+liquid answers the pointer, which pushes drops aside and leaves ripples where it crosses the
+metal, and the window, which leaves the liquid sloshing when it is moved or resized. Metal is
+kept to the welcome screen: on controls it made sizes uneven and said too much. Captured on Linux under Weston.
 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)
 
