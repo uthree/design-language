@@ -116,10 +116,14 @@ coloured fringes at the horizon, a softbox, a strip light behind, and dark behin
 edges darken as polished metal does. gpui takes no custom shaders, so the backdrop shades each
 frame with a WGSL shader on its own small wgpu device, off screen, and hands gpui the read-back
 frame as an image: four samples a pixel, thin dispersion fringes, ripples running over the
-surface and a second softbox. Without a hardware GPU it falls back to the CPU (about 7 ms per
-new frame for a 1300 × 750 window in a release build) with a single sample and no extras. The
+surface and a second softbox. Without a hardware GPU it is, like the ambient scenes, one still
+frame shaded on the CPU with a single sample and no extras, answering nothing. On the GPU the
 liquid answers the pointer, which pushes drops aside and leaves ripples where it crosses the
-metal, and the window, which leaves the liquid sloshing when it is moved or resized. Metal is
+metal, and the window, which leaves the liquid sloshing when it is moved or resized. Its drops
+can be played with like the oil on a bowl of ramen: press on one and carry it, bring it up to
+others and they fuse into one larger drop. A fused drop sheds one of its drops now and then,
+more often when the pointer brushes across it, and tears apart if carried too fast;
+double-click to part them all again. Metal is
 kept to the welcome screen: on controls it made sizes uneven and said too much. Captured on Linux under Weston.
 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)

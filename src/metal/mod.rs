@@ -15,15 +15,25 @@
 //! gpui takes no custom shaders, so the backdrop brings its own: a small wgpu device beside gpui's
 //! renderer shades each frame off screen (`liquid.wgsl`, one pixel per logical pixel, four
 //! samples each, with dispersion, ripples and a second softbox), reads it back, and hands it to
-//! gpui as an image. Without a hardware GPU it shades on the CPU instead, across every core, at
-//! 0.6 samples per logical pixel and without the extras: about 7 ms per new 1300 × 750 frame on
-//! four cores (release build). Either way it runs at 30 frames a second, a frame is reused until
-//! the clock moves on, and it costs nothing once the welcome screen closes.
+//! gpui as an image. It runs at 30 frames a second, a frame is reused until the clock moves on,
+//! and it costs nothing once the welcome screen closes.
 //!
-//! It answers the person in front of it. The pointer pushes drops aside and drags them along,
+//! Without a hardware GPU there is no animation, as with the ambient scenes: the metal is shaded
+//! once on the CPU, across every core, at 0.6 samples per logical pixel and without the extras,
+//! and shown as a still image that answers nothing. It is shaded again only when its size or the
+//! theme changes.
+//!
+//! On the GPU it answers the person in front of it. The pointer pushes drops aside and drags them along,
 //! leaving ripples where it crosses the metal; moving or resizing the window leaves the liquid
 //! behind for a moment and it sloshes back (see `sim.rs`). While it is answering, the GPU path
 //! renders at 60 frames a second.
+//!
+//! The drops can also be picked up and played with, like the oil on a bowl of ramen: press on
+//! the metal to take a drop, carry it, and let go; carried drops fuse with whatever they touch
+//! into larger drops. A fused drop sheds a drop now and then, more often when the pointer
+//! brushes across it, and tears apart when carried too fast; a double click parts them all. Anything laid over the metal
+//! that should take its own clicks — the card, a bar of controls — should `occlude()`, or a
+//! press on it will reach the metal beneath.
 //!
 //! Put the screen's words on a card above the metal, never on it. When
 //! [`crate::Motion::enabled`] is off it stands still and answers nothing.
@@ -33,8 +43,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Bounds, ElementId, Entity, Hsla, IntoElement, Pixels, RenderImage, RenderOnce, Rgba,
-    Styled, Window, canvas, fill,
+    App, Bounds, CursorStyle, DispatchPhase, ElementId, Entity, Hitbox, HitboxBehavior, Hsla,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
+    RenderImage, RenderOnce, Rgba, Styled, Window, canvas, fill,
 };
 use image::{Frame, ImageBuffer};
 
@@ -52,12 +63,12 @@ pub const STOPS: [f32; 9] = [0.0, 0.24, 0.4, 0.45, 0.5, 0.55, 0.64, 0.84, 1.0];
 /// The frame drawn when motion is off.
 const REST: f32 = 0.12;
 
-/// Samples per logical pixel when shading on the CPU.
+/// Samples per logical pixel of the still frame shaded on the CPU.
 const CPU_DENSITY: f32 = 0.6;
 
 /// New frames per second while the metal flows.
 const FPS: f32 = 30.;
-/// New frames per second on the GPU while the metal answers the pointer or the window.
+/// New frames per second while the metal answers the pointer or the window.
 const LIVELY_FPS: f32 = 60.;
 
 /// A welcome-screen backdrop: liquid chrome flowing slowly over the window's background. Put
@@ -120,14 +131,17 @@ impl RenderOnce for MetalBackdrop {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let cache = window.use_keyed_state(self.id.clone(), cx, |_, _| Cache::default());
         let frames = (self.period.as_secs_f32() * FPS).max(1.);
+        // Without a GPU the metal is a still image: shading it on the CPU every frame would cost
+        // far more than a backdrop is worth.
+        let still = self.phase.is_some() || !gpu::available();
         let scene = Scene {
             palette: self.palette,
             phase: self.phase.unwrap_or(REST),
             frames,
-            interactive: self.phase.is_none() && cx.theme().motion.enabled,
+            interactive: !still && cx.theme().motion.enabled,
             cache,
         };
-        if self.phase.is_some() {
+        if still {
             return scene.into_any_element();
         }
         looping(scene, self.id, self.period, REST, cx, |scene, phase| {
@@ -149,21 +163,28 @@ struct Scene {
 impl RenderOnce for Scene {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         canvas(
-            |_, _, _| {},
-            move |bounds, _, window, cx| paint(&self, bounds, window, cx),
+            |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            move |bounds, hitbox, window, cx| paint(&self, bounds, &hitbox, window, cx),
         )
         .size_full()
     }
 }
 
-fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+fn paint(
+    scene: &Scene,
+    bounds: Bounds<Pixels>,
+    hitbox: &Hitbox,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let theme = cx.theme();
     let (direction, appearance) = (theme.direction, theme.appearance);
     let (background, metal) = (theme.colors.background, scene.palette.metal(theme));
     window.paint_quad(fill(bounds, background));
 
     // On the GPU, one pixel per logical pixel, each from four samples; gpui's sampler scales it
-    // up on dense displays. The CPU fallback shades a little over half a sample per logical pixel.
+    // up on dense displays. The CPU's still frame has a little over half a sample per logical
+    // pixel.
     let gpu = gpu::available();
     let density = if gpu { 1. } else { CPU_DENSITY }.min(window.scale_factor());
     let size = [f32::from(bounds.size.width), f32::from(bounds.size.height)];
@@ -175,14 +196,25 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
     let orbits = drops_at(size[0], size[1], phase);
     if scene.interactive {
         let origin = window.bounds().origin;
-        let pointer = window
-            .is_window_hovered()
-            .then(|| window.mouse_position())
-            .filter(|pointer| bounds.contains(pointer))
-            .map(|pointer| {
-                let local = pointer - bounds.origin;
-                [f32::from(local.x), f32::from(local.y)]
-            });
+        let local = move |pointer: Point<Pixels>| {
+            let local = pointer - bounds.origin;
+            [
+                f32::from(local.x).clamp(0., size[0]),
+                f32::from(local.y).clamp(0., size[1]),
+            ]
+        };
+        // A drop in hand follows the pointer wherever it goes; otherwise the liquid only
+        // notices the pointer over it.
+        let holding = scene.cache.read(cx).sim.holding();
+        let pointer = if holding {
+            Some(local(window.mouse_position()))
+        } else {
+            window
+                .is_window_hovered()
+                .then(|| window.mouse_position())
+                .filter(|pointer| bounds.contains(pointer))
+                .map(local)
+        };
         let input = sim::Input {
             now: Instant::now(),
             origin: [f32::from(origin.x), f32::from(origin.y)],
@@ -191,10 +223,10 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
             drops: &orbits,
         };
         scene.cache.update(cx, |cache, _| cache.sim.step(input));
+        listen(scene, local, hitbox, &orbits, window, cx);
     }
 
     let cached = scene.cache.read(cx);
-    let lively_fps = if gpu { LIVELY_FPS } else { FPS };
     let key = Key {
         palette: scene.palette,
         width,
@@ -203,7 +235,7 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
         lively: cached
             .sim
             .moving()
-            .then(|| (cached.sim.clock() * lively_fps) as u32),
+            .then(|| (cached.sim.clock() * LIVELY_FPS) as u32),
         direction,
         appearance,
     };
@@ -245,6 +277,64 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
     window
         .paint_image(bounds, Default::default(), image, 0, false)
         .ok();
+}
+
+/// Let the person pick up drops, carry them and let go, and part them with a double click; and
+/// show an open hand over the metal and a closed one while a drop is in hand.
+fn listen(
+    scene: &Scene,
+    local: impl Fn(Point<Pixels>) -> [f32; 2] + Copy + 'static,
+    hitbox: &Hitbox,
+    orbits: &[(f32, f32, f32)],
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let sim = &scene.cache.read(cx).sim;
+    if sim.holding() {
+        window.set_window_cursor_style(CursorStyle::ClosedHand);
+    } else if hitbox.is_hovered(window) && sim.over_metal(local(window.mouse_position()), orbits) {
+        window.set_cursor_style(CursorStyle::OpenHand, hitbox);
+    }
+
+    let (cache, hitbox, orbits) = (scene.cache.clone(), hitbox.clone(), orbits.to_vec());
+    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+        if phase != DispatchPhase::Bubble
+            || event.button != MouseButton::Left
+            || !hitbox.is_hovered(window)
+        {
+            return;
+        }
+        let pointer = local(event.position);
+
+        let taken = cache.update(cx, |cache, _| {
+            if event.click_count >= 2 {
+                cache.sim.scatter();
+                true
+            } else {
+                cache.sim.grab(pointer, &orbits)
+            }
+        });
+        if taken {
+            cx.stop_propagation();
+            window.refresh();
+        }
+    });
+    let cache = scene.cache.clone();
+    window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+        if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
+            cache.update(cx, |cache, _| cache.sim.release());
+        }
+    });
+    // A release outside the window can go unreported; let go once the button is seen up.
+    let cache = scene.cache.clone();
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+        if phase == DispatchPhase::Capture
+            && event.pressed_button != Some(MouseButton::Left)
+            && cache.read(cx).sim.holding()
+        {
+            cache.update(cx, |cache, _| cache.sim.release());
+        }
+    });
 }
 
 /// One drop of the liquid: where its orbit is centred (in fractions of the box), its radius (in
@@ -401,7 +491,7 @@ fn drop_shadow(unit: f32) -> (f32, f32) {
     (0.03 * unit, 1.3)
 }
 
-/// The CPU fallback, for when no GPU adapter is available: the same liquid and studio with a
+/// The CPU's still frame, for when no GPU adapter is available: the same liquid and studio with a
 /// single sample per pixel, and without the dispersion, ripples and second softbox. `drops` are
 /// each drop's centre and reach in pixels.
 fn render(width: u32, height: u32, drops: &[(f32, f32, f32)], studio: &Studio) -> Vec<u8> {

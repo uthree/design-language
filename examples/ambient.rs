@@ -2,6 +2,10 @@
 //! clouds of colour or caustics — drifting slowly behind a card that holds the words and the two
 //! ways to start. The title bar picks the backdrop; a bar below the card picks its palette.
 //!
+//! The liquid metal can be played with: press on a drop and carry it, bring drops together to
+//! fuse them into one (carry it too fast and it tears apart), and double-click to part them
+//! again.
+//!
 //! ```text
 //! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics]
 //!     [--palette theme|dusk|ocean|ember|meadow|graphite]
@@ -16,7 +20,10 @@ use atelier::{
     WindowFrame,
 };
 use common::Themed;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
+use gpui::{
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
+    div, px,
+};
 
 /// What the welcome screen sits on.
 #[derive(Clone, Copy, PartialEq)]
@@ -97,6 +104,7 @@ impl Render for Welcome {
             .position(|palette| *palette == self.palette)
             .unwrap_or(0);
         let palettes = div()
+            .occlude()
             .p(theme.spacing.xs)
             .rounded(theme.shape.radius_lg)
             .bg(theme.colors.overlay)
@@ -180,7 +188,8 @@ impl Render for Welcome {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(card),
+                            // The card takes its own clicks; the metal around it takes the rest.
+                            .child(div().occlude().child(card)),
                     )
                     .child(
                         div()
