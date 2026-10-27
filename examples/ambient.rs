@@ -1,9 +1,9 @@
-//! A welcome screen over an ambient backdrop: aurora, silk dunes, clouds of colour or caustics
-//! drifting slowly behind a card that holds the words and the two ways to start. The title bar
-//! picks the scene.
+//! A welcome screen over a backdrop: liquid metal, or an ambient scene — aurora, silk dunes,
+//! clouds of colour or caustics — drifting slowly behind a card that holds the words and the two
+//! ways to start. The title bar picks the backdrop.
 //!
 //! ```text
-//! cargo run --example ambient -- [--ambience aurora|dunes|bloom|caustics]
+//! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics]
 //!     [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
 
@@ -11,14 +11,56 @@ mod common;
 
 use atelier::{
     ActiveTheme, Ambience, AmbientBackdrop, Appearance, Button, Card, ControlSize, Direction,
-    Label, Segment, SegmentedControl, TextColor, TextSize, TitleBar, WindowFrame,
+    Label, MetalBackdrop, Segment, SegmentedControl, TextColor, TextSize, TitleBar, WindowFrame,
 };
 use common::Themed;
-use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
+
+/// What the welcome screen sits on.
+#[derive(Clone, Copy, PartialEq)]
+enum Backdrop {
+    Metal,
+    Ambient(Ambience),
+}
+
+impl Backdrop {
+    /// Every backdrop, in the order the title bar offers them.
+    const ALL: [Backdrop; 5] = [
+        Backdrop::Metal,
+        Backdrop::Ambient(Ambience::Aurora),
+        Backdrop::Ambient(Ambience::Dunes),
+        Backdrop::Ambient(Ambience::Bloom),
+        Backdrop::Ambient(Ambience::Caustics),
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Backdrop::Metal => "Liquid metal",
+            Backdrop::Ambient(ambience) => ambience.label(),
+        }
+    }
+
+    /// The name `--backdrop` takes.
+    fn id(self) -> &'static str {
+        match self {
+            Backdrop::Metal => "metal",
+            Backdrop::Ambient(ambience) => ambience.label(),
+        }
+    }
+
+    fn element(self) -> AnyElement {
+        match self {
+            Backdrop::Metal => MetalBackdrop::new("metal").into_any_element(),
+            Backdrop::Ambient(ambience) => {
+                AmbientBackdrop::new("ambient", ambience).into_any_element()
+            }
+        }
+    }
+}
 
 struct Welcome {
     choice: (Direction, Appearance),
-    ambience: Ambience,
+    backdrop: Backdrop,
 }
 
 impl Themed for Welcome {
@@ -31,21 +73,21 @@ impl Render for Welcome {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
-        let index = Ambience::ALL
+        let index = Backdrop::ALL
             .iter()
-            .position(|ambience| *ambience == self.ambience)
+            .position(|backdrop| *backdrop == self.backdrop)
             .unwrap_or(0);
-        let scenes = SegmentedControl::new(
-            "ambience",
-            Ambience::ALL.map(|ambience| Segment::label(ambience.label())),
+        let backdrops = SegmentedControl::new(
+            "backdrop",
+            Backdrop::ALL.map(|backdrop| Segment::label(backdrop.label())),
             index,
         )
         .size(ControlSize::Small)
         .on_select(cx.listener(|this, index: &usize, _, cx| {
-            this.ambience = Ambience::ALL[*index];
+            this.backdrop = Backdrop::ALL[*index];
             cx.notify();
         }));
-        // The words sit on a card above the scene, never on it.
+        // The words sit on a card above the backdrop, never on it.
         let card = Card::new()
             .w(px(440.))
             .items_center()
@@ -85,16 +127,13 @@ impl Render for Welcome {
             .flex()
             .flex_col()
             .child(
-                TitleBar::new()
-                    .title("Ambient")
-                    .subtitle("ウェルカム画面の背景")
-                    .trailing(
-                        div()
-                            .flex()
-                            .gap(theme.spacing.sm)
-                            .child(scenes)
-                            .child(switch),
-                    ),
+                TitleBar::new().title("Ambient").trailing(
+                    div()
+                        .flex()
+                        .gap(theme.spacing.sm)
+                        .child(backdrops)
+                        .child(switch),
+                ),
             )
             .child(
                 div()
@@ -102,12 +141,7 @@ impl Render for Welcome {
                     .min_h_0()
                     .relative()
                     .overflow_hidden()
-                    .child(
-                        div()
-                            .absolute()
-                            .inset_0()
-                            .child(AmbientBackdrop::new("backdrop", self.ambience)),
-                    )
+                    .child(div().absolute().inset_0().child(self.backdrop.element()))
                     .child(
                         div()
                             .absolute()
@@ -122,15 +156,15 @@ impl Render for Welcome {
 }
 
 fn main() {
-    let ambience = common::argument("--ambience")
+    let backdrop = common::argument("--backdrop")
         .and_then(|name| {
-            Ambience::ALL
+            Backdrop::ALL
                 .into_iter()
-                .find(|ambience| ambience.label().eq_ignore_ascii_case(&name))
+                .find(|backdrop| backdrop.id().eq_ignore_ascii_case(&name))
         })
-        .unwrap_or(Ambience::Aurora);
+        .unwrap_or(Backdrop::Metal);
     common::run("Ambient", 1100., 680., move |choice, _| Welcome {
         choice,
-        ambience,
+        backdrop,
     });
 }

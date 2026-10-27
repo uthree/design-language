@@ -96,13 +96,18 @@ These two screenshots were captured on Linux under Xvfb.
 
 ![Plot lab, 3-D](images/plot-lab-3d.png)
 
-## liquid_metal — a welcome screen over liquid metal
+## ambient — a welcome screen over liquid metal or an ambient scene
 
 ```bash
-cargo run --release --example liquid_metal
+cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|caustics
 ```
 
-`MetalBackdrop` behind a welcome card: pools of liquid chrome that merge, stretch and pinch off
+A welcome card over the backdrop picked in the title bar: liquid metal or one of four ambient
+scenes.
+
+### Liquid metal
+
+`MetalBackdrop`: pools of liquid chrome that merge, stretch and pinch off
 as their drops drift. The liquid is a metaball field; its height gives each pixel a normal, and
 the reflected view looks up a studio — the theme's `metal` ramp from sky to ground with its
 coloured fringes at the horizon, a softbox, a strip light behind, and dark behind the metal, so
@@ -119,14 +124,10 @@ kept to the welcome screen: on controls it made sizes uneven and said too much. 
 
 ![Liquid metal welcome, Mono light](images/liquid-metal-welcome-mono-light.png)
 
-## ambient — a welcome screen over an ambient backdrop
+### Ambient scenes
 
-```bash
-cargo run --release --example ambient -- --ambience aurora|dunes|bloom|caustics
-```
-
-`AmbientBackdrop` behind the same welcome card: four slow, abstract scenes in the manner of a
-desktop wallpaper, picked in the title bar. **Aurora** hangs curtains of light in leaning rays
+`AmbientBackdrop` behind the same card: four slow, abstract scenes in the manner of a desktop
+wallpaper. **Aurora** hangs curtains of light in leaning rays
 over a night sky with stars, mirrored in still water below. **Dunes** lays sheets of silk one in
 front of another, each lit from above with a sheen on its slopes and a soft shadow on the one
 behind. **Bloom** melts great clouds of colour into one another, stirred by slow eddies under a
