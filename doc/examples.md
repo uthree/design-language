@@ -96,13 +96,20 @@ These two screenshots were captured on Linux under Xvfb.
 
 ![Plot lab, 3-D](images/plot-lab-3d.png)
 
-## liquid_metal — a welcome screen over liquid metal
+## ambient — a welcome screen over liquid metal or an ambient scene
 
 ```bash
-cargo run --release --example liquid_metal
+cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|caustics
 ```
 
-`MetalBackdrop` behind a welcome card: pools of liquid chrome that merge, stretch and pinch off
+A welcome card over the backdrop picked in the title bar: liquid metal or one of four ambient
+scenes. A bar below the card picks the backdrop's palette (`--palette
+theme|dusk|ocean|ember|meadow|graphite`): the theme's own colours or a preset, through
+`.palette(BackdropPalette::…)` on either backdrop.
+
+### Liquid metal
+
+`MetalBackdrop`: pools of liquid chrome that merge, stretch and pinch off
 as their drops drift. The liquid is a metaball field; its height gives each pixel a normal, and
 the reflected view looks up a studio — the theme's `metal` ramp from sky to ground with its
 coloured fringes at the horizon, a softbox, a strip light behind, and dark behind the metal, so
@@ -118,6 +125,34 @@ kept to the welcome screen: on controls it made sizes uneven and said too much. 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)
 
 ![Liquid metal welcome, Mono light](images/liquid-metal-welcome-mono-light.png)
+
+### Ambient scenes
+
+`AmbientBackdrop` behind the same card: four slow, abstract scenes in the manner of a desktop
+wallpaper. **Aurora** hangs curtains of light in leaning rays
+over a night sky with stars, mirrored in still water below. **Dunes** lays sheets of silk one in
+front of another, each lit from above with a sheen on its slopes and a soft shadow on the one
+behind. **Bloom** melts great clouds of colour into one another, stirred by slow eddies under a
+frosted sheen. **Caustics** plays light through moving water over a deep floor, the colours
+bending apart into thin fringes, with shafts of light from the surface. Every scene takes its
+colours from the theme — background, agent gradient and accent — as light over the dark in a dark
+appearance and as washes of colour in a light one.
+
+Each is a WGSL shader on the crate's wgpu device, shaded off screen and read back like the metal.
+Each answers the window: moving or resizing it leaves the scene behind for a moment, nearer
+layers further, and it swings back. Bloom and Caustics also answer the pointer — stirring the
+colour round itself, or gathering the light like a lens — and leave ripples as it travels; Aurora
+and Dunes leave it alone, so the sky and the silk stay still.
+Without a hardware GPU the backdrop is one still frame shaded on the CPU, with no animation and
+no response. Captured on Linux under Weston.
+
+![Aurora, Glass dark](images/ambient-aurora-glass-dark.png)
+
+![Dunes, Glass dark](images/ambient-dunes-glass-dark.png)
+
+![Bloom, Glass light](images/ambient-bloom-glass-light.png)
+
+![Caustics, Mono dark](images/ambient-caustics-mono-dark.png)
 
 ## auris_screens — two Auris Studio windows redrawn
 

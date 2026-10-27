@@ -106,6 +106,19 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   screen on its own wgpu device (on the CPU when there is no GPU) and read back at 30 frames a
   second, 60 while it answers, so keep it to the welcome screen. Do not use metal on controls or
   anywhere work happens.
+- `AmbientBackdrop::new(id, Ambience::…)` — an ambient scene (`atelier::ambient`) for the same
+  place, when chrome is too much: `Aurora` (curtains of light over a night sky and still water),
+  `Dunes` (sheets of silk in layers), `Bloom` (clouds of colour melting together) or `Caustics`
+  (light through water). Colours come from the theme. The same rules as the metal: fill the
+  welcome screen, put the words on a `Card`, nothing to wire up; it answers the window (and the
+  pointer too in `Bloom` and `Caustics`, see `answers_pointer()`), `.phase(t)` draws one still
+  frame, `.period(d)` changes the cycle. Without a GPU it is a single still frame. Offer
+  `Ambience::ALL` (with `label()`) if the person picks the scene.
+- `.palette(BackdropPalette::…)` on either backdrop — its colours: `Theme` (default: the agent
+  gradient and accent), the presets `Dusk`, `Ocean`, `Ember`, `Meadow`, `Graphite`, or
+  `Custom([Hsla; 4])`, warm end first. The appearance still decides how they are laid on; the
+  metal stays near-neutral chrome, with the palette in its tint and its horizon fringes. Offer
+  `BackdropPalette::ALL` if the person picks it.
 
 ## Overlays
 
