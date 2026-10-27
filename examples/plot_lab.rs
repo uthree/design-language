@@ -304,8 +304,10 @@ impl PlotLab {
             .overflow_hidden()
     }
 
+    /// A row of panels. Too narrow for them side by side, the panels move onto lines of their
+    /// own.
     fn row(cx: &App) -> gpui::Div {
-        div().flex().gap(cx.theme().spacing.lg)
+        div().flex().flex_wrap().gap(cx.theme().spacing.lg)
     }
 
     fn workspace(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -404,9 +406,9 @@ impl PlotLab {
             cx,
         )
         .flex_1()
-        .min_w_0()
+        .min_w(px(MIN_PANEL_WIDTH))
         .child(
-            Self::well(cx).h(px(260.)).child(
+            Self::well(cx).flex_1().min_h(px(260.)).child(
                 LinePlot::new()
                     .series(Series::line(envelope).color(series[1]).faint())
                     .series(Series::line(curve(0.04)).color(series[0]).name("ζ = 0.04"))
@@ -450,7 +452,7 @@ impl PlotLab {
             cx,
         )
         .w(px(440.))
-        .flex_none()
+        .min_w_0()
         .child(
             Self::well(cx).h(px(260.)).child(
                 Histogram::new(speeds.to_vec())
@@ -503,9 +505,9 @@ impl PlotLab {
             cx,
         )
         .flex_1()
-        .min_w_0()
+        .min_w(px(MIN_PANEL_WIDTH))
         .child(
-            Self::well(cx).h(px(280.)).child(
+            Self::well(cx).flex_1().min_h(px(280.)).child(
                 plot.series(Series::markers(starts).color(cx.theme().colors.text))
                     .x_range(-3.5, 4.)
                     .y_range(-4., 4.)
@@ -543,7 +545,7 @@ impl PlotLab {
             cx,
         )
         .w(px(440.))
-        .flex_none()
+        .min_w_0()
         .child(
             Self::row(cx)
                 .gap(theme.spacing.sm)
@@ -596,7 +598,7 @@ impl PlotLab {
             cx,
         )
         .flex_1()
-        .min_w_0()
+        .min_w(px(MIN_PANEL_WIDTH))
         .child(
             Self::row(cx)
                 .gap(theme.spacing.sm)
@@ -638,7 +640,7 @@ impl PlotLab {
             cx,
         )
         .w(px(440.))
-        .flex_none()
+        .min_w_0()
         .child(
             Self::well(cx).h(px(380.)).child(
                 LinePlot::new()
@@ -764,7 +766,7 @@ impl PlotLab {
                             cx,
                         )
                         .flex_1()
-                        .min_w_0()
+                        .min_w(px(MIN_PANEL_WIDTH))
                         .child(self.turnable("lorenz", attractor, cx).h(px(340.))),
                     )
                     .child(
@@ -774,7 +776,7 @@ impl PlotLab {
                             cx,
                         )
                         .flex_1()
-                        .min_w_0()
+                        .min_w(px(MIN_PANEL_WIDTH))
                         .child(self.turnable("cloud", cloud, cx).h(px(340.))),
                     ),
             )
@@ -906,6 +908,10 @@ impl PlotLab {
 
 impl Render for PlotLab {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The workspace goes first when the window narrows, then the clock readout and restart.
+        let width = window.viewport_size().width;
+        let workspace = width >= px(1180.);
+        let clock = width >= px(1100.);
         // Advance the clock by the time since the last frame, and ask for the next one.
         if self.playing {
             let now = Instant::now();
@@ -947,33 +953,41 @@ impl Render for PlotLab {
                                 cx.notify();
                             })),
                     )
-                    .child(
-                        Button::new("play", if self.playing { "Pause" } else { "Play" })
-                            .size(ControlSize::Small)
-                            .icon(if self.playing {
-                                IconName::Pause
-                            } else {
-                                IconName::Play
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.playing = !this.playing;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        Button::icon_only("restart", IconName::Refresh)
-                            .tooltip("Restart from t = 0")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.time = 0.;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        Label::new(format!("t = {:.1} s", self.time))
-                            .size(TextSize::Small)
-                            .mono()
-                            .color(TextColor::Muted),
-                    )
+                    .child({
+                        let (label, icon) = if self.playing {
+                            ("Pause", IconName::Pause)
+                        } else {
+                            ("Play", IconName::Play)
+                        };
+                        // Narrow, the button keeps its icon and gives its label to the tooltip.
+                        let button = if clock {
+                            Button::new("play", label)
+                                .size(ControlSize::Small)
+                                .icon(icon)
+                        } else {
+                            Button::icon_only("play", icon).tooltip(label)
+                        };
+                        button.on_click(cx.listener(|this, _, _, cx| {
+                            this.playing = !this.playing;
+                            cx.notify();
+                        }))
+                    })
+                    .when(clock, |bar| {
+                        bar.child(
+                            Button::icon_only("restart", IconName::Refresh)
+                                .tooltip("Restart from t = 0")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.time = 0.;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Label::new(format!("t = {:.1} s", self.time))
+                                .size(TextSize::Small)
+                                .mono()
+                                .color(TextColor::Muted),
+                        )
+                    })
                     .trailing(switch)
                     .trailing(Divider::vertical())
                     .trailing(Button::icon_only("export", IconName::Copy).tooltip("Copy figure")),
@@ -983,7 +997,7 @@ impl Render for PlotLab {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.workspace(cx))
+                    .when(workspace, |row| row.child(self.workspace(cx)))
                     .child(
                         div()
                             .id("figure")
@@ -1001,6 +1015,9 @@ impl Render for PlotLab {
             )
     }
 }
+
+/// Narrowest a wide panel gets before its row wraps.
+const MIN_PANEL_WIDTH: f32 = 320.;
 
 fn main() {
     let figure = match common::argument("--figure").as_deref() {

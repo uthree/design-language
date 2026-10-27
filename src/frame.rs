@@ -39,6 +39,8 @@ const TRAFFIC_LIGHTS_WIDTH: f32 = 80.;
 const TRAFFIC_LIGHT_HEIGHT: f32 = 14.;
 /// Width of one Windows-style caption button.
 const CAPTION_BUTTON_WIDTH: f32 = 46.;
+/// Narrowest the title shrinks to when the title bar runs out of room.
+const MIN_TITLE_WIDTH: f32 = 72.;
 /// Margin a client-decorated window keeps around its frame, for the shadow and the resize edges.
 const FRAME_INSET: f32 = 10.;
 
@@ -331,15 +333,22 @@ impl RenderOnce for TitleBar {
         let height = theme.density.toolbar;
 
         let heading = self.title.map(|title| {
+            // The title gives way before the controls beside it, down to a few characters.
             div()
                 .flex()
                 .flex_col()
-                .flex_none()
-                .child(Label::new(title).weight(theme.typography.label_weight))
+                .flex_shrink()
+                .min_w(px(MIN_TITLE_WIDTH))
+                .child(
+                    Label::new(title)
+                        .weight(theme.typography.label_weight)
+                        .truncate(),
+                )
                 .children(self.subtitle.map(|subtitle| {
                     Label::new(subtitle)
                         .size(crate::TextSize::XSmall)
                         .color(crate::TextColor::Faint)
+                        .truncate()
                 }))
         });
 
@@ -350,6 +359,7 @@ impl RenderOnce for TitleBar {
             .items_center()
             .w_full()
             .h(height)
+            .gap(theme.spacing.sm)
             .bg(theme.colors.chrome)
             .when_some(radius, |bar, radius| {
                 bar.rounded_tl(radius).rounded_tr(radius)
@@ -390,6 +400,9 @@ impl RenderOnce for TitleBar {
                     .h_full()
                     .items_center()
                     .gap(theme.spacing.sm)
+                    // In a narrow window the children are cut off here rather than drawn under
+                    // the trailing controls.
+                    .overflow_hidden()
                     .children(
                         self.leading
                             .into_iter()

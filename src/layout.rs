@@ -437,8 +437,10 @@ impl RenderOnce for Tabs {
         div()
             .id(self.id)
             .flex()
+            .flex_none()
             .items_center()
             .gap(theme.spacing.xxs)
+            .whitespace_nowrap()
             .children(self.labels.into_iter().enumerate().map(|(index, label)| {
                 let selected = index == self.selected;
                 let hover = colors.hover;

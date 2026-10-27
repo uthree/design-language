@@ -265,9 +265,10 @@ impl InstrumentLab {
             );
             div()
                 .flex()
+                .flex_1()
                 .items_center()
                 .gap(theme.spacing.md)
-                .h(lane_height)
+                .min_h(lane_height)
                 .child(
                     div()
                         .flex()
@@ -295,15 +296,18 @@ impl InstrumentLab {
                 .child(div().flex_1().h_full().child(animated))
                 .child(
                     div()
-                        .h(lane_height - px(16.))
+                        .h_full()
+                        .py(theme.spacing.sm)
                         .child(LevelMeter::new(voice.level).thickness(px(4.))),
                 )
         });
+        // A taller window gives the lanes the extra height, so the strings' motion reads larger.
         Card::new()
+            .flex_grow()
             .p(theme.spacing.lg)
             .gap(theme.spacing.md)
             .child(header)
-            .child(div().flex().flex_col().children(lanes))
+            .child(div().flex().flex_col().flex_1().children(lanes))
     }
 
     fn analysis_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -312,22 +316,26 @@ impl InstrumentLab {
         let panel = |title: &'static str, description: &'static str| {
             Card::new()
                 .flex_1()
-                .min_w_0()
+                .min_w(px(MIN_PLOT_CARD_WIDTH))
                 .p(theme.spacing.lg)
                 .gap(theme.spacing.md)
                 .child(SectionHeader::new(title).description(description))
         };
         let plot = |body: gpui::AnyElement| {
             div()
-                .h(px(150.))
+                .flex_1()
+                .min_h(px(PLOT_HEIGHT))
                 .rounded(theme.shape.radius_sm)
                 .bg(theme.colors.sunken)
                 .overflow_hidden()
                 .p(theme.spacing.xs)
                 .child(body)
         };
+        // Too narrow for three across, the drum head moves to a line of its own.
         div()
             .flex()
+            .flex_wrap()
+            .flex_grow()
             .gap(theme.spacing.lg)
             .child(
                 panel(
@@ -362,7 +370,7 @@ impl InstrumentLab {
                     .gap(theme.spacing.md)
                     .child(SectionHeader::new("Drum head").description("Membrane preview"))
                     .child(
-                        div().h(px(150.)).child(
+                        div().flex_1().min_h(px(PLOT_HEIGHT)).child(
                             Heatmap::new(28, 28, membrane(0., 28))
                                 .circular()
                                 .signed()
@@ -376,7 +384,7 @@ impl InstrumentLab {
             )
     }
 
-    fn inspector(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn inspector(&self, width: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let group = |title: &'static str| {
             div()
@@ -386,8 +394,13 @@ impl InstrumentLab {
                 .child(SectionHeader::caption(title))
         };
         let knobs = || div().flex().flex_wrap().gap(theme.spacing.lg);
-        Sidebar::new(Edge::Right)
-            .w(px(300.))
+        let body = div()
+            .id("inspector")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
             .p(theme.spacing.lg)
             .gap(theme.spacing.xl)
             .child(
@@ -464,13 +477,19 @@ impl InstrumentLab {
                             "Ctrl+K"
                         },
                     )),
-            )
+            );
+        // A short window scrolls the parameters rather than cutting off the assistant.
+        Sidebar::new(Edge::Right).w(px(width)).child(body)
     }
 }
 
 impl Render for InstrumentLab {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
+        // The model list goes first when the window narrows, and the inspector slims, so the
+        // plots keep room.
+        let wide = window.viewport_size().width >= px(1180.);
+        let inspector_width = if wide { 300. } else { 272. };
         let switch = common::theme_switch(self, cx);
         WindowFrame::new()
             .font(theme.typography.ui.clone())
@@ -503,7 +522,7 @@ impl Render for InstrumentLab {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.models(cx))
+                    .when(wide, |row| row.child(self.models(cx)))
                     .child(
                         div()
                             .id("stage")
@@ -518,10 +537,15 @@ impl Render for InstrumentLab {
                             .child(self.string_motion(cx))
                             .child(self.analysis_row(cx)),
                     )
-                    .child(self.inspector(cx)),
+                    .child(self.inspector(inspector_width, cx)),
             )
     }
 }
+
+/// Narrowest a plot card gets before the row wraps.
+const MIN_PLOT_CARD_WIDTH: f32 = 200.;
+/// Height of a plot when the window has no height to spare.
+const PLOT_HEIGHT: f32 = 150.;
 
 fn main() {
     common::run("Instrument lab", 1480., 900., |choice, _| InstrumentLab {

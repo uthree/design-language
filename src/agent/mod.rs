@@ -112,9 +112,11 @@ impl RenderOnce for AgentStatusLabel {
         div()
             .flex()
             .items_center()
+            .min_w_0()
             .gap(theme.spacing.xs)
             .text_size(theme.typography.size_xs)
             .text_color(theme.colors.text_muted)
+            .whitespace_nowrap()
             .child(match self.status {
                 AgentStatus::Running => Spinner::new("agent-status")
                     .size(theme.typography.size_sm)
@@ -123,7 +125,16 @@ impl RenderOnce for AgentStatusLabel {
                     .size(gpui::px(7.))
                     .into_any_element(),
             })
-            .child(div().text_color(color).child(self.status.label()))
-            .children(self.detail.map(|detail| div().child(format!("· {detail}"))))
+            .child(
+                div()
+                    .flex_none()
+                    .text_color(color)
+                    .child(self.status.label()),
+            )
+            // The detail gives way first when the label runs out of room.
+            .children(
+                self.detail
+                    .map(|detail| div().min_w_0().truncate().child(format!("· {detail}"))),
+            )
     }
 }
