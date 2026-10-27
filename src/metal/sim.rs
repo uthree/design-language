@@ -8,6 +8,13 @@
 //! different sizes swing at different rates, so a pool deforms rather than moving as one. Where
 //! the pointer crosses the metal it leaves ripples that run outwards and fade.
 //!
+//! The drops can be picked up, the way you gather the oil on a bowl of ramen. Press on the metal
+//! and the drop under the pointer follows it, pulling out of its pool; let go and it stays where
+//! it was put, sliding on a little if it was flung. A drop that has been handled fuses with any
+//! drop it touches: the two flow into one larger drop of their combined area, so a handful of
+//! drops gathered together become a single pool. Every drop keeps swinging on its orbit
+//! wherever it rests. A double click lets them all part again and go home.
+//!
 //! Distances here are logical pixels; rates are per second.
 
 use std::time::Instant;
@@ -40,14 +47,46 @@ const WAVE_LIFE: f32 = 2.4;
 pub(super) const WAVES: usize = 8;
 /// The longest step simulated at once; a longer gap between frames is split.
 const SUBSTEP: f32 = 1. / 120.;
+/// How stiffly a held drop follows the hand, per second squared, and how quickly its swing
+/// dies; a little short of critical, so it trails and wobbles like a liquid.
+const HOLD: f32 = 420.;
+const HOLD_DAMPING: f32 = 30.;
+/// How much of the field's surface level the pointer must be over to take hold of a drop.
+const GRIP: f32 = 0.7;
+/// The fastest a drop is flung, in units per second.
+const FLING: f32 = 2.5;
+/// How quickly a flung drop slows, per second.
+const FRICTION: f32 = 2.2;
+/// How much of a bounce off the edge a flung drop keeps.
+const BOUNCE: f32 = 0.5;
+/// Two drops fuse when their centres are closer than this share of their radii added together.
+const FUSE: f32 = 0.85;
+/// How quickly a fused drop flows into the one that took it, per second.
+const FLOW: f32 = 7.;
+/// How quickly drops let go by a double click go home, per second.
+const RETURN: f32 = 2.5;
 
 /// The liquid's response so far.
-#[derive(Default)]
 pub(super) struct Sim {
     offsets: [[f32; 2]; DROPS.len()],
     velocities: [[f32; 2]; DROPS.len()],
     /// What the window's moves have yet to leave behind, per drop.
     pending: [[f32; 2]; DROPS.len()],
+    /// Where each drop rests off its orbit, having been moved by hand.
+    anchors: [[f32; 2]; DROPS.len()],
+    /// How fast each resting place still slides after a fling.
+    drift: [[f32; 2]; DROPS.len()],
+    /// Each drop's area, in square units, and the area it is flowing towards.
+    areas: [f32; DROPS.len()],
+    targets: [f32; DROPS.len()],
+    /// The drops that have been handled: they fuse with any drop they touch.
+    loose: [bool; DROPS.len()],
+    /// The drop each fused drop is flowing into.
+    into: [Option<usize>; DROPS.len()],
+    /// Pairs that were already touching when one of them was picked up: they don't fuse until
+    /// they part, so a drop can be drawn out of its pool rather than swallowing it.
+    joined: [[bool; DROPS.len()]; DROPS.len()],
+    grab: Option<Grab>,
     waves: Vec<Wave>,
     last: Option<Instant>,
     origin: Option<[f32; 2]>,
@@ -56,6 +95,39 @@ pub(super) struct Sim {
     travel: f32,
     /// Seconds simulated while the liquid was moving.
     clock: f32,
+}
+
+/// A drop in hand: which, and where its centre sits from the pointer.
+#[derive(Clone, Copy)]
+struct Grab {
+    index: usize,
+    hold: [f32; 2],
+}
+
+impl Default for Sim {
+    fn default() -> Self {
+        let areas = DROPS.map(|drop| drop.radius * drop.radius);
+        Self {
+            offsets: Default::default(),
+            velocities: Default::default(),
+            pending: Default::default(),
+            anchors: Default::default(),
+            drift: Default::default(),
+            areas,
+            targets: areas,
+            loose: Default::default(),
+            into: Default::default(),
+            joined: Default::default(),
+            grab: None,
+            waves: Vec::new(),
+            last: None,
+            origin: None,
+            size: None,
+            pointer: None,
+            travel: 0.,
+            clock: 0.,
+        }
+    }
 }
 
 struct Wave {
@@ -71,7 +143,7 @@ pub(super) struct Input<'a> {
     pub origin: [f32; 2],
     /// The backdrop's size.
     pub size: [f32; 2],
-    /// The pointer, relative to the backdrop, while it is over the window.
+    /// The pointer, relative to the backdrop, while it is over the window or holds a drop.
     pub pointer: Option<[f32; 2]>,
     /// Each drop's place on its orbit and its reach, before any offset.
     pub drops: &'a [(f32, f32, f32)],
@@ -123,21 +195,81 @@ impl Sim {
             }
         }
 
+        if input.pointer.is_none() {
+            self.release();
+        }
+        let held = self.grab.map(|grab| grab.index);
         let steps = (dt / SUBSTEP).ceil().max(1.);
         let h = dt / steps;
         let taken = 1. - (-CATCH * h).exp();
+        let flowed = 1. - (-FLOW * h).exp();
+        let friction = (-FRICTION * h).exp();
+        let returned = (-RETURN * h).exp();
         for _ in 0..steps as usize {
             for (index, drop) in DROPS.iter().enumerate() {
                 let (x, y, reach) = input.drops[index];
                 let step = scale(self.pending[index], taken);
                 self.pending[index] = sub(self.pending[index], step);
-                let offset = add(self.offsets[index], step);
-                let velocity_here = self.velocities[index];
+                let mut offset = add(self.offsets[index], step);
+                let mut velocity_here = self.velocities[index];
+                self.areas[index] += (self.targets[index] - self.areas[index]) * flowed;
+
+                if let Some(into) = self.into[index] {
+                    // Fused: flow into the drop that took it.
+                    let (tx, ty, _) = input.drops[into];
+                    let there = add([tx, ty], self.offsets[into]);
+                    let here = [x + offset[0], y + offset[1]];
+                    self.offsets[index] = add(offset, scale(sub(there, here), flowed));
+                    self.velocities[index] = [0., 0.];
+                    continue;
+                }
+
+                if held == Some(index)
+                    && let (Some(pointer), Some(grab)) = (input.pointer, self.grab)
+                {
+                    // In hand: follow the pointer, trailing a little.
+                    let target = clamp(add(pointer, grab.hold), input.size);
+                    let wanted = sub(target, [x, y]);
+                    let acceleration = sub(
+                        scale(sub(wanted, offset), HOLD),
+                        scale(velocity_here, HOLD_DAMPING),
+                    );
+                    velocity_here = add(velocity_here, scale(acceleration, h));
+                    self.velocities[index] = velocity_here;
+                    self.offsets[index] = add(offset, scale(velocity_here, h));
+                    continue;
+                }
+
+                // Where the drop rests: slides on after a fling and bounces off the edges once
+                // handled, and goes home once let go.
+                let mut anchor = self.anchors[index];
+                if self.loose[index] {
+                    let mut drift = self.drift[index];
+                    anchor = add(anchor, scale(drift, h));
+                    for axis in 0..2 {
+                        let at = [x, y][axis] + anchor[axis];
+                        let edge = at.clamp(0., input.size[axis]);
+                        if at != edge {
+                            anchor[axis] += edge - at;
+                            drift[axis] *= -BOUNCE;
+                        }
+                    }
+                    self.drift[index] = scale(drift, friction);
+                } else {
+                    anchor = scale(anchor, returned);
+                }
+                self.anchors[index] = anchor;
+                let drift = self.drift[index];
+
                 // Small drops are lighter and swing faster.
                 let stiffness = SPRING * (0.12 / drop.radius).sqrt().clamp(0.7, 1.6);
-                let mut acceleration =
-                    sub(scale(offset, -stiffness), scale(velocity_here, DAMPING));
-                if let Some(pointer) = input.pointer {
+                let mut acceleration = sub(
+                    scale(sub(offset, anchor), -stiffness),
+                    scale(sub(velocity_here, drift), DAMPING),
+                );
+                // While a drop is in hand the pointer leaves the others alone, so it can be
+                // brought up to them.
+                if let Some(pointer) = input.pointer.filter(|_| held.is_none()) {
                     let away = sub([x + offset[0], y + offset[1]], pointer);
                     let distance = length(away).max(1.);
                     let reach = POINTER_REACH * unit + reach * 0.5;
@@ -146,16 +278,17 @@ impl Sim {
                     let stir = scale(velocity, STIR * falloff);
                     acceleration = add(acceleration, add(push, stir));
                 }
-                let velocity_here = add(velocity_here, scale(acceleration, h));
-                let mut offset = add(offset, scale(velocity_here, h));
-                let stray = length(offset);
-                if stray > LIMIT * unit {
-                    offset = scale(offset, LIMIT * unit / stray);
+                velocity_here = add(velocity_here, scale(acceleration, h));
+                offset = add(offset, scale(velocity_here, h));
+                let stray = sub(offset, anchor);
+                if length(stray) > LIMIT * unit {
+                    offset = add(anchor, scale(stray, LIMIT * unit / length(stray)));
                 }
                 self.velocities[index] = velocity_here;
                 self.offsets[index] = offset;
             }
         }
+        self.fuse(input.drops, unit);
 
         for wave in &mut self.waves {
             wave.age += dt;
@@ -166,14 +299,177 @@ impl Sim {
         }
     }
 
-    /// Whether anything is still moving: a drop swinging, or a ripple spreading.
+    /// Whether anything is still moving: a drop in hand, swinging, sliding, going home or
+    /// flowing into another, or a ripple spreading.
     pub fn moving(&self) -> bool {
-        !self.waves.is_empty()
+        self.grab.is_some()
+            || !self.waves.is_empty()
             || self.pending.iter().any(|pending| length(*pending) > 0.5)
             || self
                 .velocities
                 .iter()
                 .any(|velocity| length(*velocity) > 0.5)
+            || self.drift.iter().any(|drift| length(*drift) > 0.5)
+            || (self.anchors.iter().zip(&self.loose))
+                .any(|(anchor, loose)| !loose && length(*anchor) > 0.5)
+            || (self.areas.iter().zip(&self.targets))
+                .any(|(area, target)| (area - target).abs() > 1e-6)
+    }
+
+    /// Whether a drop is in hand.
+    pub fn holding(&self) -> bool {
+        self.grab.is_some()
+    }
+
+    /// Whether `pointer` is over the metal, where a press takes hold of a drop.
+    pub fn over_metal(&self, pointer: [f32; 2], drops: &[(f32, f32, f32)]) -> bool {
+        let (field, _, _) = field_at(&self.drops(drops), pointer[0], pointer[1]);
+        field > THRESHOLD * GRIP
+    }
+
+    /// Take hold of the drop under `pointer`, the one whose field there is strongest, if the
+    /// pointer is over the metal. Whether it took hold.
+    pub fn grab(&mut self, pointer: [f32; 2], drops: &[(f32, f32, f32)]) -> bool {
+        if !self.over_metal(pointer, drops) {
+            return false;
+        }
+        let strongest = self
+            .placed(drops)
+            .map(|(index, x, y, reach)| {
+                let (field, _, _) = field_at(&[(x, y, reach)], pointer[0], pointer[1]);
+                (index, [x, y], field)
+            })
+            .max_by(|a, b| a.2.total_cmp(&b.2));
+        let Some((index, centre, _)) = strongest else {
+            return false;
+        };
+        self.grab = Some(Grab {
+            index,
+            hold: sub(centre, pointer),
+        });
+        self.loose[index] = true;
+        self.drift[index] = [0., 0.];
+        let unit = self.size.map_or(1., |size| size[0].min(size[1]).max(1.));
+        for other in 0..DROPS.len() {
+            if other != index && self.touching(index, other, drops, unit) {
+                self.joined[index][other] = true;
+                self.joined[other][index] = true;
+            }
+        }
+        true
+    }
+
+    /// Whether two drops are close enough to fuse.
+    fn touching(&self, a: usize, b: usize, drops: &[(f32, f32, f32)], unit: f32) -> bool {
+        let centre = |index: usize| {
+            let (x, y, _) = drops[index];
+            add([x, y], self.offsets[index])
+        };
+        let radii = (self.areas[a].sqrt() + self.areas[b].sqrt()) * unit;
+        length(sub(centre(a), centre(b))) < FUSE * radii
+    }
+
+    /// Let go of the drop in hand: it rests where it is, sliding on if it was flung.
+    pub fn release(&mut self) {
+        let Some(Grab { index, .. }) = self.grab.take() else {
+            return;
+        };
+        self.anchors[index] = self.offsets[index];
+        let unit = self.size.map_or(1., |size| size[0].min(size[1]).max(1.));
+        let velocity = self.velocities[index];
+        let speed = length(velocity);
+        self.drift[index] = if speed > FLING * unit {
+            scale(velocity, FLING * unit / speed)
+        } else {
+            velocity
+        };
+    }
+
+    /// Let every drop part from the ones it fused with and go home.
+    pub fn scatter(&mut self) {
+        self.grab = None;
+        for (index, drop) in DROPS.iter().enumerate() {
+            if self.into[index].take().is_some() {
+                // Part from where it flowed to rather than jumping back.
+                self.anchors[index] = self.offsets[index];
+            }
+            self.loose[index] = false;
+            self.joined[index] = [false; DROPS.len()];
+            self.drift[index] = [0., 0.];
+            self.targets[index] = drop.radius * drop.radius;
+        }
+    }
+
+    /// Each drop that is still there: its index, centre and reach, in pixels.
+    fn placed<'a>(
+        &'a self,
+        drops: &'a [(f32, f32, f32)],
+    ) -> impl Iterator<Item = (usize, f32, f32, f32)> + 'a {
+        drops
+            .iter()
+            .zip(&self.offsets)
+            .zip(DROPS.iter().zip(&self.areas))
+            .enumerate()
+            .map(|(index, ((&(x, y, reach), offset), (drop, area)))| {
+                let grown = (area.max(0.)).sqrt() / drop.radius;
+                (index, x + offset[0], y + offset[1], reach * grown)
+            })
+            .filter(|&(_, _, _, reach)| reach > 0.5)
+    }
+
+    /// Fuse each handled drop with the drops it touches: the one in hand, or else the larger,
+    /// takes the other's area and moves towards their common centre.
+    fn fuse(&mut self, drops: &[(f32, f32, f32)], unit: f32) {
+        let held = self.grab.map(|grab| grab.index);
+        let centre = |sim: &Self, index: usize| {
+            let (x, y, _) = drops[index];
+            add([x, y], sim.offsets[index])
+        };
+        let whole = |sim: &Self, index: usize| sim.into[index].is_none() && sim.targets[index] > 0.;
+        for first in 0..DROPS.len() {
+            for second in 0..DROPS.len() {
+                if first == second
+                    || !self.loose[first]
+                    || !whole(self, first)
+                    || !whole(self, second)
+                {
+                    continue;
+                }
+                if !self.touching(first, second, drops, unit) {
+                    self.joined[first][second] = false;
+                    self.joined[second][first] = false;
+                    continue;
+                }
+                if self.joined[first][second] {
+                    continue;
+                }
+                let (taker, taken) = if held == Some(second)
+                    || (held != Some(first) && self.targets[second] > self.targets[first])
+                {
+                    (second, first)
+                } else {
+                    (first, second)
+                };
+                let (a, b) = (self.targets[taker], self.targets[taken]);
+                if held != Some(taker) {
+                    let towards = sub(centre(self, taken), centre(self, taker));
+                    self.anchors[taker] = add(self.anchors[taker], scale(towards, b / (a + b)));
+                }
+                self.drift[taker] = scale(
+                    add(scale(self.drift[taker], a), scale(self.drift[taken], b)),
+                    1. / (a + b),
+                );
+                self.targets[taker] = a + b;
+                self.targets[taken] = 0.;
+                self.loose[taker] = true;
+                self.into[taken] = Some(taker);
+                for into in &mut self.into {
+                    if *into == Some(taken) {
+                        *into = Some(taker);
+                    }
+                }
+            }
+        }
     }
 
     /// Seconds simulated while the liquid was moving.
@@ -181,12 +477,11 @@ impl Sim {
         self.clock
     }
 
-    /// The drops where they are now: `drops` from their orbits, moved by the response.
+    /// The drops where they are now: `drops` from their orbits, moved by the response and
+    /// grown or shrunk by fusing. A drop that has flowed wholly into another is left out.
     pub fn drops(&self, drops: &[(f32, f32, f32)]) -> Vec<(f32, f32, f32)> {
-        drops
-            .iter()
-            .zip(&self.offsets)
-            .map(|(&(x, y, reach), offset)| (x + offset[0], y + offset[1], reach))
+        self.placed(drops)
+            .map(|(_, x, y, reach)| (x, y, reach))
             .collect()
     }
 
@@ -219,6 +514,11 @@ fn scale(a: [f32; 2], factor: f32) -> [f32; 2] {
 
 fn length(a: [f32; 2]) -> f32 {
     (a[0] * a[0] + a[1] * a[1]).sqrt()
+}
+
+/// `a` kept within a box of `size`.
+fn clamp(a: [f32; 2], size: [f32; 2]) -> [f32; 2] {
+    [a[0].clamp(0., size[0]), a[1].clamp(0., size[1])]
 }
 
 #[cfg(test)]
@@ -297,5 +597,90 @@ mod tests {
         assert!(sim.moving());
         assert!(sim.waves(600.).count() > 0);
         assert!(sim.offsets.iter().any(|offset| length(*offset) > 5.));
+    }
+
+    #[test]
+    fn a_drop_in_hand_follows_and_stays_where_it_is_put() {
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let drops = drops_at(1000., 600., 0.);
+        // The lone stray, upper left.
+        let (x, y, _) = drops[11];
+        frames(&mut sim, start, 0, 2, |_| ([0., 0.], Some([x, y])));
+        assert!(sim.grab([x, y], &drops));
+        assert_eq!(sim.grab.map(|grab| grab.index), Some(11));
+        frames(&mut sim, start, 2, 60, |frame| {
+            let t = ((frame - 2) as f32 / 30.).min(1.);
+            ([0., 0.], Some([x + 200. * t, y + 100. * t]))
+        });
+        let place = |sim: &Sim| add([x, y], sim.offsets[11]);
+        assert!(length(sub(place(&sim), [x + 200., y + 100.])) < 5.);
+        sim.release();
+        frames(&mut sim, start, 62, 600, |_| ([0., 0.], None));
+        assert!(!sim.moving(), "it settles");
+        assert!(
+            length(sub(place(&sim), [x + 200., y + 100.])) < 10.,
+            "where it was put, not back on its orbit"
+        );
+    }
+
+    #[test]
+    fn drops_brought_together_fuse_into_one() {
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let drops = drops_at(1000., 600., 0.);
+        // Carry the lone stray, upper left, onto the pool lower left.
+        let (x, y, _) = drops[11];
+        let (tx, ty, _) = drops[5];
+        let before: f32 = sim.targets.iter().sum();
+        frames(&mut sim, start, 0, 1, |_| ([0., 0.], Some([x, y])));
+        assert!(sim.grab([x, y], &drops));
+        frames(&mut sim, start, 1, 90, |frame| {
+            let t = ((frame - 1) as f32 / 60.).min(1.);
+            ([0., 0.], Some([x + (tx - x) * t, y + (ty - y) * t]))
+        });
+        sim.release();
+        frames(&mut sim, start, 91, 600, |_| ([0., 0.], None));
+        assert_eq!(
+            sim.into[5],
+            Some(11),
+            "the pool flowed into the drop in hand"
+        );
+        assert!(sim.areas[5] < 1e-4);
+        assert!(sim.areas[11] > 0.07f32.powi(2) + 0.17f32.powi(2) - 1e-4);
+        let after: f32 = sim.targets.iter().sum();
+        assert!((before - after).abs() < 1e-6, "no metal is lost");
+        assert!(sim.drops(&drops).len() < DROPS.len());
+
+        sim.scatter();
+        frames(&mut sim, start, 691, 900, |_| ([0., 0.], None));
+        assert!(!sim.moving());
+        assert_eq!(
+            sim.drops(&drops).len(),
+            DROPS.len(),
+            "a double click parts them"
+        );
+        assert!(sim.offsets.iter().all(|offset| length(*offset) < 2.));
+    }
+
+    #[test]
+    fn a_press_off_the_metal_takes_nothing() {
+        let mut sim = Sim::default();
+        let drops = drops_at(1000., 600., 0.);
+        assert!(!sim.grab([500., 300.], &drops));
+        assert!(!sim.holding());
+    }
+
+    #[test]
+    fn a_drop_taken_from_its_pool_does_not_swallow_it() {
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let drops = drops_at(1000., 600., 0.);
+        // The large pool, upper right.
+        let (x, y, _) = drops[0];
+        frames(&mut sim, start, 0, 1, |_| ([0., 0.], Some([x, y])));
+        assert!(sim.grab([x, y], &drops));
+        frames(&mut sim, start, 1, 30, |_| ([0., 0.], Some([x, y])));
+        assert!(sim.into.iter().all(Option::is_none));
     }
 }
