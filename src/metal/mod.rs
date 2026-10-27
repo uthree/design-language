@@ -12,10 +12,13 @@
 //! away at the silhouette the ray looks behind the metal into the dark of the studio, so every
 //! edge darkens the way polished metal does, with the strip light catching a thin rim.
 //!
-//! gpui has no custom shaders, so the shading runs on the CPU, across every core, at 0.6 samples
-//! per logical pixel and 30 frames a second, and gpui's GPU renderer scales and composites the
-//! frame. A frame is reused until the clock moves on. A 1300 × 750 backdrop costs about 7 ms of
-//! CPU per new frame on four cores (release build), only while the welcome screen is open.
+//! gpui takes no custom shaders, so the backdrop brings its own: a small wgpu device beside gpui's
+//! renderer shades each frame off screen (`liquid.wgsl`, one pixel per logical pixel, four
+//! samples each, with dispersion, ripples and a second softbox), reads it back, and hands it to
+//! gpui as an image. Without a hardware GPU it shades on the CPU instead, across every core, at
+//! 0.6 samples per logical pixel and without the extras: about 7 ms per new 1300 × 750 frame on
+//! four cores (release build). Either way it runs at 30 frames a second, a frame is reused until
+//! the clock moves on, and it costs nothing once the welcome screen closes.
 //!
 //! Put the screen's words on a card above the metal, never on it. When
 //! [`crate::Motion::enabled`] is off it stands still.
@@ -30,6 +33,8 @@ use gpui::{
 };
 use image::{Frame, ImageBuffer};
 
+mod gpu;
+
 use crate::motion::looping;
 use crate::theme::{ActiveTheme, Appearance, Direction};
 
@@ -40,8 +45,8 @@ pub const STOPS: [f32; 9] = [0.0, 0.24, 0.4, 0.45, 0.5, 0.55, 0.64, 0.84, 1.0];
 /// The frame drawn when motion is off.
 const REST: f32 = 0.12;
 
-/// Samples per logical pixel.
-const DENSITY: f32 = 0.6;
+/// Samples per logical pixel when shading on the CPU.
+const CPU_DENSITY: f32 = 0.6;
 
 /// New frames per second while the metal flows.
 const FPS: f32 = 30.;
@@ -128,9 +133,10 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
     let background = theme.colors.background;
     window.paint_quad(fill(bounds, background));
 
-    // The metal is smooth, so it is shaded at a little over half a sample per logical pixel and
-    // gpui's sampler scales it up; edges stay smooth, just slightly soft.
-    let density = DENSITY.min(window.scale_factor());
+    // On the GPU, one pixel per logical pixel, each from four samples; gpui's sampler scales it
+    // up on dense displays. The CPU fallback shades a little over half a sample per logical pixel.
+    let gpu = gpu::available();
+    let density = if gpu { 1. } else { CPU_DENSITY }.min(window.scale_factor());
     let width = (f32::from(bounds.size.width) * density).round().max(1.) as u32;
     let height = (f32::from(bounds.size.height) * density).round().max(1.) as u32;
     let frame = ((scene.phase.rem_euclid(1.)) * scene.frames) as u32;
@@ -148,7 +154,10 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
         _ => {
             let studio = Studio::new(theme.colors.metal, background, theme.appearance);
             let phase = frame as f32 / scene.frames;
-            let pixels = render(width, height, phase, &studio);
+            let pixels = gpu
+                .then(|| gpu::render(width, height, phase, &studio))
+                .flatten()
+                .unwrap_or_else(|| render(width, height, phase, &studio));
             let Some(buffer) = ImageBuffer::from_raw(width, height, pixels) else {
                 return;
             };
@@ -298,22 +307,38 @@ fn project(r: [f32; 3], axis: [f32; 3]) -> (f32, f32, f32) {
     (dot(r, across), dot(r, up), dot(r, axis))
 }
 
+/// Each drop's centre and the reach of its field, in pixels, at `phase` of the cycle.
+fn drops_at(width: f32, height: f32, phase: f32) -> Vec<(f32, f32, f32)> {
+    let unit = width.min(height);
+    let angle = phase * TAU;
+    DROPS
+        .iter()
+        .map(|d| {
+            let x = d.x * width + d.swing.0 * unit * (d.turns.0 * angle + d.start).sin();
+            let y = d.y * height + d.swing.1 * unit * (d.turns.1 * angle + d.start * 1.7).cos();
+            (x, y, d.radius * unit * REACH)
+        })
+        .collect()
+}
+
+/// The height of the liquid, scaled so a lone drop is a hemisphere.
+fn relief(unit: f32) -> f32 {
+    0.2 * unit / (1. - THRESHOLD).sqrt()
+}
+
+/// How far a drop's shadow falls, and how much wider its field is.
+fn drop_shadow(unit: f32) -> (f32, f32) {
+    (0.03 * unit, 1.3)
+}
+
+/// The CPU fallback, for when no GPU adapter is available: the same liquid and studio with a
+/// single sample per pixel, and without the dispersion, ripples and second softbox.
 fn render(width: u32, height: u32, phase: f32, studio: &Studio) -> Vec<u8> {
     let (w, h) = (width as f32, height as f32);
     let unit = w.min(h);
-    let angle = phase * TAU;
-    // Each drop's centre and the reach of its field, in pixels.
-    let drops: Vec<(f32, f32, f32)> = DROPS
-        .iter()
-        .map(|d| {
-            let x = d.x * w + d.swing.0 * unit * (d.turns.0 * angle + d.start).sin();
-            let y = d.y * h + d.swing.1 * unit * (d.turns.1 * angle + d.start * 1.7).cos();
-            (x, y, d.radius * unit * REACH)
-        })
-        .collect();
-    // The height of the liquid, scaled so a lone drop is a hemisphere.
-    let relief = 0.2 * unit / (1. - THRESHOLD).sqrt();
-    let drop_shadow = (0.03 * unit, 1.3);
+    let drops = drops_at(w, h, phase);
+    let relief = relief(unit);
+    let drop_shadow = drop_shadow(unit);
 
     let mut pixels = vec![0u8; (width * height * 4) as usize];
     let rows = height as usize;

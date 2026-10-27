@@ -1,5 +1,5 @@
-//! A welcome screen over a liquid-metal backdrop: rings and drops drifting slowly behind a card
-//! that holds the words and the two ways to start.
+//! A welcome screen over a liquid-metal backdrop: pools of liquid chrome flowing slowly behind a
+//! card that holds the words and the two ways to start.
 //!
 //! ```text
 //! cargo run --example liquid_metal -- [--direction glass|studio|mono] [--appearance dark|light]

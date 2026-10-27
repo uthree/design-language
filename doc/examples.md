@@ -102,9 +102,11 @@ cargo run --release --example liquid_metal
 as their drops drift. The liquid is a metaball field; its height gives each pixel a normal, and
 the reflected view looks up a studio — the theme's `metal` ramp from sky to ground with its
 coloured fringes at the horizon, a softbox, a strip light behind, and dark behind the metal, so
-edges darken as polished metal does. gpui has no custom shaders, so this is shaded on the CPU
-across every core (about 7 ms per new frame for a 1300 × 750 window in a release build) and gpui
-scales and composites the frame on the GPU. Metal is kept to the welcome screen: on controls it
+edges darken as polished metal does. gpui takes no custom shaders, so the backdrop shades each
+frame with a WGSL shader on its own small wgpu device, off screen, and hands gpui the read-back
+frame as an image: four samples a pixel, thin dispersion fringes, ripples running over the
+surface and a second softbox. Without a hardware GPU it falls back to the CPU (about 7 ms per
+new frame for a 1300 × 750 window in a release build) with a single sample and no extras. Metal is kept to the welcome screen: on controls it
 made sizes uneven and said too much. Captured on Linux under Weston.
 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)

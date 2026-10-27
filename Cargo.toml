@@ -12,6 +12,10 @@ gpui = "=0.2.2"
 unicode-segmentation = "1.10"
 # The liquid-metal backdrop hands gpui its frames as images, in gpui's own image type.
 image = { version = "0.25", default-features = false }
+# gpui takes no custom shaders, so the backdrop shades its frames with its own small wgpu device
+# and reads them back. wgpu 25 shares naga with gpui's renderer.
+wgpu = "25"
+pollster = "0.4"
 
 # `set_window_background` reaches the window's `NSVisualEffectView` through the handle gpui hands
 # out, to pick a material that still blurs on macOS 26 and later.
