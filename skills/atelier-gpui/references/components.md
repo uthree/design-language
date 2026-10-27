@@ -97,10 +97,12 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 ## Ornament
 
 - `MetalBackdrop::new(id)` — liquid metal (`atelier::metal`) for the background of a welcome
-  screen only: chrome rings and drops drifting slowly, with a softbox glint and coloured fringes
-  at the reflected horizon. Fill the screen with it and put the words and actions on a `Card`
-  above it, never on the metal. `.phase(t)` draws one still frame. Do not use metal on controls
-  (a ring round a button makes sizes uneven and says too much) or anywhere work happens.
+  screen only: pools of chrome that merge, stretch and pinch off, shaded as a real reflective
+  surface (darkening at the edges, a softbox glint, a rim light, the theme's coloured fringes at
+  the horizon). Fill the screen with it and put the words and actions on a `Card` above it,
+  never on the metal. `.phase(t)` draws one still frame. It is shaded on the CPU (about 7 ms per
+  new frame for a 1300 × 750 window, 30 frames a second), so keep it to the welcome screen. Do
+  not use metal on controls or anywhere work happens.
 
 ## Overlays
 

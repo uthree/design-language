@@ -208,11 +208,11 @@ pub struct Colors {
     /// so a wire never reads as the AI's work.
     pub ports: [Hsla; 5],
 
-    /// The liquid-metal finish: what a polished surface reflects, from its top edge to its
-    /// bottom, at the positions in [`crate::metal::STOPS`] — sky, bright band, a warm fringe,
-    /// the dark horizon, a cool fringe, ground, bounce light. The two fringes are the colour a
-    /// prism would split off at the horizon; everything else is near-neutral. Ornament only; see
-    /// [`crate::metal`].
+    /// The liquid-metal finish: the studio a polished surface reflects, from straight up to
+    /// straight down, at the positions in [`crate::metal::STOPS`] — sky, bright band, a warm
+    /// fringe, the dark horizon, a cool fringe, ground, bounce light. The two fringes are the
+    /// colour a prism would split off at the horizon; everything else is near-neutral. Ornament
+    /// only; see [`crate::metal`].
     pub metal: [Hsla; 9],
 
     /// Shadow colour; alpha is applied by [`Elevation`].

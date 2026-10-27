@@ -1,62 +1,53 @@
-//! Liquid metal: polished, slowly flowing chrome for the background of a welcome screen.
+//! Liquid metal: a pool of mercury-like chrome that flows behind a welcome screen.
 //!
 //! It is kept to that one place on purpose. On controls — a ring round a button — it made
 //! sizes uneven and said too much; under work it would keep gpui redrawing the whole window.
 //!
-//! gpui has no custom shaders, so the metal is composed from the primitive its renderer already
-//! draws on the GPU with an anti-aliased edge: the rounded rectangle. A shape is painted as a
-//! stack of concentric rounded rectangles, one per device pixel of a ring's width (coarser
-//! towards the middle of a solid shape), each painted out of horizontal bands, one per segment
-//! of the reflection ramp ([`crate::Colors::metal`]), with a two-stop gradient whose stops sit
-//! exactly on the band. So the ramp is exact at any size, nothing bands, and every edge is
-//! anti-aliased by the same signed-distance shader that draws every other control.
+//! The metal is shaded as a real surface, not painted as flat bands. A handful of metaballs
+//! drift on slow orbits; their summed field is the liquid, so drops merge, stretch and pinch off
+//! as they pass. The field's height gives every pixel a normal, the view reflects off it, and the
+//! reflected ray looks up a studio environment: the theme's reflection ramp
+//! ([`crate::Colors::metal`]) from sky to ground with its coloured fringes at the horizon, a
+//! softbox above and to the left, and a strip light behind on the right. Where the surface turns
+//! away at the silhouette the ray looks behind the metal into the dark of the studio, so every
+//! edge darkens the way polished metal does, with the strip light catching a thin rim.
 //!
-//! What the metal reflects depends on the height in the shape and on the depth into it: a ring
-//! is a tube, bright along its outer top and inner bottom with the dark horizon running round
-//! its middle; a solid shape is a sphere or a pill. The reflection flows by moving the horizon
-//! with time, travelling inwards like a ripple, while the pieces drift.
+//! gpui has no custom shaders, so the shading runs on the CPU, across every core, at 0.6 samples
+//! per logical pixel and 30 frames a second, and gpui's GPU renderer scales and composites the
+//! frame. A frame is reused until the clock moves on. A 1300 × 750 backdrop costs about 7 ms of
+//! CPU per new frame on four cores (release build), only while the welcome screen is open.
 //!
 //! Put the screen's words on a card above the metal, never on it. When
 //! [`crate::Motion::enabled`] is off it stands still.
 
 use std::f32::consts::{PI, TAU};
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    App, Bounds, BoxShadow, ContentMask, Corners, ElementId, Hsla, IntoElement, Pixels, RenderOnce,
-    Styled, Window, canvas, linear_color_stop, linear_gradient, point, px, quad, size,
-    transparent_black,
+    App, Bounds, ElementId, Entity, Hsla, IntoElement, Pixels, RenderImage, RenderOnce, Rgba,
+    Styled, Window, canvas, fill,
 };
+use image::{Frame, ImageBuffer};
 
 use crate::motion::looping;
-use crate::theme::{ActiveTheme, mix};
+use crate::theme::{ActiveTheme, Appearance, Direction};
 
-/// Where the stops of [`crate::Colors::metal`] fall, from the top of a surface (0) to its bottom
-/// (1). The horizon is the fifth stop, between the two coloured fringes.
+/// Where the stops of [`crate::Colors::metal`] fall, from straight up (0) through the horizon
+/// (0.5, the fifth stop, between the two coloured fringes) to straight down (1).
 pub const STOPS: [f32; 9] = [0.0, 0.24, 0.4, 0.45, 0.5, 0.55, 0.64, 0.84, 1.0];
 
 /// The frame drawn when motion is off.
 const REST: f32 = 0.12;
 
-/// Whether a shape is metal through, or a metal ring around a fill.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Body {
-    Solid,
-    Ring { width: Pixels, fill: Option<Hsla> },
-}
+/// Samples per logical pixel.
+const DENSITY: f32 = 0.6;
 
-/// One frame of a metal shape.
-#[derive(Clone, Copy, Debug)]
-struct Shape {
-    body: Body,
-    /// Corner radius; `None` for a capsule (a circle when the box is square).
-    radius: Option<Pixels>,
-    liquid: f32,
-    phase: f32,
-}
+/// New frames per second while the metal flows.
+const FPS: f32 = 30.;
 
-/// A welcome-screen backdrop: a few metal rings and drops drifting slowly over the window's
-/// background. Put the screen's words on a card above it, never on the metal.
+/// A welcome-screen backdrop: liquid chrome flowing slowly over the window's background. Put
+/// the screen's words on a card above it, never on the metal.
 #[derive(IntoElement)]
 pub struct MetalBackdrop {
     id: ElementId,
@@ -65,359 +56,446 @@ pub struct MetalBackdrop {
 }
 
 impl MetalBackdrop {
-    /// A drifting backdrop on a 24-second cycle.
+    /// A flowing backdrop on a 30-second cycle.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
-            period: Duration::from_secs(24),
+            period: Duration::from_secs(30),
             phase: None,
         }
     }
 
-    /// Draw one still frame at `phase` instead of drifting.
+    /// Draw one still frame at `phase` (0 to 1) of the cycle instead of flowing.
     pub fn phase(mut self, phase: f32) -> Self {
         self.phase = Some(phase);
         self
     }
 }
 
+/// The last frame rendered, kept so a redraw at the same moment reuses it.
+#[derive(Default)]
+struct Cache {
+    key: Option<Key>,
+    image: Option<Arc<RenderImage>>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct Key {
+    width: u32,
+    height: u32,
+    frame: u32,
+    direction: Direction,
+    appearance: Appearance,
+}
+
 impl RenderOnce for MetalBackdrop {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let scene = Scene(self.phase.unwrap_or(REST));
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let cache = window.use_keyed_state(self.id.clone(), cx, |_, _| Cache::default());
+        let frames = (self.period.as_secs_f32() * FPS).max(1.);
+        let scene = Scene {
+            phase: self.phase.unwrap_or(REST),
+            frames,
+            cache,
+        };
         if self.phase.is_some() {
             return scene.into_any_element();
         }
-        looping(scene, self.id, self.period, REST, cx, |_, phase| {
-            Scene(phase)
+        looping(scene, self.id, self.period, REST, cx, |scene, phase| {
+            Scene { phase, ..scene }
         })
     }
 }
 
 #[derive(IntoElement)]
-struct Scene(f32);
-
-/// One piece of the backdrop: its centre (in fractions of the box), its size (in fractions of
-/// the box's shorter side), its ring width (0 for a solid drop) and where its drift starts.
-struct Piece {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    ring: f32,
-    drift: f32,
+struct Scene {
+    phase: f32,
+    frames: f32,
+    cache: Entity<Cache>,
 }
-
-const SCENE: [Piece; 6] = [
-    Piece {
-        x: 0.84,
-        y: 0.28,
-        width: 0.62,
-        height: 0.62,
-        ring: 0.075,
-        drift: 0.,
-    },
-    Piece {
-        x: 0.12,
-        y: 0.2,
-        width: 0.22,
-        height: 0.22,
-        ring: 0.04,
-        drift: 2.1,
-    },
-    Piece {
-        x: 0.16,
-        y: 0.8,
-        width: 0.34,
-        height: 0.34,
-        ring: 0.,
-        drift: 1.3,
-    },
-    Piece {
-        x: 0.62,
-        y: 0.92,
-        width: 0.5,
-        height: 0.15,
-        ring: 0.,
-        drift: 4.,
-    },
-    Piece {
-        x: 0.94,
-        y: 0.8,
-        width: 0.17,
-        height: 0.17,
-        ring: 0.,
-        drift: 3.2,
-    },
-    Piece {
-        x: 0.38,
-        y: 0.1,
-        width: 0.1,
-        height: 0.1,
-        ring: 0.,
-        drift: 5.1,
-    },
-];
 
 impl RenderOnce for Scene {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let phase = self.0;
         canvas(
             |_, _, _| {},
-            move |bounds, _, window, cx| {
-                let theme = cx.theme();
-                let background = theme.colors.background;
-                let shadow = theme.colors.shadow;
-                let dark = theme.appearance.is_dark();
-                window.paint_quad(gpui::fill(bounds, background));
-                // Pieces run off the edges; keep them, and their shadows, inside the box.
-                window.with_content_mask(Some(ContentMask { bounds }), |window| {
-                    let unit = f32::from(bounds.size.width.min(bounds.size.height));
-                    let angle = phase * TAU;
-                    for piece in &SCENE {
-                        let x = f32::from(bounds.left())
-                            + f32::from(bounds.size.width) * piece.x
-                            + unit * 0.025 * (angle + piece.drift).sin();
-                        let y = f32::from(bounds.top())
-                            + f32::from(bounds.size.height) * piece.y
-                            + unit * 0.02 * (angle * 2. + piece.drift).cos();
-                        let (w, h) = (unit * piece.width, unit * piece.height);
-                        let at =
-                            Bounds::new(point(px(x - w / 2.), px(y - h / 2.)), size(px(w), px(h)));
-                        let radius = px(w.min(h) / 2.);
-                        window.paint_shadows(
-                            at,
-                            Corners::all(radius),
-                            &[BoxShadow {
-                                color: shadow.opacity(if dark { 0.5 } else { 0.16 }),
-                                offset: point(px(0.), px(unit * 0.02)),
-                                blur_radius: px(unit * 0.04),
-                                spread_radius: px(0.),
-                            }],
-                        );
-                        let body = if piece.ring > 0. {
-                            Body::Ring {
-                                width: px(unit * piece.ring),
-                                fill: Some(background),
-                            }
-                        } else {
-                            Body::Solid
-                        };
-                        let shape = Shape {
-                            body,
-                            radius: None,
-                            liquid: 1.,
-                            phase: (phase * 3. + piece.drift / TAU).fract(),
-                        };
-                        paint_shape(&shape, at, window, cx);
-                    }
-                });
-            },
+            move |bounds, _, window, cx| paint(&self, bounds, window, cx),
         )
         .size_full()
     }
 }
 
-/// The reflection the metal paints: the theme's ramp with a studio softbox added — a crisp,
-/// near-white highlight high in the sky and a faint second one in the ground — which is what
-/// makes polished metal glint rather than merely shine.
-fn reflection(ramp: &[Hsla; 9]) -> Vec<(f32, Hsla)> {
-    let white = gpui::white();
-    let mut stops = vec![
-        (0., ramp[0]),
-        (0.1, mix(ramp[0], ramp[1], 0.4)),
-        (0.135, mix(ramp[1], white, 0.85)),
-        (0.17, white),
-        (0.195, mix(ramp[1], white, 0.7)),
-    ];
-    stops.extend(STOPS.iter().copied().zip(ramp.iter().copied()).skip(1));
-    // The second softbox, reflected in the floor just above the bounce light.
-    stops.insert(stops.len() - 1, (0.92, mix(ramp[8], white, 0.45)));
-    stops
-}
-
-/// The reflection at `r`, extended flat past both ends so a moving horizon never runs out of
-/// colour.
-fn reflection_at(stops: &[(f32, Hsla)], r: f32) -> Hsla {
-    if r <= stops[0].0 {
-        return stops[0].1;
-    }
-    for pair in stops.windows(2) {
-        let ((from, a), (to, b)) = (pair[0], pair[1]);
-        if r <= to {
-            return mix(a, b, (r - from) / (to - from));
-        }
-    }
-    stops[stops.len() - 1].1
-}
-
-fn paint_shape(shape: &Shape, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
     let theme = cx.theme();
-    let ramp = theme.colors.metal;
-    let stops = reflection(&ramp);
-    let surface = theme.colors.surface;
-    let scale = window.scale_factor();
-    let pixel = 1. / scale;
-    let width = f32::from(bounds.size.width);
-    let height = f32::from(bounds.size.height);
-    if width <= 0. || height <= 0. {
-        return;
+    let background = theme.colors.background;
+    window.paint_quad(fill(bounds, background));
+
+    // The metal is smooth, so it is shaded at a little over half a sample per logical pixel and
+    // gpui's sampler scales it up; edges stay smooth, just slightly soft.
+    let density = DENSITY.min(window.scale_factor());
+    let width = (f32::from(bounds.size.width) * density).round().max(1.) as u32;
+    let height = (f32::from(bounds.size.height) * density).round().max(1.) as u32;
+    let frame = ((scene.phase.rem_euclid(1.)) * scene.frames) as u32;
+    let key = Key {
+        width,
+        height,
+        frame,
+        direction: theme.direction,
+        appearance: theme.appearance,
+    };
+
+    let cached = scene.cache.read(cx);
+    let image = match (&cached.key, &cached.image) {
+        (Some(cached_key), Some(image)) if *cached_key == key => image.clone(),
+        _ => {
+            let studio = Studio::new(theme.colors.metal, background, theme.appearance);
+            let phase = frame as f32 / scene.frames;
+            let pixels = render(width, height, phase, &studio);
+            let Some(buffer) = ImageBuffer::from_raw(width, height, pixels) else {
+                return;
+            };
+            let image = Arc::new(RenderImage::new(vec![Frame::new(buffer)]));
+            let previous = scene.cache.update(cx, |cache, _| {
+                cache.key = Some(key);
+                cache.image.replace(image.clone())
+            });
+            if let Some(previous) = previous {
+                window.drop_image(previous).ok();
+            }
+            image
+        }
+    };
+    window
+        .paint_image(bounds, Default::default(), image, 0, false)
+        .ok();
+}
+
+/// One drop of the liquid: where its orbit is centred (in fractions of the box), its radius (in
+/// fractions of the box's shorter side), how far it swings and how fast (whole turns per cycle,
+/// so the cycle loops seamlessly), and where on its orbit it starts.
+struct Drop {
+    x: f32,
+    y: f32,
+    radius: f32,
+    swing: (f32, f32),
+    turns: (f32, f32),
+    start: f32,
+}
+
+const fn drop(
+    x: f32,
+    y: f32,
+    radius: f32,
+    swing: (f32, f32),
+    turns: (f32, f32),
+    start: f32,
+) -> Drop {
+    Drop {
+        x,
+        y,
+        radius,
+        swing,
+        turns,
+        start,
     }
-    let radius = shape
-        .radius
-        .map(f32::from)
-        .unwrap_or(f32::MAX)
-        .min(width.min(height) / 2.);
-    let flow = shape.liquid * 0.07;
-    let wave = shape.phase * TAU;
+}
 
-    // How deep the metal goes, and in how many layers. A ring gets one per device pixel; a
-    // solid shape gets coarser layers towards its middle, where the shading changes slowly.
-    let (depth, layers) = match shape.body {
-        Body::Ring { width: ring, .. } => {
-            let depth = f32::from(ring).min(width.min(height) / 2.);
-            (depth, ((depth * scale).ceil() as usize).max(1))
+/// Three pools that merge and part as their drops pass each other, and two strays.
+const DROPS: [Drop; 14] = [
+    // A large pool, upper right.
+    drop(0.84, 0.3, 0.2, (0.06, 0.05), (1., 2.), 0.),
+    drop(0.74, 0.18, 0.13, (0.1, 0.07), (2., 1.), 1.3),
+    drop(0.95, 0.46, 0.12, (0.07, 0.1), (1., 1.), 2.6),
+    drop(0.7, 0.42, 0.09, (0.12, 0.06), (3., 2.), 4.1),
+    drop(0.93, 0.12, 0.08, (0.05, 0.08), (2., 3.), 5.2),
+    // A pool lower left.
+    drop(0.17, 0.82, 0.17, (0.05, 0.04), (1., 1.), 0.7),
+    drop(0.28, 0.7, 0.1, (0.09, 0.08), (2., 1.), 3.3),
+    drop(0.07, 0.68, 0.08, (0.06, 0.1), (1., 2.), 4.8),
+    // A long pool along the bottom.
+    drop(0.56, 0.97, 0.11, (0.09, 0.03), (1., 2.), 1.9),
+    drop(0.68, 0.95, 0.1, (0.1, 0.04), (2., 1.), 5.7),
+    drop(0.45, 0.99, 0.08, (0.07, 0.03), (1., 3.), 3.1),
+    // Strays that wander into the pools and out again.
+    drop(0.12, 0.2, 0.07, (0.05, 0.07), (1., 2.), 2.2),
+    drop(0.38, 0.1, 0.05, (0.08, 0.05), (2., 1.), 0.4),
+    drop(0.5, 0.78, 0.045, (0.16, 0.08), (1., 1.), 4.4),
+];
+
+/// A drop's field reaches zero at this multiple of its radius; its surface, where the field
+/// alone crosses [`THRESHOLD`], sits at its radius.
+const REACH: f32 = 1. / 0.608;
+/// The field level of the liquid's surface.
+const THRESHOLD: f32 = 0.25;
+
+/// What the metal reflects, and what it sits on.
+struct Studio {
+    /// The reflection ramp, at [`STOPS`].
+    ramp: [[f32; 3]; 9],
+    background: [f32; 3],
+    /// The dark of the studio behind the metal, seen at its edges.
+    behind: [f32; 3],
+    /// The fill wall behind the viewer, seen in the faces of the drops.
+    front: [f32; 3],
+    shadow: f32,
+}
+
+fn rgb(color: Hsla) -> [f32; 3] {
+    let Rgba { r, g, b, .. } = color.into();
+    [r, g, b]
+}
+
+impl Studio {
+    fn new(ramp: [Hsla; 9], background: Hsla, appearance: Appearance) -> Self {
+        let ramp = ramp.map(rgb);
+        let horizon = ramp[4];
+        Self {
+            ramp,
+            background: rgb(background),
+            behind: mix3(horizon, ramp[6], 0.35),
+            front: mix3(ramp[1], ramp[2], 0.5),
+            shadow: if appearance.is_dark() { 0.55 } else { 0.2 },
         }
-        Body::Solid => {
-            let depth = width.min(height) / 2.;
-            (depth, ((depth * scale / 2.).ceil() as usize).clamp(4, 48))
+    }
+
+    /// The colour the studio shows along the reflected ray `r` (x right, y down, z towards the
+    /// viewer).
+    fn look(&self, r: [f32; 3]) -> [f32; 3] {
+        // Sky to ground by elevation.
+        let elevation = (-r[1]).clamp(-1., 1.).asin();
+        let t = 0.5 - elevation / PI;
+        let mut color = ramp_at(&self.ramp, t);
+
+        // In front, behind the viewer, a soft fill wall: a drop's face is light, and the
+        // horizon reads as a ring round it rather than a band across it.
+        let front = smoothstep(0.45, 1., r[2]);
+        color = mix3(color, self.front, front * 0.6);
+
+        // Behind the metal the studio is dark: rays that graze the silhouette look there.
+        let back = smoothstep(-0.15, -0.9, r[2]);
+        color = mix3(color, self.behind, back * 0.85);
+
+        // The softbox, above and to the left in front: a soft-edged rectangle of light.
+        let (e1, e2, facing) = project(r, SOFTBOX);
+        if facing > 0. {
+            let light = smoothstep(0.34, 0.26, e1.abs()) * smoothstep(0.16, 0.1, e2.abs());
+            color = mix3(color, [1., 1., 1.], light * 0.95);
         }
-    };
+        // The strip light, behind on the right: a thin rim along the far edges.
+        let strip = dot(r, STRIP);
+        let rim = smoothstep(0.93, 0.985, strip);
+        mix3(color, [1., 1., 1.], rim * 0.8)
+    }
+}
 
-    let turn = match shape.body {
-        Body::Ring { width: ring, .. } => ((f32::from(ring) - 3.) / 8.).clamp(0.3, 1.),
-        Body::Solid => 1.,
-    };
+/// The softbox's direction (x right, y down, z towards the viewer), normalised.
+const SOFTBOX: [f32; 3] = [-0.43, -0.62, 0.656];
+/// The strip light's direction, normalised.
+const STRIP: [f32; 3] = [0.78, -0.3, -0.55];
 
-    for layer in 0..layers {
-        let inset = depth * layer as f32 / layers as f32;
-        let d = (layer as f32 + 0.5) / layers as f32;
-        // The reflection at height y (0 at the top of the shape, 1 at its bottom) is
-        // r = mid + (y - 0.5) * slope; `edge` darkens the layer towards the ground. Heights are
-        // the shape's, not the layer's, so neighbouring layers differ only by a little depth.
-        let (slope, mid, edge) = match shape.body {
-            // A tube: upright reflection on its outer side, inverted on its inner side, the
-            // horizon round its middle.
-            // A thin ring has too few pixels to show a tube, so it turns less of the way and
-            // reads as a bevel, lit from above, with the fringes at its sides.
-            Body::Ring { .. } => (
-                1.15 * (PI * d * turn).cos(),
-                0.5 + flow * (wave + 2.5 * d).sin(),
-                if layer == 0 { 0.3 } else { 0. },
-            ),
-            // A sphere or pill: the reflection tightens and the horizon bows down towards the
-            // middle, and the rim turns away into the darker ground.
-            Body::Solid => (
-                1. - 0.4 * d,
-                0.5 - 0.07 * d + flow * (wave + 3. * d).sin(),
-                (1. - d / 0.15).max(0.) * 0.4,
-            ),
-        };
+/// `r` in a frame around `axis`: across, up, and how much it faces the axis.
+fn project(r: [f32; 3], axis: [f32; 3]) -> (f32, f32, f32) {
+    let across = normalize(cross(axis, [0., 1., 0.]));
+    let up = cross(across, axis);
+    (dot(r, across), dot(r, up), dot(r, axis))
+}
 
-        let x0 = f32::from(bounds.left()) + inset;
-        let y0 = f32::from(bounds.top()) + inset;
-        let (w, h) = (width - 2. * inset, height - 2. * inset);
-        if w <= pixel || h <= pixel {
-            break;
-        }
-        let rect = Bounds::new(point(px(x0), px(y0)), size(px(w), px(h)));
-        let corner = Corners::all(px((radius - inset).max(0.)));
-        // From a fraction of the layer's height to a fraction of the shape's, and back.
-        let to_shape = |v: f32| (inset + v * h) / height;
-        let to_layer = |y: f32| (y * height - inset) / h;
-        let color = |v: f32| -> Hsla {
-            let y = to_shape(v);
-            let base = reflection_at(&stops, mid + (y - 0.5) * slope);
-            if edge > 0. {
-                // The rim turns away: into the ground above, into the bounce light below.
-                let below = ((y - 0.55) / 0.35).clamp(0., 1.);
-                mix(base, mix(ramp[6], ramp[8], below), edge)
-            } else {
-                base
-            }
-        };
+fn render(width: u32, height: u32, phase: f32, studio: &Studio) -> Vec<u8> {
+    let (w, h) = (width as f32, height as f32);
+    let unit = w.min(h);
+    let angle = phase * TAU;
+    // Each drop's centre and the reach of its field, in pixels.
+    let drops: Vec<(f32, f32, f32)> = DROPS
+        .iter()
+        .map(|d| {
+            let x = d.x * w + d.swing.0 * unit * (d.turns.0 * angle + d.start).sin();
+            let y = d.y * h + d.swing.1 * unit * (d.turns.1 * angle + d.start * 1.7).cos();
+            (x, y, d.radius * unit * REACH)
+        })
+        .collect();
+    // The height of the liquid, scaled so a lone drop is a hemisphere.
+    let relief = 0.2 * unit / (1. - THRESHOLD).sqrt();
+    let drop_shadow = (0.03 * unit, 1.3);
 
-        // Where the reflection crosses a stop, in fractions of the layer's height.
-        let mut cuts = vec![0., 1.];
-        if slope.abs() > 1e-3 {
-            for (stop, _) in &stops {
-                let v = to_layer(0.5 + (stop - mid) / slope);
-                if v > 0. && v < 1. {
-                    cuts.push(v);
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    let rows = height as usize;
+    let threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(rows.max(1));
+    let band = rows.div_ceil(threads);
+    std::thread::scope(|scope| {
+        for (chunk, out) in pixels.chunks_mut(band * width as usize * 4).enumerate() {
+            let drops = &drops;
+            scope.spawn(move || {
+                let first = chunk * band;
+                let mut near = Vec::with_capacity(drops.len());
+                let mut near_shadow = Vec::with_capacity(drops.len());
+                for (index, pixel) in out.chunks_exact_mut(4).enumerate() {
+                    let row = first + index / width as usize;
+                    let column = index % width as usize;
+                    let (px, py) = (column as f32 + 0.5, row as f32 + 0.5);
+                    if column == 0 {
+                        // The drops that reach this row, for the metal and for its shadow.
+                        near.clear();
+                        near_shadow.clear();
+                        for &(x, y, reach) in drops {
+                            if (py - y).abs() < reach {
+                                near.push((x, y, reach));
+                            }
+                            let (sy, sr) = (y + drop_shadow.0, reach * drop_shadow.1);
+                            if (py - sy).abs() < sr {
+                                near_shadow.push((x, sy, sr));
+                            }
+                        }
+                    }
+                    let (field, gx, gy) = field_at(&near, px, py);
+                    let (shadow_field, _, _) = field_at(&near_shadow, px, py);
+                    let shade = (shadow_field / 0.45).clamp(0., 1.) * studio.shadow;
+                    let ground = studio.background.map(|c| c * (1. - shade));
+
+                    let gradient = (gx * gx + gy * gy).sqrt().max(1e-6);
+                    // Signed distance to the surface in pixels, for an anti-aliased edge.
+                    let coverage = ((field - THRESHOLD) / gradient + 0.5).clamp(0., 1.);
+                    let color = if coverage > 0. {
+                        let lift = (field - THRESHOLD).max(1e-4).sqrt();
+                        let slope = relief / (2. * lift);
+                        let n = normalize([-gx * slope, -gy * slope, 1.]);
+                        // The view, straight into the screen, reflected off the surface.
+                        let r = [2. * n[2] * n[0], 2. * n[2] * n[1], 2. * n[2] * n[2] - 1.];
+                        mix3(ground, studio.look(r), coverage)
+                    } else {
+                        ground
+                    };
+                    // BGRA, opaque.
+                    pixel[0] = to_byte(color[2]);
+                    pixel[1] = to_byte(color[1]);
+                    pixel[2] = to_byte(color[0]);
+                    pixel[3] = 255;
                 }
-            }
-        }
-        cuts.sort_by(|a, b| a.total_cmp(b));
-
-        // Band edges on device pixels, so neighbouring bands meet without a seam. Each band
-        // paints the whole rounded layer, clipped to the band, so its edge stays anti-aliased.
-        let snap = |v: f32| ((y0 + v * h) * scale).round() / scale;
-        for pair in cuts.windows(2) {
-            let (from, to) = (pair[0], pair[1]);
-            let (top, bottom) = (
-                if from == 0. { y0 - pixel } else { snap(from) },
-                if to == 1. { y0 + h + pixel } else { snap(to) },
-            );
-            if bottom <= top {
-                continue;
-            }
-            let band = Bounds::new(
-                point(px(x0 - pixel), px(top)),
-                size(px(w + 2. * pixel), px(bottom - top)),
-            );
-            let background = linear_gradient(
-                180.,
-                linear_color_stop(color(from), from),
-                linear_color_stop(color(to), to),
-            );
-            window.with_content_mask(Some(ContentMask { bounds: band }), |window| {
-                window.paint_quad(quad(
-                    rect,
-                    corner,
-                    background,
-                    px(0.),
-                    transparent_black(),
-                    Default::default(),
-                ));
             });
         }
+    });
+    pixels
+}
+
+/// The liquid's field at a point, and its gradient.
+fn field_at(drops: &[(f32, f32, f32)], x: f32, y: f32) -> (f32, f32, f32) {
+    let (mut field, mut gx, mut gy) = (0., 0., 0.);
+    for &(cx, cy, reach) in drops {
+        let (dx, dy) = (x - cx, y - cy);
+        let inv = 1. / (reach * reach);
+        let q = (dx * dx + dy * dy) * inv;
+        if q < 1. {
+            let k = 1. - q;
+            field += k * k * k;
+            let g = -6. * k * k * inv;
+            gx += g * dx;
+            gy += g * dy;
+        }
+    }
+    (field, gx, gy)
+}
+
+/// The ramp at `t`, flat past both ends.
+fn ramp_at(ramp: &[[f32; 3]; 9], t: f32) -> [f32; 3] {
+    if t <= STOPS[0] {
+        return ramp[0];
+    }
+    for index in 1..STOPS.len() {
+        if t <= STOPS[index] {
+            let f = (t - STOPS[index - 1]) / (STOPS[index] - STOPS[index - 1]);
+            return mix3(ramp[index - 1], ramp[index], f);
+        }
+    }
+    ramp[8]
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0., 1.);
+    t * t * (3. - 2. * t)
+}
+
+fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn normalize(v: [f32; 3]) -> [f32; 3] {
+    let length = dot(v, v).sqrt().max(1e-9);
+    [v[0] / length, v[1] / length, v[2] / length]
+}
+
+fn to_byte(value: f32) -> u8 {
+    (value.clamp(0., 1.) * 255. + 0.5) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    fn studio() -> Studio {
+        let theme = Theme::new(Direction::Glass, Appearance::Dark);
+        Studio::new(
+            theme.colors.metal,
+            theme.colors.background,
+            theme.appearance,
+        )
     }
 
-    match shape.body {
-        Body::Ring { fill, .. } => {
-            let (w, h) = (width - 2. * depth, height - 2. * depth);
-            if w > 0. && h > 0. {
-                let rect = Bounds::new(
-                    point(bounds.left() + px(depth), bounds.top() + px(depth)),
-                    size(px(w), px(h)),
-                );
-                window.paint_quad(
-                    gpui::fill(rect, fill.unwrap_or(surface))
-                        .corner_radii(Corners::all(px((radius - depth).max(0.)))),
-                );
-            }
+    fn luminance(color: [f32; 3]) -> f32 {
+        0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]
+    }
+
+    #[test]
+    fn edges_are_darker_than_the_face() {
+        let studio = studio();
+        // Facing the viewer: the ray comes straight back.
+        let face = studio.look([0., -0.3, 0.95]);
+        // Grazing the silhouette: the ray goes on behind the metal.
+        let edge = studio.look([0.05, -0.3, -0.95]);
+        assert!(luminance(edge) < luminance(face) * 0.6);
+    }
+
+    #[test]
+    #[ignore = "timing; run with --release --ignored --nocapture"]
+    fn frame_time() {
+        let studio = studio();
+        let start = std::time::Instant::now();
+        for frame in 0..20 {
+            render(780, 450, frame as f32 / 20., &studio);
         }
-        Body::Solid => {
-            // Bloom: the softbox in the reflection is bright enough to glow a little past its
-            // edges, on the upper left where it peaks.
-            let side = width.min(height);
-            let drift = flow * (wave + 0.6).sin();
-            let glow = Bounds::new(
-                point(
-                    bounds.left() + px(width * 0.5 - side * (0.24 - drift)),
-                    bounds.top() + px(height * 0.5 - side * 0.36),
-                ),
-                size(px(side * 0.2), px(side * 0.06)),
-            );
-            window.paint_shadows(
-                glow,
-                Corners::all(px(side * 0.03)),
-                &[BoxShadow {
-                    color: gpui::white().opacity(0.45),
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(side * 0.07),
-                    spread_radius: px(0.),
-                }],
-            );
-        }
+        println!(
+            "{:?} per 780 x 450 frame (a 1300 x 750 window)",
+            start.elapsed() / 20
+        );
+    }
+
+    #[test]
+    fn a_frame_renders_and_loops() {
+        let studio = studio();
+        let first = render(64, 40, 0., &studio);
+        let last = render(64, 40, 1., &studio);
+        assert_eq!(first.len(), 64 * 40 * 4);
+        let differing = first
+            .iter()
+            .zip(&last)
+            .filter(|(a, b)| a.abs_diff(**b) > 2)
+            .count();
+        assert!(differing < first.len() / 100, "the cycle loops seamlessly");
     }
 }

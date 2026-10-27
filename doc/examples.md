@@ -95,16 +95,17 @@ These two screenshots were captured on Linux under Xvfb.
 ## liquid_metal — a welcome screen over liquid metal
 
 ```bash
-cargo run --example liquid_metal
+cargo run --release --example liquid_metal
 ```
 
-`MetalBackdrop` behind a welcome card: chrome rings and drops drifting slowly, with a softbox
-glint and the theme's coloured fringes at the reflected horizon. Metal is kept to this one
-place; on controls it made sizes uneven and said too much. gpui has no custom shaders, so
-each shape is a stack of concentric rounded rectangles, one per device pixel of a ring, each
-painted in horizontal bands with two-stop gradients that follow the reflection exactly, and
-every edge comes from gpui's own anti-aliased rounded-rectangle shader.
-Captured on Linux under Weston.
+`MetalBackdrop` behind a welcome card: pools of liquid chrome that merge, stretch and pinch off
+as their drops drift. The liquid is a metaball field; its height gives each pixel a normal, and
+the reflected view looks up a studio — the theme's `metal` ramp from sky to ground with its
+coloured fringes at the horizon, a softbox, a strip light behind, and dark behind the metal, so
+edges darken as polished metal does. gpui has no custom shaders, so this is shaded on the CPU
+across every core (about 7 ms per new frame for a 1300 × 750 window in a release build) and gpui
+scales and composites the frame on the GPU. Metal is kept to the welcome screen: on controls it
+made sizes uneven and said too much. Captured on Linux under Weston.
 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)
 
