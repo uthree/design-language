@@ -25,7 +25,8 @@ More examples — a coding-agent app, a physical-model instrument view, an analy
 workflow editor, a MATLAB-style plotting workbench with 3-D views, welcome screens over liquid
 metal and ambient backdrops, and two Auris Studio windows redrawn — are in [doc/examples.md](doc/examples.md). Install the Skill: see
 [doc/skill.md](doc/skill.md). The candidates are compared in
-[doc/candidates.md](doc/candidates.md); the rules and API live in
+[doc/candidates.md](doc/candidates.md); app icons and logos, two-letter element marks such as
+Auris Studio's **Au**, are set out in [doc/app-icons.md](doc/app-icons.md); the rules and API live in
 [skills/atelier-gpui](skills/atelier-gpui/SKILL.md).
 
 ## License

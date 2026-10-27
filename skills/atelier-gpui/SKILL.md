@@ -1,6 +1,6 @@
 ---
 name: atelier-gpui
-description: Design language and component kit for gpui (Rust) creator tools with built-in AI agents — themes/tokens, buttons, controls, knobs, meters, layout, and the agent side panel, chat transcript, tool calls, approvals and composer. Use when building, redesigning or reviewing gpui UI that depends on the `atelier` crate (Auris Studio and other gpui creator apps), when adding an AI assistant panel or chat to a gpui app, or when asked which design candidate (Studio, Glass, Mono) or token to use. Do not use for non-gpui UI.
+description: Design language and component kit for gpui (Rust) creator tools with built-in AI agents — themes/tokens, buttons, controls, knobs, meters, layout, and the agent side panel, chat transcript, tool calls, approvals and composer. Use when building, redesigning or reviewing gpui UI that depends on the `atelier` crate (Auris Studio and other gpui creator apps), when adding an AI assistant panel or chat to a gpui app, or when asked which design candidate (Studio, Glass, Mono) or token to use, or when making an app icon or logo (two-letter element marks such as Auris Studio's "Au"). Do not use for non-gpui UI.
 ---
 
 # Atelier for gpui
@@ -19,6 +19,7 @@ Read this page fully, then the reference for the part you touch.
 | [references/motion.md](references/motion.md) | Animating anything; showing progress, loading or long-running tasks. |
 | [references/visualization.md](references/visualization.md) | Plots for sound: spectra, waveforms, spectrograms, vectorscopes, physical-model views. |
 | [references/plotting.md](references/plotting.md) | Plots for numbers on labelled axes: line, scatter, stem, histogram, fields with contours, 3-D surfaces, curves and point clouds. |
+| [references/app-icons.md](references/app-icons.md) | Making or reviewing an app's icon or logo: the two-letter element mark. |
 | [references/adopting.md](references/adopting.md) | Adding Atelier to an app, or migrating an existing gpui UI (e.g. Auris Studio) onto it. |
 
 Before writing code, look at the crate itself (`src/` of the `atelier` dependency, or this
