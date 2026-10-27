@@ -1,0 +1,55 @@
+name: Atelier app icon
+description: >-
+  Draw an app's two-letter element mark (doc/app-icons.md) at a given release, with the .icns,
+  .ico, PNGs and SVGs, for a release build to package.
+inputs:
+  slug:
+    description: The app's slug in tools/app-icon/apps.toml of this repository (e.g. auris-studio).
+    required: true
+  version:
+    description: >-
+      The release to print in the top-right corner, e.g. v0.13.0 (shown as 0.13). Defaults to
+      the pushed tag's name.
+    required: false
+    default: ${{ github.ref_name }}
+  out:
+    description: Directory to write into; the icons land in <out>/<slug>.
+    required: false
+    default: app-icons
+outputs:
+  dir:
+    description: The directory holding icon.icns, icon.ico, png/, icon.svg and the rest.
+    value: ${{ steps.draw.outputs.dir }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install the tool's dependencies
+      shell: bash
+      run: python -m pip install --disable-pip-version-check -q -r "$GITHUB_ACTION_PATH/../../../tools/app-icon/requirements.txt"
+    - name: Cache Inter
+      id: inter
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/inter-4.1
+        key: inter-4.1
+    - name: Fetch Inter Display
+      if: steps.inter.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -sSfL -o "$RUNNER_TEMP/inter.zip" https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
+        unzip -oqj "$RUNNER_TEMP/inter.zip" extras/otf/InterDisplay-Bold.otf extras/otf/InterDisplay-SemiBold.otf -d "$RUNNER_TEMP/inter-4.1"
+    - name: Draw the icon
+      id: draw
+      shell: bash
+      env:
+        SLUG: ${{ inputs.slug }}
+        VERSION: ${{ inputs.version }}
+        OUT: ${{ inputs.out }}
+      run: |
+        python "$GITHUB_ACTION_PATH/../../../tools/app-icon/make_icons.py" \
+          --only "$SLUG" --version "$VERSION" --out "$OUT" --no-sheets \
+          --font-dir "$RUNNER_TEMP/inter-4.1"
+        echo "dir=$OUT/$SLUG" >> "$GITHUB_OUTPUT"

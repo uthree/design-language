@@ -46,3 +46,23 @@ jobs:
       - run: cargo clippy --all-targets --locked
       - run: cargo test --locked
       - run: cargo build --examples --locked
+
+  app-icon:
+    name: App icon action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: icon
+        uses: ./.github/actions/app-icon
+        with:
+          slug: auris-studio
+          version: v0.13.0
+          out: ${{ runner.temp }}/icons
+      - name: Check every file was drawn
+        env:
+          DIR: ${{ steps.icon.outputs.dir }}
+        run: |
+          for file in icon.svg icon-corners.svg icon-medium.svg icon-small.svg icon-macos.svg \
+                      icon.icns icon.ico symbolic.svg png/16.png png/128.png png/1024.png; do
+            test -s "$DIR/$file" || { echo "missing $file"; exit 1; }
+          done

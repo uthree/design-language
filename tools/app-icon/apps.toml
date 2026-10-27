@@ -1,0 +1,72 @@
+# The app marks drawn by make_icons.py. Each entry is one app; see doc/app-icons.md for how
+# to choose a symbol, a number, a version and an element colour. `version` is the release
+# the committed files show (as major.minor); release builds redraw the icon at their own tag with
+# .github/actions/app-icon, so it need not be bumped by hand. `metal = true` also writes
+# icon-metal.svg for hero uses.
+
+[[app]]
+slug = "auris-studio"
+name = "Auris Studio"
+symbol = "Au"
+number = 1
+version = "0.13.0"
+element = "gold"
+ship = true
+
+[[app]]
+slug = "auris-studio-family"
+name = "Auris Studio"  # the family form
+symbol = "As"
+number = 1
+version = "0.13.0"
+element = "gold"
+
+# The examples, marked as if they were apps of the same suite. Their versions are made up.
+
+[[app]]
+slug = "agent-desktop"
+name = "Agent Desktop"
+symbol = "Ag"
+number = 2
+version = "0.4.0"
+element = "graphite"
+
+[[app]]
+slug = "instrument-lab"
+name = "Instrument Lab"
+symbol = "In"
+number = 3
+version = "0.2.0"
+element = "orange"
+
+[[app]]
+slug = "visualizer"
+name = "Visualizer"
+symbol = "Vi"
+number = 4
+version = "1.2.0"
+element = "cyan"
+
+[[app]]
+slug = "node-editor"
+name = "Node Editor"
+symbol = "Ne"
+number = 5
+version = "0.9.0"
+element = "rose"
+
+[[app]]
+slug = "plot-lab"
+name = "Plot Lab"
+symbol = "Pl"
+number = 6
+version = "2.1.0"
+element = "blue"
+
+[[app]]
+slug = "atelier"
+name = "Atelier"
+symbol = "At"
+number = 7
+version = "0.1.0"
+element = "violet"
