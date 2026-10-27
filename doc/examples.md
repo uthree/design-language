@@ -121,7 +121,9 @@ frame shaded on the CPU with a single sample and no extras, answering nothing. O
 liquid answers the pointer, which pushes drops aside and leaves ripples where it crosses the
 metal, and the window, which leaves the liquid sloshing when it is moved or resized. Its drops
 can be played with like the oil on a bowl of ramen: press on one and carry it, bring it up to
-others and they fuse into one larger drop, and double-click to part them all again. Metal is
+others and they fuse into one larger drop. A fused drop sheds one of its drops now and then,
+more often when the pointer brushes across it, and tears apart if carried too fast;
+double-click to part them all again. Metal is
 kept to the welcome screen: on controls it made sizes uneven and said too much. Captured on Linux under Weston.
 
 ![Liquid metal welcome, Glass dark](images/liquid-metal-welcome-glass-dark.png)

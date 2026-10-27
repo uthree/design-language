@@ -30,7 +30,8 @@
 //!
 //! The drops can also be picked up and played with, like the oil on a bowl of ramen: press on
 //! the metal to take a drop, carry it, and let go; carried drops fuse with whatever they touch
-//! into larger drops, and a double click parts them all again. Anything laid over the metal
+//! into larger drops. A fused drop sheds a drop now and then, more often when the pointer
+//! brushes across it, and tears apart when carried too fast; a double click parts them all. Anything laid over the metal
 //! that should take its own clicks — the card, a bar of controls — should `occlude()`, or a
 //! press on it will reach the metal beneath.
 //!

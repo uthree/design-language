@@ -3,7 +3,8 @@
 //! ways to start. The title bar picks the backdrop; a bar below the card picks its palette.
 //!
 //! The liquid metal can be played with: press on a drop and carry it, bring drops together to
-//! fuse them into one, and double-click to part them again.
+//! fuse them into one (carry it too fast and it tears apart), and double-click to part them
+//! again.
 //!
 //! ```text
 //! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics]

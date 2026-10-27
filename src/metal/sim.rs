@@ -13,7 +13,10 @@
 //! it was put, sliding on a little if it was flung. A drop that has been handled fuses with any
 //! drop it touches: the two flow into one larger drop of their combined area, so a handful of
 //! drops gathered together become a single pool. Every drop keeps swinging on its orbit
-//! wherever it rests. A double click lets them all part again and go home.
+//! wherever it rests. Now and then a fused drop sheds one of the drops it took, which slides
+//! off on its own; a pointer brushing across it shakes one loose far more often, and one carried
+//! too fast tears apart, flinging the drops it took off along its path. A double click
+//! lets them all part again and go home.
 //!
 //! Distances here are logical pixels; rates are per second.
 
@@ -65,6 +68,21 @@ const FUSE: f32 = 0.85;
 const FLOW: f32 = 7.;
 /// How quickly drops let go by a double click go home, per second.
 const RETURN: f32 = 2.5;
+/// How often, left alone, a fused drop sheds one of the drops it took: once in this many
+/// seconds on average.
+const SHED_EVERY: f32 = 20.;
+/// How often a pointer brushing across a fused drop shakes one loose, per second, and how fast
+/// it must be moving to, in units per second.
+const BRUSH: f32 = 4.;
+const BRUSH_SPEED: f32 = 0.35;
+/// How fast a shed drop slides off, in units per second.
+const SHED_SPEED: f32 = 1.;
+/// How fast a drop in hand may be carried before it tears apart, in units per second, and how
+/// often, past that, it flings off one of the drops it took, per second.
+const TEAR_SPEED: f32 = 3.5;
+const TEAR: f32 = 14.;
+/// How widely torn-off drops scatter either side of the path, in radians.
+const TEAR_SPREAD: f32 = 0.7;
 
 /// The liquid's response so far.
 pub(super) struct Sim {
@@ -86,6 +104,11 @@ pub(super) struct Sim {
     /// Pairs that were already touching when one of them was picked up: they don't fuse until
     /// they part, so a drop can be drawn out of its pool rather than swallowing it.
     joined: [[bool; DROPS.len()]; DROPS.len()],
+    /// The state of the dice that decide when a fused drop sheds one.
+    dice: u32,
+    /// How many drops have been shed so far.
+    #[cfg(test)]
+    sheds: usize,
     grab: Option<Grab>,
     waves: Vec<Wave>,
     last: Option<Instant>,
@@ -118,6 +141,9 @@ impl Default for Sim {
             loose: Default::default(),
             into: Default::default(),
             joined: Default::default(),
+            dice: 0x9e37_79b9,
+            #[cfg(test)]
+            sheds: 0,
             grab: None,
             waves: Vec::new(),
             last: None,
@@ -289,6 +315,7 @@ impl Sim {
             }
         }
         self.fuse(input.drops, unit);
+        self.shed(input.drops, input.pointer, velocity, dt, unit);
 
         for wave in &mut self.waves {
             wave.age += dt;
@@ -415,6 +442,95 @@ impl Sim {
                 (index, x + offset[0], y + offset[1], reach * grown)
             })
             .filter(|&(_, _, _, reach)| reach > 0.5)
+    }
+
+    /// Now and then let a fused drop shed one of the drops it took: rarely when left alone,
+    /// often while the pointer brushes across it, and quickly while it is carried too fast. The
+    /// shed drop slides off the way the pointer or the drop was going, or any way at all, and
+    /// the two don't fuse again until they have parted.
+    fn shed(
+        &mut self,
+        drops: &[(f32, f32, f32)],
+        pointer: Option<[f32; 2]>,
+        velocity: [f32; 2],
+        dt: f32,
+        unit: f32,
+    ) {
+        let held = self.grab.map(|grab| grab.index);
+        let brushing = length(velocity) > BRUSH_SPEED * unit;
+        for (taker, &(x, y, _)) in drops.iter().enumerate() {
+            if self.into[taker].is_some() {
+                continue;
+            }
+            let taken: Vec<_> = (0..DROPS.len())
+                .filter(|&index| self.into[index] == Some(taker))
+                .collect();
+            if taken.is_empty() {
+                continue;
+            }
+            let centre = add([x, y], self.offsets[taker]);
+            let radius = self.areas[taker].sqrt() * unit;
+            let brushed =
+                brushing && pointer.is_some_and(|pointer| length(sub(pointer, centre)) < radius);
+            let carried = self.velocities[taker];
+            let torn = held == Some(taker) && length(carried) > TEAR_SPEED * unit;
+            let rate = if torn {
+                TEAR
+            } else if held == Some(taker) {
+                0.
+            } else if brushed {
+                BRUSH
+            } else {
+                1. / SHED_EVERY
+            };
+            if self.roll() >= rate * dt {
+                continue;
+            }
+            let index = taken[(self.roll() * taken.len() as f32) as usize % taken.len()];
+            let direction = if torn {
+                let angle = carried[1].atan2(carried[0]) + (self.roll() - 0.5) * 2. * TEAR_SPREAD;
+                [angle.cos(), angle.sin()]
+            } else if brushed {
+                scale(velocity, 1. / length(velocity))
+            } else {
+                let angle = self.roll() * std::f32::consts::TAU;
+                [angle.cos(), angle.sin()]
+            };
+            let speed = if torn {
+                (length(carried) * 0.5).min(FLING * unit)
+            } else {
+                SHED_SPEED * unit
+            };
+            let own = DROPS[index].radius * DROPS[index].radius;
+            let share = own / self.targets[taker].max(own);
+            #[cfg(test)]
+            {
+                self.sheds += 1;
+            }
+            self.into[index] = None;
+            self.targets[index] = own;
+            self.targets[taker] = (self.targets[taker] - own).max(0.);
+            self.loose[index] = true;
+            self.joined[index][taker] = true;
+            self.joined[taker][index] = true;
+            self.anchors[index] = self.offsets[index];
+            self.drift[index] = scale(direction, speed);
+            self.velocities[index] = self.drift[index];
+            // The rest of the drop recoils a little, unless it is in hand.
+            if held != Some(taker) {
+                self.drift[taker] = sub(self.drift[taker], scale(direction, speed * share));
+            }
+        }
+    }
+
+    /// A number from 0 to 1, from a small xorshift generator.
+    fn roll(&mut self) -> f32 {
+        let mut x = self.dice;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.dice = x;
+        (x >> 8) as f32 / (1 << 24) as f32
     }
 
     /// Fuse each handled drop with the drops it touches: the one in hand, or else the larger,
@@ -682,5 +798,79 @@ mod tests {
         assert!(sim.grab([x, y], &drops));
         frames(&mut sim, start, 1, 30, |_| ([0., 0.], Some([x, y])));
         assert!(sim.into.iter().all(Option::is_none));
+    }
+
+    /// Carry the lone stray, upper left, onto the pool lower left and let go: a fused drop.
+    fn fused(sim: &mut Sim, start: Instant) -> usize {
+        let drops = drops_at(1000., 600., 0.);
+        let (x, y, _) = drops[11];
+        let (tx, ty, _) = drops[5];
+        frames(sim, start, 0, 1, |_| ([0., 0.], Some([x, y])));
+        assert!(sim.grab([x, y], &drops));
+        frames(sim, start, 1, 90, |frame| {
+            let t = ((frame - 1) as f32 / 60.).min(1.);
+            ([0., 0.], Some([x + (tx - x) * t, y + (ty - y) * t]))
+        });
+        sim.release();
+        frames(sim, start, 91, 120, |_| ([0., 0.], None));
+        sim.into.iter().filter(|into| into.is_some()).count()
+    }
+
+    #[test]
+    fn a_fused_drop_sheds_a_drop_now_and_then() {
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let fused = fused(&mut sim, start);
+        assert!(fused > 0);
+        // Two minutes left alone.
+        frames(&mut sim, start, 211, 7500, |_| ([0., 0.], None));
+        assert!(sim.sheds > 0, "a drop came loose");
+        let total: f32 = sim.targets.iter().sum();
+        let whole: f32 = DROPS.iter().map(|drop| drop.radius * drop.radius).sum();
+        assert!((total - whole).abs() < 1e-5, "no metal is lost or made");
+    }
+
+    #[test]
+    fn brushing_a_fused_drop_shakes_one_loose() {
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let fused = fused(&mut sim, start);
+        let drops = drops_at(1000., 600., 0.);
+        let taker = sim.into.iter().flatten().copied().next().unwrap();
+        let (x, y, _) = drops[taker];
+        let [x, y] = add([x, y], sim.offsets[taker]);
+        // Back and forth across it, quickly, for a second.
+        assert!(fused > 0);
+        frames(&mut sim, start, 211, 60, |frame| {
+            let swing = ((frame % 20) as f32 - 10.) * 8.;
+            ([0., 0.], Some([x + swing, y]))
+        });
+        assert!(sim.sheds > 0, "a drop was shaken loose");
+    }
+
+    #[test]
+    fn a_fused_drop_carried_too_fast_tears_apart() {
+        let mut sim = Sim::default();
+        let start = Instant::now();
+        let fused = fused(&mut sim, start);
+        let drops = drops_at(1000., 600., 0.);
+        let taker = sim.into.iter().flatten().copied().next().unwrap();
+        let (x, y, _) = drops[taker];
+        let [x, y] = add([x, y], sim.offsets[taker]);
+        frames(&mut sim, start, 211, 1, |_| ([0., 0.], Some([x, y])));
+        assert!(sim.grab([x, y], &drops));
+        assert_eq!(sim.grab.map(|grab| grab.index), Some(taker));
+        // Carried gently, it holds together.
+        frames(&mut sim, start, 212, 60, |frame| {
+            ([0., 0.], Some([x + (frame - 212) as f32, y]))
+        });
+        assert!(fused > 0);
+        assert_eq!(sim.sheds, 0, "carried gently, it holds together");
+        // Whipped back and forth across the window, it comes apart.
+        frames(&mut sim, start, 272, 40, |frame| {
+            let side = if (frame / 6) % 2 == 0 { 700. } else { 100. };
+            ([0., 0.], Some([side, y]))
+        });
+        assert!(sim.sheds > 0, "it tore");
     }
 }

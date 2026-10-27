@@ -102,8 +102,9 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   the horizon). Fill the screen with it and put the words and actions on a `Card` above it,
   never on the metal. It answers the pointer (drops pushed aside, ripples where it crosses the
   metal) and the window (the liquid sloshes when the window is moved or resized), and its drops
-  can be picked up: press on one to carry it, carried drops fuse with whatever they touch, and a
-  double click parts them again. There is nothing to wire up, but anything laid over the metal
+  can be picked up: press on one to carry it, carried drops fuse with whatever they touch, fused
+  drops shed drops now and then (often when the pointer brushes them, at once when carried too
+  fast), and a double click parts them all. There is nothing to wire up, but anything laid over the metal
   that takes clicks (the card, a bar of controls) must `.occlude()`, or presses reach the metal. `.phase(t)` draws one still frame and answers nothing. It is shaded off
   screen on its own wgpu device (one still frame on the CPU when there is no GPU) and read back at 30 frames a
   second, 60 while it answers, so keep it to the welcome screen. Do not use metal on controls or
