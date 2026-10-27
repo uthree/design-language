@@ -329,7 +329,7 @@ fn render(width: u32, height: u32, phase: f32, studio: &Studio) -> Vec<u8> {
                 let first = chunk * band;
                 let mut near = Vec::with_capacity(drops.len());
                 let mut near_shadow = Vec::with_capacity(drops.len());
-                for (index, pixel) in out.chunks_exact_mut(4).enumerate() {
+                for (index, pixel) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                     let row = first + index / width as usize;
                     let column = index % width as usize;
                     let (px, py) = (column as f32 + 0.5, row as f32 + 0.5);
