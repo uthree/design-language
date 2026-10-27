@@ -7,7 +7,8 @@
 //! - [`Ambience::Caustics`]: light through moving water, playing over a deep floor.
 //!
 //! Every one is drawn from the theme: its background, the agent gradient and the accent, so it
-//! sits with the rest of the screen in each direction and appearance. In a dark appearance the
+//! sits with the rest of the screen in each direction and appearance. A [`BackdropPalette`]
+//! replaces the gradient and accent with colours of its own. In a dark appearance the
 //! scene is light over the dark; in a light one, washes of colour over the light.
 //!
 //! Like the metal, each brings its own shader: a WGSL file shaded off screen on the crate's wgpu

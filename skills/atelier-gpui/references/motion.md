@@ -45,10 +45,11 @@ instantly; looping indicators stand still in a readable pose.
 ## Rules
 
 - Motion explains a change of state or place. Never animate for decoration, and never make an
-  animation the only way to see a state. The one exception is `MetalBackdrop`, and
-  `AmbientBackdrop` on the same terms, which flows behind a welcome screen, where no work is on screen: an ambient loop makes gpui redraw the
-  whole window every frame, and every frame of the metal is shaded and read back. Its response
-  to the pointer and the window is part of that exception and stops with it when motion is off.
+  animation the only way to see a state. The one exception is the welcome-screen backdrops,
+  `MetalBackdrop` and `AmbientBackdrop`, which flow where no work is on screen: an ambient loop
+  makes gpui redraw the whole window every frame, and every frame is shaded and read back.
+  Their response to the pointer and the window is part of that exception and stops with it
+  when motion is off.
 - Small state changes use `fast`; content appearing uses `normal`. Nothing user-triggered should
   take longer than `normal`.
 - Do not animate large layout changes (panel widths, list reflow); fade or reveal instead.

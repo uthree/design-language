@@ -1,6 +1,6 @@
 ---
 name: atelier-gpui
-description: Design language and component kit for gpui (Rust) creator tools with built-in AI agents — themes/tokens, buttons, controls, knobs, meters, layout, and the agent side panel, chat transcript, tool calls, approvals and composer. Use when building, redesigning or reviewing gpui UI that depends on the `atelier` crate (Auris Studio and other gpui creator apps), when adding an AI assistant panel or chat to a gpui app, or when asked which design candidate (Studio, Glass, Mono) or token to use. Do not use for non-gpui UI.
+description: Design language and component kit for gpui (Rust) creator tools with built-in AI agents — themes/tokens, buttons, controls, knobs, meters, layout, the agent side panel, chat transcript, tool calls, approvals and composer, audio visualisations, 2-D and 3-D plots (wgpu-shaded), node-graph editors, and welcome-screen backdrops (liquid metal, ambient scenes, palettes). Use when building, redesigning or reviewing gpui UI that depends on the `atelier` crate (Auris Studio and other gpui creator apps), when adding an AI assistant panel or chat to a gpui app, or when asked which design candidate (Studio, Glass, Mono) or token to use. Do not use for non-gpui UI.
 ---
 
 # Atelier for gpui
@@ -14,7 +14,7 @@ Read this page fully, then the reference for the part you touch.
 | --- | --- |
 | [references/rules.md](references/rules.md) | Always before writing or reviewing UI. The design rules and the review checklist. |
 | [references/tokens.md](references/tokens.md) | Choosing a colour, size, radius, spacing step, font, or a direction. |
-| [references/components.md](references/components.md) | Using buttons, controls, knobs, meters, layout containers, menus. |
+| [references/components.md](references/components.md) | Using buttons, controls, knobs, meters, layout containers, menus, node graphs, welcome-screen backdrops. |
 | [references/agent.md](references/agent.md) | Anything that shows the AI: panel, transcript, tool calls, approvals, composer, entry points. |
 | [references/motion.md](references/motion.md) | Animating anything; showing progress, loading or long-running tasks. |
 | [references/visualization.md](references/visualization.md) | Plots for sound: spectra, waveforms, spectrograms, vectorscopes, physical-model views. |

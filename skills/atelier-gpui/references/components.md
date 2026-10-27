@@ -109,7 +109,7 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 - `AmbientBackdrop::new(id, Ambience::…)` — an ambient scene (`atelier::ambient`) for the same
   place, when chrome is too much: `Aurora` (curtains of light over a night sky and still water),
   `Dunes` (sheets of silk in layers), `Bloom` (clouds of colour melting together) or `Caustics`
-  (light through water). Colours come from the theme. The same rules as the metal: fill the
+  (light through water). Colours come from the theme unless a palette is set (below). The same rules as the metal: fill the
   welcome screen, put the words on a `Card`, nothing to wire up; it answers the window (and the
   pointer too in `Bloom` and `Caustics`, see `answers_pointer()`), `.phase(t)` draws one still
   frame, `.period(d)` changes the cycle. Without a GPU it is a single still frame. Offer
@@ -118,7 +118,24 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   gradient and accent), the presets `Dusk`, `Ocean`, `Ember`, `Meadow`, `Graphite`, or
   `Custom([Hsla; 4])`, warm end first. The appearance still decides how they are laid on; the
   metal stays near-neutral chrome, with the palette in its tint and its horizon fringes. Offer
-  `BackdropPalette::ALL` if the person picks it.
+  `BackdropPalette::ALL` (with `label()`) if the person picks it.
+- Both backdrops shade on the crate's own wgpu device, shared with `Plot3d`. Without a hardware
+  GPU, or with `ATELIER_GPU=off`, they fall back to the CPU (the metal still moves, the ambient
+  scene is one still frame); nothing in the API changes, so do not branch on it.
+
+## Node graphs
+
+There is no node-graph component: compose one from the pieces above on a `canvas`, as
+`examples/node_editor.rs` does, and read that example before drawing a graph.
+
+- Each port and its wires take the colour for their data type from `colors.ports`, and the type
+  is also named — on the port, in a tooltip and in a legend. Never the agent colour.
+- Wires join an output to an input of the same type; while a wire is held, inputs of another
+  type step back. Pulling a connected input picks its wire up again.
+- A node's run state is shown with a mark or a word as well as colour (`StatusDot`, `Badge`,
+  `Spinner`, `Skeleton`), and long runs use `TaskProgress`.
+- A node the agent added is drawn with a dashed `colors.agent` border and a sparkle, with Keep
+  and Undo on the node itself.
 
 ## Overlays
 

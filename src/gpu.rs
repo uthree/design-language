@@ -1,5 +1,5 @@
 //! The crate's own small wgpu device, beside gpui's renderer. gpui takes no custom shaders, so
-//! what needs one — the liquid metal, the 3-D plots — shades off screen here, reads the frame
+//! what needs one — the liquid metal, the ambient scenes, the 3-D plots — shades off screen here, reads the frame
 //! back and hands it to gpui as an image like any other.
 //!
 //! The device is opened once, on first use, and shared. Without an adapter, or with
