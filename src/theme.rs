@@ -208,6 +208,13 @@ pub struct Colors {
     /// so a wire never reads as the AI's work.
     pub ports: [Hsla; 5],
 
+    /// The liquid-metal finish: the studio a polished surface reflects, from straight up to
+    /// straight down, at the positions in [`crate::metal::STOPS`] — sky, bright band, a warm
+    /// fringe, the dark horizon, a cool fringe, ground, bounce light. The two fringes are the
+    /// colour a prism would split off at the horizon; everything else is near-neutral. Ornament
+    /// only; see [`crate::metal`].
+    pub metal: [Hsla; 9],
+
     /// Shadow colour; alpha is applied by [`Elevation`].
     pub shadow: Hsla,
 }
@@ -782,7 +789,28 @@ fn colors(
             info,
             rose,
         ],
+        metal: metal_seeds(direction).map(c),
         shadow: hsla(0., 0., 0., 1.),
+    }
+}
+
+/// The metal each direction is finished in. Studio is cool steel with amber and blue fringes,
+/// Glass bright platinum with peach and sky-blue fringes, and Mono black chrome whose fringes
+/// are a rose and cyan sheen, like oil on a dark surface.
+fn metal_seeds(direction: Direction) -> [u32; 9] {
+    match direction {
+        Direction::Studio => [
+            0xa9b2bc, 0xdde3e9, 0x9aa2ab, 0xe39a5c, 0x15181c, 0x4f8fe8, 0x2e3339, 0x687078,
+            0xa8afb6,
+        ],
+        Direction::Glass => [
+            0xc6cfd9, 0xf6f8fb, 0xb4bcc6, 0xf3ad76, 0x1b1f25, 0x5aa6ff, 0x3a4048, 0x7f8790,
+            0xd0d5db,
+        ],
+        Direction::Mono => [
+            0x70747a, 0xc4c7cb, 0x6a6e73, 0xf29cc4, 0x060607, 0x86ddff, 0x141517, 0x2e3033,
+            0x7a7d81,
+        ],
     }
 }
 
@@ -1083,6 +1111,33 @@ mod tests {
             for port in colors.ports {
                 assert!(contrast(port, colors.elevated) >= 3.0, "{}", theme.name());
                 assert_ne!(port, colors.agent, "{}", theme.name());
+            }
+        }
+    }
+
+    #[test]
+    fn metal_has_a_dark_crisp_horizon_and_neutral_body() {
+        for theme in every_theme() {
+            let metal = theme.colors.metal;
+            let horizon = metal[4].l;
+            assert!(
+                metal.iter().all(|stop| stop.l >= horizon),
+                "{}: the horizon is the darkest stop",
+                theme.name()
+            );
+            assert!(
+                metal[1].l - horizon >= 0.6,
+                "{}: the horizon is crisp",
+                theme.name()
+            );
+            // Colour lives in the fringes; the rest stays near-neutral so metal reads as metal.
+            for (index, stop) in metal.iter().enumerate() {
+                if index == 3 || index == 5 {
+                    continue;
+                }
+                let rgb = Rgba::from(*stop);
+                let chroma = rgb.r.max(rgb.g).max(rgb.b) - rgb.r.min(rgb.g).min(rgb.b);
+                assert!(chroma <= 0.1, "{}: stop {index} is neutral", theme.name());
             }
         }
     }

@@ -94,6 +94,19 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen.
 
+## Ornament
+
+- `MetalBackdrop::new(id)` — liquid metal (`atelier::metal`) for the background of a welcome
+  screen only: pools of chrome that merge, stretch and pinch off, shaded as a real reflective
+  surface (darkening at the edges, a softbox glint, a rim light, the theme's coloured fringes at
+  the horizon). Fill the screen with it and put the words and actions on a `Card` above it,
+  never on the metal. It answers the pointer (drops pushed aside, ripples where it crosses the
+  metal) and the window (the liquid sloshes when the window is moved or resized); there is
+  nothing to wire up. `.phase(t)` draws one still frame and answers nothing. It is shaded off
+  screen on its own wgpu device (on the CPU when there is no GPU) and read back at 30 frames a
+  second, 60 while it answers, so keep it to the welcome screen. Do not use metal on controls or
+  anywhere work happens.
+
 ## Overlays
 
 `Popover::new().w(..).child(MenuItem::new(id, "Duplicate").shortcut("Ctrl+D"))`,

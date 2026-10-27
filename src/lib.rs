@@ -18,6 +18,7 @@ mod frame;
 mod icon;
 mod layout;
 mod media;
+pub mod metal;
 pub mod motion;
 mod overlay;
 pub mod plot;
@@ -36,6 +37,7 @@ pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
 pub use media::AudioPlayer;
+pub use metal::MetalBackdrop;
 pub use motion::Motion;
 pub use overlay::{MenuItem, Popover, Tooltip, menu_separator};
 pub use progress::{
