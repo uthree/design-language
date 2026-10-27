@@ -17,6 +17,10 @@ unicode-segmentation = "1.10"
 objc2 = "0.6"
 raw-window-handle = "0.6"
 
+# On Windows it reaches the window's `HWND` the same way, to put DWM's own acrylic behind it.
+[target.'cfg(target_os = "windows")'.dependencies]
+raw-window-handle = "0.6"
+
 # `runtime_shaders` compiles the Metal shaders at start-up, so the gallery builds on a Mac with
 # only the Command Line Tools installed. Feature unification applies it to the library as well
 # whenever the examples are built.
