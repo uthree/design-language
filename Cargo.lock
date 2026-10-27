@@ -424,6 +424,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "image",
+ "naga",
  "objc2",
  "pollster 0.4.0",
  "raw-window-handle",

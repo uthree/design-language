@@ -25,7 +25,8 @@ Before writing code, look at the crate itself (`src/` of the `atelier` dependenc
 repository) and at the examples that compose it into whole screens: `showcase` (a DAW and the
 component catalogue), `agent_desktop` (a coding-agent app), `instrument_lab` (physical-model
 views), `visualizer` (analysers), `node_editor` (a ComfyUI-style node graph), `plot_lab`
-(MATLAB-style 2-D and 3-D plots), `liquid_metal` (a welcome screen over a liquid-metal backdrop) and
+(MATLAB-style 2-D and 3-D plots), `liquid_metal` (a welcome screen over a liquid-metal backdrop), `ambient` (the same screen over
+aurora, silk dunes, clouds of colour or caustics) and
 `auris_screens` (Auris's project chooser and AI compose
 window).
 Do not invent a builder method because its name seems plausible: check the source.

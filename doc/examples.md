@@ -119,6 +119,37 @@ kept to the welcome screen: on controls it made sizes uneven and said too much. 
 
 ![Liquid metal welcome, Mono light](images/liquid-metal-welcome-mono-light.png)
 
+## ambient — a welcome screen over an ambient backdrop
+
+```bash
+cargo run --release --example ambient -- --ambience aurora|dunes|bloom|caustics
+```
+
+`AmbientBackdrop` behind the same welcome card: four slow, abstract scenes in the manner of a
+desktop wallpaper, picked in the title bar. **Aurora** hangs curtains of light in leaning rays
+over a night sky with stars, mirrored in still water below. **Dunes** lays sheets of silk one in
+front of another, each lit from above with a sheen on its slopes and a soft shadow on the one
+behind. **Bloom** melts great clouds of colour into one another, stirred by slow eddies under a
+frosted sheen. **Caustics** plays light through moving water over a deep floor, the colours
+bending apart into thin fringes, with shafts of light from the surface. Every scene takes its
+colours from the theme — background, agent gradient and accent — as light over the dark in a dark
+appearance and as washes of colour in a light one.
+
+Each is a WGSL shader on the crate's wgpu device, shaded off screen and read back like the metal.
+Each answers the pointer — it parts the curtains, lifts the silk, stirs the colour round itself,
+or gathers the light like a lens, and leaves ripples as it travels — and the window: moving or
+resizing it leaves the scene behind for a moment, nearer layers further, and it swings back.
+Without a hardware GPU the backdrop is one still frame shaded on the CPU, with no animation and
+no response. Captured on Linux under Weston.
+
+![Aurora, Glass dark](images/ambient-aurora-glass-dark.png)
+
+![Dunes, Glass dark](images/ambient-dunes-glass-dark.png)
+
+![Bloom, Glass light](images/ambient-bloom-glass-light.png)
+
+![Caustics, Mono dark](images/ambient-caustics-mono-dark.png)
+
 ## auris_screens — two Auris Studio windows redrawn
 
 ```bash
