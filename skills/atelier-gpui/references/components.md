@@ -94,6 +94,15 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen.
 
+## Ornament
+
+- `LiquidMetal::new(id).shape(MetalShape::Drop | MetalShape::Capsule).liquid(0.0..=1.0)` — a
+  polished, slowly flowing metal surface that fills its parent (size the parent). `liquid(0.)`
+  is rigid chrome; `.phase(t)` draws one still frame. Use it for a brand mark, a splash or
+  onboarding hero, a finished-export moment, a plan mark beside its name — at most one per
+  window. Never put text on it, never let it carry state, selection or the agent, and keep it
+  out of editing windows while it flows (a still `.phase(..)` is fine there).
+
 ## Overlays
 
 `Popover::new().w(..).child(MenuItem::new(id, "Duplicate").shortcut("Ctrl+D"))`,

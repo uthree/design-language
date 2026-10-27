@@ -208,6 +208,12 @@ pub struct Colors {
     /// so a wire never reads as the AI's work.
     pub ports: [Hsla; 5],
 
+    /// The liquid-metal finish: what a polished surface reflects, from its top edge to its
+    /// bottom, at the positions in [`crate::metal::STOPS`] — sky, bright band, the dark horizon,
+    /// ground, bounce light. Achromatic on purpose, so metal never reads as a signal, the accent
+    /// or the agent. Ornament only; see [`crate::metal`].
+    pub metal: [Hsla; 7],
+
     /// Shadow colour; alpha is applied by [`Elevation`].
     pub shadow: Hsla,
 }
@@ -782,7 +788,24 @@ fn colors(
             info,
             rose,
         ],
+        metal: metal_seeds(direction).map(c),
         shadow: hsla(0., 0., 0., 1.),
+    }
+}
+
+/// The metal each direction is finished in. Studio is brushed-steel cool and a little dim, Glass
+/// polished platinum, and Mono black chrome, so it stays inside Mono's monochrome.
+fn metal_seeds(direction: Direction) -> [u32; 7] {
+    match direction {
+        Direction::Studio => [
+            0xa9b2bc, 0xdde3e9, 0x8b939c, 0x15181c, 0x2e3339, 0x687078, 0xa8afb6,
+        ],
+        Direction::Glass => [
+            0xc6cfd9, 0xf6f8fb, 0xa9b2bc, 0x1b1f25, 0x3a4048, 0x7f8790, 0xd0d5db,
+        ],
+        Direction::Mono => [
+            0x70747a, 0xc4c7cb, 0x5b5f64, 0x060607, 0x141517, 0x2e3033, 0x7a7d81,
+        ],
     }
 }
 
@@ -1084,6 +1107,34 @@ mod tests {
                 assert!(contrast(port, colors.elevated) >= 3.0, "{}", theme.name());
                 assert_ne!(port, colors.agent, "{}", theme.name());
             }
+        }
+    }
+
+    #[test]
+    fn metal_is_achromatic_with_a_dark_horizon() {
+        for theme in every_theme() {
+            let metal = theme.colors.metal;
+            for stop in metal {
+                // Chroma rather than HSL saturation, which runs high for near-white greys.
+                let rgb = Rgba::from(stop);
+                let chroma = rgb.r.max(rgb.g).max(rgb.b) - rgb.r.min(rgb.g).min(rgb.b);
+                assert!(
+                    chroma <= 0.1,
+                    "{}: metal must not read as a colour",
+                    theme.name()
+                );
+            }
+            let horizon = metal[3].l;
+            assert!(
+                metal.iter().all(|stop| stop.l >= horizon),
+                "{}: the horizon is the darkest stop",
+                theme.name()
+            );
+            assert!(
+                metal[1].l - horizon >= 0.6,
+                "{}: the horizon is crisp",
+                theme.name()
+            );
         }
     }
 

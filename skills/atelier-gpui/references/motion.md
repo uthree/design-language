@@ -45,7 +45,9 @@ instantly; looping indicators stand still in a readable pose.
 ## Rules
 
 - Motion explains a change of state or place. Never animate for decoration, and never make an
-  animation the only way to see a state.
+  animation the only way to see a state. The one exception is `LiquidMetal`, and only where no
+  work is on screen (splash, onboarding, about, a finished-job moment): an ambient loop makes
+  gpui redraw the whole window every frame.
 - Small state changes use `fast`; content appearing uses `normal`. Nothing user-triggered should
   take longer than `normal`.
 - Do not animate large layout changes (panel widths, list reflow); fade or reveal instead.

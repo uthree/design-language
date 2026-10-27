@@ -92,6 +92,24 @@ These two screenshots were captured on Linux under Xvfb.
 
 ![Plot lab, 3-D](images/plot-lab-3d.png)
 
+## liquid_metal — the metal ornament
+
+```bash
+cargo run --example liquid_metal
+cargo run --example liquid_metal -- --finish chrome
+```
+
+`LiquidMetal` in the places it is meant for: a splash hero, a finished export and a plan mark,
+with the rules for where it does not go. The title bar switches between mercury (the outline
+wobbles) and rigid chrome (only the reflection moves). gpui has no custom shaders, so the
+surface is a column of two-stop gradient quads per device pixel, one per segment of the
+theme's `metal` ramp, all drawn by gpui's own quad shader on the GPU.
+Captured on Linux under Weston.
+
+![Liquid metal, Glass dark](images/liquid-metal-glass-dark.png)
+
+![Liquid metal, Mono light](images/liquid-metal-mono-light.png)
+
 ## auris_screens — two Auris Studio windows redrawn
 
 ```bash
