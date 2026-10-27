@@ -52,8 +52,9 @@ Creator: `record`, `playhead`, `meter` (safe, hot, clip).
 Plots: `series` (4), `heat` (5-stop ramp), `grid`, `grid_faint`.
 Node graphs: `ports` (5), one per data type of a port and its wires; never the agent colour.
 Always label the type too (the port's name, a tooltip, a legend).
-Ornament: `metal` (7 stops at `atelier::metal::STOPS`), the reflection ramp `LiquidMetal`
-paints; achromatic by design (steel in Studio, platinum in Glass, black chrome in Mono).
+Ornament: `metal` (9 stops at `atelier::metal::STOPS`), the reflection ramp the liquid-metal
+elements paint: near-neutral chrome with a warm and a cool fringe either side of the horizon
+(amber/blue steel in Studio, peach/sky platinum in Glass, rose/cyan black chrome in Mono).
 `shadow` is used by `theme.elevation`.
 
 `theme.text_on(fill)` gives readable text on any fill, e.g. a track colour.

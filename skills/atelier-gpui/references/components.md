@@ -96,12 +96,19 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 
 ## Ornament
 
-- `LiquidMetal::new(id).shape(MetalShape::Drop | MetalShape::Capsule).liquid(0.0..=1.0)` — a
-  polished, slowly flowing metal surface that fills its parent (size the parent). `liquid(0.)`
-  is rigid chrome; `.phase(t)` draws one still frame. Use it for a brand mark, a splash or
-  onboarding hero, a finished-export moment, a plan mark beside its name — at most one per
-  window. Never put text on it, never let it carry state, selection or the agent, and keep it
-  out of editing windows while it flows (a still `.phase(..)` is fine there).
+Liquid metal, for ornament only (`atelier::metal`). Use it for one thing per window.
+
+- `MetalFrame::new(id).child(control)` — a metal ring around a control: the call to action, the
+  selected tool in a palette, an add button. `.width(px)` (default 4), `.radius(px)` (defaults to
+  the control shape plus the ring), `.fill(color)` behind the content (match the surface it sits
+  on). Selection must still show in the control's own fill; the ring only adorns it.
+- `MetalBackdrop::new(id)` — a welcome-screen backdrop of drifting metal rings and drops. Put the
+  words on a card above it, never on the metal.
+- `LiquidMetal::new(id)` — a solid metal capsule (a sphere when square) that fills its parent;
+  `.radius(px)` for a rounded rectangle, `.ring(px)` + `.fill(color)` for a ring. A small one
+  makes a plan mark beside its name.
+- All three flow slowly; `.phase(t)` draws one still frame. Keep flowing metal out of editing
+  windows (a still frame is fine there) and never put text on it.
 
 ## Overlays
 

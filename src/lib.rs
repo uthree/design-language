@@ -37,7 +37,7 @@ pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
 pub use media::AudioPlayer;
-pub use metal::{LiquidMetal, MetalShape};
+pub use metal::{LiquidMetal, MetalBackdrop, MetalFrame};
 pub use motion::Motion;
 pub use overlay::{MenuItem, Popover, Tooltip, menu_separator};
 pub use progress::{
