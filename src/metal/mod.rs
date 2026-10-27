@@ -41,6 +41,7 @@ use image::{Frame, ImageBuffer};
 mod gpu;
 mod sim;
 
+use crate::backdrop::BackdropPalette;
 use crate::motion::looping;
 use crate::theme::{ActiveTheme, Appearance, Direction};
 
@@ -64,6 +65,7 @@ const LIVELY_FPS: f32 = 60.;
 #[derive(IntoElement)]
 pub struct MetalBackdrop {
     id: ElementId,
+    palette: BackdropPalette,
     period: Duration,
     phase: Option<f32>,
 }
@@ -73,9 +75,17 @@ impl MetalBackdrop {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
+            palette: BackdropPalette::Theme,
             period: Duration::from_secs(30),
             phase: None,
         }
+    }
+
+    /// Finish the metal in `palette` instead of the theme's: its body tinted a little towards
+    /// the palette and its fringes in the palette's warm and cool ends.
+    pub fn palette(mut self, palette: BackdropPalette) -> Self {
+        self.palette = palette;
+        self
     }
 
     /// Draw one still frame at `phase` (0 to 1) of the cycle instead of flowing.
@@ -96,6 +106,7 @@ struct Cache {
 
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
+    palette: BackdropPalette,
     width: u32,
     height: u32,
     frame: u32,
@@ -110,6 +121,7 @@ impl RenderOnce for MetalBackdrop {
         let cache = window.use_keyed_state(self.id.clone(), cx, |_, _| Cache::default());
         let frames = (self.period.as_secs_f32() * FPS).max(1.);
         let scene = Scene {
+            palette: self.palette,
             phase: self.phase.unwrap_or(REST),
             frames,
             interactive: self.phase.is_none() && cx.theme().motion.enabled,
@@ -126,6 +138,7 @@ impl RenderOnce for MetalBackdrop {
 
 #[derive(IntoElement)]
 struct Scene {
+    palette: BackdropPalette,
     phase: f32,
     frames: f32,
     /// Whether the liquid answers the pointer and the window: only while it flows.
@@ -146,7 +159,7 @@ impl RenderOnce for Scene {
 fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
     let theme = cx.theme();
     let (direction, appearance) = (theme.direction, theme.appearance);
-    let (background, metal) = (theme.colors.background, theme.colors.metal);
+    let (background, metal) = (theme.colors.background, scene.palette.metal(theme));
     window.paint_quad(fill(bounds, background));
 
     // On the GPU, one pixel per logical pixel, each from four samples; gpui's sampler scales it
@@ -183,6 +196,7 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
     let cached = scene.cache.read(cx);
     let lively_fps = if gpu { LIVELY_FPS } else { FPS };
     let key = Key {
+        palette: scene.palette,
         width,
         height,
         frame,

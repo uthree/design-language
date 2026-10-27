@@ -12,6 +12,7 @@
 
 pub mod agent;
 pub mod ambient;
+mod backdrop;
 mod button;
 mod controls;
 mod display;
@@ -31,6 +32,7 @@ pub mod viz;
 mod window;
 
 pub use ambient::{Ambience, AmbientBackdrop};
+pub use backdrop::BackdropPalette;
 pub use button::{Button, ButtonVariant, ControlSize};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};

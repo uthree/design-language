@@ -1,17 +1,19 @@
 //! A welcome screen over a backdrop: liquid metal, or an ambient scene — aurora, silk dunes,
 //! clouds of colour or caustics — drifting slowly behind a card that holds the words and the two
-//! ways to start. The title bar picks the backdrop.
+//! ways to start. The title bar picks the backdrop; a bar below the card picks its palette.
 //!
 //! ```text
 //! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics]
+//!     [--palette theme|dusk|ocean|ember|meadow|graphite]
 //!     [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
 
 mod common;
 
 use atelier::{
-    ActiveTheme, Ambience, AmbientBackdrop, Appearance, Button, Card, ControlSize, Direction,
-    Label, MetalBackdrop, Segment, SegmentedControl, TextColor, TextSize, TitleBar, WindowFrame,
+    ActiveTheme, Ambience, AmbientBackdrop, Appearance, BackdropPalette, Button, Card, ControlSize,
+    Direction, Label, MetalBackdrop, Segment, SegmentedControl, TextColor, TextSize, TitleBar,
+    WindowFrame,
 };
 use common::Themed;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
@@ -48,12 +50,14 @@ impl Backdrop {
         }
     }
 
-    fn element(self) -> AnyElement {
+    fn element(self, palette: BackdropPalette) -> AnyElement {
         match self {
-            Backdrop::Metal => MetalBackdrop::new("metal").into_any_element(),
-            Backdrop::Ambient(ambience) => {
-                AmbientBackdrop::new("ambient", ambience).into_any_element()
-            }
+            Backdrop::Metal => MetalBackdrop::new("metal")
+                .palette(palette)
+                .into_any_element(),
+            Backdrop::Ambient(ambience) => AmbientBackdrop::new("ambient", ambience)
+                .palette(palette)
+                .into_any_element(),
         }
     }
 }
@@ -61,6 +65,7 @@ impl Backdrop {
 struct Welcome {
     choice: (Direction, Appearance),
     backdrop: Backdrop,
+    palette: BackdropPalette,
 }
 
 impl Themed for Welcome {
@@ -87,6 +92,27 @@ impl Render for Welcome {
             this.backdrop = Backdrop::ALL[*index];
             cx.notify();
         }));
+        let index = BackdropPalette::ALL
+            .iter()
+            .position(|palette| *palette == self.palette)
+            .unwrap_or(0);
+        let palettes = div()
+            .p(theme.spacing.xs)
+            .rounded(theme.shape.radius_lg)
+            .bg(theme.colors.overlay)
+            .shadow(theme.elevation.medium.clone())
+            .child(
+                SegmentedControl::new(
+                    "palette",
+                    BackdropPalette::ALL.map(|palette| Segment::label(palette.label())),
+                    index,
+                )
+                .size(ControlSize::Small)
+                .on_select(cx.listener(|this, index: &usize, _, cx| {
+                    this.palette = BackdropPalette::ALL[*index];
+                    cx.notify();
+                })),
+            );
         // The words sit on a card above the backdrop, never on it.
         let card = Card::new()
             .w(px(440.))
@@ -141,7 +167,12 @@ impl Render for Welcome {
                     .min_h_0()
                     .relative()
                     .overflow_hidden()
-                    .child(div().absolute().inset_0().child(self.backdrop.element()))
+                    .child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .child(self.backdrop.element(self.palette)),
+                    )
                     .child(
                         div()
                             .absolute()
@@ -150,6 +181,16 @@ impl Render for Welcome {
                             .items_center()
                             .justify_center()
                             .child(card),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .bottom(theme.spacing.xl)
+                            .left_0()
+                            .right_0()
+                            .flex()
+                            .justify_center()
+                            .child(palettes),
                     ),
             )
     }
@@ -163,8 +204,16 @@ fn main() {
                 .find(|backdrop| backdrop.id().eq_ignore_ascii_case(&name))
         })
         .unwrap_or(Backdrop::Metal);
+    let palette = common::argument("--palette")
+        .and_then(|name| {
+            BackdropPalette::ALL
+                .into_iter()
+                .find(|palette| palette.label().eq_ignore_ascii_case(&name))
+        })
+        .unwrap_or_default();
     common::run("Ambient", 1100., 680., move |choice, _| Welcome {
         choice,
         backdrop,
+        palette,
     });
 }

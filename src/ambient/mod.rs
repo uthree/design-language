@@ -41,6 +41,7 @@ mod cpu;
 mod gpu;
 mod sim;
 
+use crate::backdrop::BackdropPalette;
 use crate::motion::looping;
 use crate::theme::{ActiveTheme, Appearance, Direction, Theme};
 
@@ -113,6 +114,7 @@ impl Ambience {
 pub struct AmbientBackdrop {
     id: ElementId,
     ambience: Ambience,
+    palette: BackdropPalette,
     period: Option<Duration>,
     phase: Option<f32>,
 }
@@ -123,9 +125,16 @@ impl AmbientBackdrop {
         Self {
             id: id.into(),
             ambience,
+            palette: BackdropPalette::Theme,
             period: None,
             phase: None,
         }
+    }
+
+    /// Paint the scene in `palette` instead of the theme's colours.
+    pub fn palette(mut self, palette: BackdropPalette) -> Self {
+        self.palette = palette;
+        self
     }
 
     /// Draw one still frame at `phase` (0 to 1) of the cycle instead of drifting.
@@ -153,6 +162,7 @@ struct Cache {
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
     ambience: Ambience,
+    palette: BackdropPalette,
     width: u32,
     height: u32,
     frame: u32,
@@ -172,6 +182,7 @@ impl RenderOnce for AmbientBackdrop {
         let still = self.phase.is_some() || !gpu::available();
         let scene = Scene {
             ambience: self.ambience,
+            palette: self.palette,
             phase: self.phase.unwrap_or(REST),
             frames,
             interactive: !still && cx.theme().motion.enabled,
@@ -190,6 +201,7 @@ impl RenderOnce for AmbientBackdrop {
 #[derive(IntoElement)]
 struct Scene {
     ambience: Ambience,
+    palette: BackdropPalette,
     phase: f32,
     frames: f32,
     /// Whether the scene answers the pointer and the window: only while it drifts.
@@ -211,7 +223,7 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
     let theme = cx.theme();
     let (direction, appearance) = (theme.direction, theme.appearance);
     window.paint_quad(fill(bounds, theme.colors.background));
-    let palette = Palette::new(theme);
+    let palette = Palette::new(theme, scene.palette);
 
     // On the GPU, one pixel per logical pixel; gpui's sampler scales it up on dense displays.
     // The CPU's still frame has half a sample per logical pixel.
@@ -245,6 +257,7 @@ fn paint(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Ap
     let cached = scene.cache.read(cx);
     let key = Key {
         ambience: scene.ambience,
+        palette: scene.palette,
         width,
         height,
         frame,
@@ -306,20 +319,20 @@ impl Frame {
             width,
             height,
             time: phase * std::f32::consts::TAU,
-            palette: Palette::new(theme),
+            palette: Palette::new(theme, BackdropPalette::Theme),
             response: Default::default(),
         }
     }
 }
 
-/// The scenes' colours, from the theme.
+/// The scenes' colours, from the theme and the backdrop's palette.
 #[derive(Clone, Copy)]
 struct Palette {
     /// The background where the scene is lightest: the horizon, the shallows.
     base: [f32; 3],
     /// Where it is deepest: the sky overhead, the floor of the water.
     deep: [f32; 3],
-    /// The colours of the light: the agent gradient, warm to cool, and the accent.
+    /// The colours of the light, warm to cool: by default the agent gradient and the accent.
     hues: [[f32; 3]; 4],
     dark: bool,
 }
@@ -330,13 +343,12 @@ fn rgb(color: Hsla) -> [f32; 3] {
 }
 
 impl Palette {
-    fn new(theme: &Theme) -> Self {
-        let colors = &theme.colors;
+    fn new(theme: &Theme, palette: BackdropPalette) -> Self {
         let dark = theme.appearance.is_dark();
-        let background = rgb(colors.background);
-        let accent = rgb(colors.accent);
-        let agent = colors.agent_gradient.map(rgb);
-        let hues = [agent[0], agent[1], agent[2], accent];
+        let background = rgb(theme.colors.background);
+        let hues = palette.hues(theme).map(rgb);
+        // The sky and the water lean towards the cool end, as they do towards the accent.
+        let accent = hues[3];
         if dark {
             Self {
                 base: mix3(background, accent, 0.1),
@@ -409,7 +421,7 @@ mod tests {
                     width,
                     height,
                     time: phase * std::f32::consts::TAU,
-                    palette: Palette::new(&theme),
+                    palette: Palette::new(&theme, BackdropPalette::Theme),
                     response: sim.response(size),
                 };
                 let mut pixels = gpu::render(ambience, &frame).expect("a GPU");

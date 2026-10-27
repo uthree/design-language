@@ -103,7 +103,9 @@ cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|cau
 ```
 
 A welcome card over the backdrop picked in the title bar: liquid metal or one of four ambient
-scenes.
+scenes. A bar below the card picks the backdrop's palette (`--palette
+theme|dusk|ocean|ember|meadow|graphite`): the theme's own colours or a preset, through
+`.palette(BackdropPalette::…)` on either backdrop.
 
 ### Liquid metal
 
