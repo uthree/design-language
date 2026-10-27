@@ -251,8 +251,10 @@ pub struct Density {
     pub control_padding: Pixels,
     /// Padding inside a panel.
     pub panel_padding: Pixels,
-    /// Height of the title bar / main toolbar.
+    /// Height of a toolbar or panel header.
     pub toolbar: Pixels,
+    /// Height of the window's title bar: slimmer than a toolbar, one row of small controls.
+    pub title_bar: Pixels,
 }
 
 /// Typefaces and the type scale.
@@ -438,6 +440,7 @@ impl Theme {
             &mut density.control_padding,
             &mut density.panel_padding,
             &mut density.toolbar,
+            &mut density.title_bar,
         ] {
             *size *= factor;
         }
@@ -853,6 +856,7 @@ fn density(direction: Direction) -> Density {
             control_padding: px(9.),
             panel_padding: px(10.),
             toolbar: px(40.),
+            title_bar: px(32.),
         },
         Direction::Glass => Density {
             control_sm: px(24.),
@@ -862,6 +866,7 @@ fn density(direction: Direction) -> Density {
             control_padding: px(14.),
             panel_padding: px(16.),
             toolbar: px(52.),
+            title_bar: px(40.),
         },
         Direction::Mono => Density {
             control_sm: px(22.),
@@ -871,6 +876,7 @@ fn density(direction: Direction) -> Density {
             control_padding: px(11.),
             panel_padding: px(14.),
             toolbar: px(44.),
+            title_bar: px(36.),
         },
     }
 }

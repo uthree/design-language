@@ -41,6 +41,9 @@ const TRAFFIC_LIGHT_HEIGHT: f32 = 14.;
 const CAPTION_BUTTON_WIDTH: f32 = 46.;
 /// Narrowest the title shrinks to when the title bar runs out of room.
 const MIN_TITLE_WIDTH: f32 = 72.;
+/// Shrink factor of what gives way before the title truncates: the subtitle, and the room the
+/// title bar's sides keep to centre the title.
+const YIELD_SHRINK: f32 = 1000.;
 /// Margin a client-decorated window keeps around its frame, for the shadow and the resize edges.
 const FRAME_INSET: f32 = 10.;
 
@@ -54,7 +57,7 @@ pub fn custom_frame(options: WindowOptions, theme: &Theme) -> WindowOptions {
         .titlebar
         .as_ref()
         .and_then(|titlebar| titlebar.title.clone());
-    let traffic_light_y = (theme.density.toolbar - px(TRAFFIC_LIGHT_HEIGHT)) / 2.;
+    let traffic_light_y = (theme.density.title_bar - px(TRAFFIC_LIGHT_HEIGHT)) / 2.;
     let decorations = if cfg!(any(target_os = "macos", target_os = "windows")) {
         WindowDecorations::Server
     } else {
@@ -246,9 +249,15 @@ fn resize_cursor(edge: ResizeEdge) -> CursorStyle {
 
 /// The title bar of a window opened with [`custom_frame`].
 ///
-/// Its own surface drags the window; children (`.child`) sit after the title, [`TitleBar::trailing`]
-/// elements at the far end, and each one is shielded from the drag, so buttons and segmented controls stay clickable. A [`TitleBar::title`] is not
-/// shielded: grabbing the title moves the window, as people expect.
+/// One slim row: [`TitleBar::leading`] controls and the children (`.child`) at the leading edge,
+/// the title centred on the window, and [`TitleBar::trailing`] controls at the far end. Its own
+/// surface drags the window, and each control is shielded from the drag, so buttons and
+/// segmented controls stay clickable. A [`TitleBar::title`] is not shielded: grabbing the title
+/// moves the window, as people expect.
+///
+/// The title stays on the window's centre line while the controls on both sides leave room for
+/// it; when one side is wider it slides away from that side instead of covering it, and then
+/// truncates, subtitle first.
 #[derive(IntoElement)]
 pub struct TitleBar {
     base: Div,
@@ -272,13 +281,13 @@ impl TitleBar {
         }
     }
 
-    /// The document or window title at the leading edge.
+    /// The document or window title, centred on the window.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = Some(title.into());
         self
     }
 
-    /// A muted line under the title, such as the save state.
+    /// Muted text after the title on the same line, such as the save state.
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
@@ -330,28 +339,88 @@ impl RenderOnce for TitleBar {
         let radius = tiling
             .filter(|tiling| !tiling.is_tiled())
             .map(|_| frame_radius(theme));
-        let height = theme.density.toolbar;
+        let height = theme.density.title_bar;
 
         let heading = self.title.map(|title| {
-            // The title gives way before the controls beside it, down to a few characters.
-            div()
-                .flex()
-                .flex_col()
-                .flex_shrink()
-                .min_w(px(MIN_TITLE_WIDTH))
-                .child(
-                    Label::new(title)
-                        .weight(theme.typography.label_weight)
+            // One line: the subtitle gives way first, then the title, down to a few characters.
+            let subtitle = self.subtitle.map(|subtitle| {
+                let mut part = div().flex().min_w_0();
+                part.style().flex_shrink = Some(YIELD_SHRINK);
+                part.child(
+                    Label::new(subtitle)
+                        .size(crate::TextSize::Small)
+                        .color(crate::TextColor::Faint)
                         .truncate(),
                 )
-                .children(self.subtitle.map(|subtitle| {
-                    Label::new(subtitle)
-                        .size(crate::TextSize::XSmall)
-                        .color(crate::TextColor::Faint)
-                        .truncate()
-                }))
+            });
+            div()
+                .flex()
+                .flex_shrink()
+                .items_baseline()
+                .gap(theme.spacing.sm)
+                .min_w(px(MIN_TITLE_WIDTH))
+                .overflow_hidden()
+                .child(
+                    div().flex().flex_shrink().min_w_0().child(
+                        Label::new(title)
+                            .weight(theme.typography.label_weight)
+                            .truncate(),
+                    ),
+                )
+                .children(subtitle)
         });
 
+        // The edges the system's buttons take: the traffic lights at the leading end, the caption
+        // buttons at the trailing one, or a margin.
+        let leading_edge = if traffic_lights {
+            px(TRAFFIC_LIGHTS_WIDTH)
+        } else {
+            theme.spacing.md
+        };
+        let trailing_edge = if caption_buttons {
+            px(CAPTION_BUTTON_WIDTH * 3.) + theme.spacing.sm
+        } else {
+            theme.spacing.md
+        };
+        // The two sides grow by the same amount from these bases, which make up for the uneven
+        // edges, so the title sits on the window's centre line. A side whose controls need more
+        // keeps them and pushes the title over, which then truncates.
+        let mut leading_side = div();
+        let mut trailing_side = div();
+        for side in [&mut leading_side, &mut trailing_side] {
+            side.style().flex_shrink = Some(YIELD_SHRINK);
+        }
+        let leading_side = leading_side
+            .flex()
+            .flex_grow()
+            .flex_basis((trailing_edge - leading_edge).max(px(0.)))
+            .h_full()
+            .items_center()
+            .gap(theme.spacing.sm)
+            .children(
+                self.leading
+                    .into_iter()
+                    .map(|child| div().flex().flex_none().occlude().child(child)),
+            )
+            // Each child blocks the drag area under it, so its clicks reach it.
+            .children(
+                self.children
+                    .into_iter()
+                    .map(|child| div().flex().flex_none().occlude().child(child)),
+            );
+        let trailing_side = trailing_side
+            .flex()
+            .flex_grow()
+            .flex_basis((leading_edge - trailing_edge).max(px(0.)))
+            .h_full()
+            .items_center()
+            .justify_end()
+            .gap(theme.spacing.sm)
+            .children(
+                self.trailing
+                    .into_iter()
+                    .map(|child| div().flex().flex_none().occlude().child(child)),
+            );
         self.base
             .id("atelier-title-bar")
             .flex()
@@ -359,7 +428,6 @@ impl RenderOnce for TitleBar {
             .items_center()
             .w_full()
             .h(height)
-            .gap(theme.spacing.sm)
             .bg(theme.colors.chrome)
             .when_some(radius, |bar, radius| {
                 bar.rounded_tl(radius).rounded_tr(radius)
@@ -367,12 +435,6 @@ impl RenderOnce for TitleBar {
             .border_b_1()
             .border_color(theme.colors.border)
             .window_control_area(WindowControlArea::Drag)
-            .pl(if traffic_lights {
-                px(TRAFFIC_LIGHTS_WIDTH)
-            } else {
-                theme.spacing.md
-            })
-            .when(!caption_buttons, |bar| bar.pr(theme.spacing.md))
             .when(mac, |bar| {
                 bar.on_click(|event, window, _| {
                     if event.click_count() == 2 {
@@ -392,6 +454,7 @@ impl RenderOnce for TitleBar {
                     window.show_window_menu(event.position);
                 })
             })
+            .child(div().flex_none().w(leading_edge))
             .child(
                 div()
                     .flex()
@@ -399,37 +462,24 @@ impl RenderOnce for TitleBar {
                     .min_w_0()
                     .h_full()
                     .items_center()
-                    .gap(theme.spacing.sm)
-                    // In a narrow window the children are cut off here rather than drawn under
-                    // the trailing controls.
+                    .gap(theme.spacing.md)
+                    // When even the shortest title leaves too little room, the row overflows at
+                    // its leading end: the leading children are cut off before anything reaches
+                    // the trailing controls or the traffic lights.
+                    .justify_end()
                     .overflow_hidden()
-                    .children(
-                        self.leading
-                            .into_iter()
-                            .map(|child| div().flex().flex_none().occlude().child(child)),
-                    )
+                    .child(leading_side)
                     .children(heading)
-                    // Each child blocks the drag area under it, so its clicks reach it.
-                    .children(
-                        self.children
-                            .into_iter()
-                            .map(|child| div().flex().flex_none().occlude().child(child)),
-                    ),
+                    .child(trailing_side),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .h_full()
-                    .items_center()
-                    .gap(theme.spacing.sm)
-                    .children(
-                        self.trailing
-                            .into_iter()
-                            .map(|child| div().flex().flex_none().occlude().child(child)),
-                    ),
-            )
-            .when(caption_buttons, |bar| bar.child(CaptionButtons { radius }))
+            .map(|bar| {
+                if caption_buttons {
+                    bar.child(div().flex_none().w(theme.spacing.sm))
+                        .child(CaptionButtons { radius })
+                } else {
+                    bar.child(div().flex_none().w(trailing_edge))
+                }
+            })
     }
 }
 

@@ -501,7 +501,6 @@ impl Render for InstrumentLab {
                 TitleBar::new()
                     .title("Cello")
                     .subtitle("Physical instrument · Strings track")
-                    .child(div().w(theme.spacing.md))
                     .child(
                         Button::icon_only("play", IconName::Play)
                             .selected(true)

@@ -1763,7 +1763,6 @@ impl Render for NodeEditor {
                 TitleBar::new()
                     .title("Pad textures")
                     .subtitle(format!("Workflow · {} nodes", self.nodes.len()))
-                    .child(div().w(theme.spacing.md))
                     .child(run_button)
                     .when(missing > 0, |bar| {
                         bar.child(

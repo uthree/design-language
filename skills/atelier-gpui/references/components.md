@@ -67,13 +67,17 @@ how components animate: [motion.md](motion.md).
 These implement `Styled` and `ParentElement`, so chain sizes and children:
 
 - `TitleBar::new().leading(..).title(..).subtitle(..).child(..).trailing(..)` — the window's own
-  title bar. Open the window with `atelier::custom_frame(options, cx.theme())` so the system bar
-  is hidden. Its empty space drags the window; children are shielded from the drag. On Windows it
-  draws minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on
-  macOS it leaves room for the traffic lights; on Linux it draws the three buttons too, and
-  right-click opens the window menu. In a narrow window the title truncates first and the
-  children are cut off before they reach the trailing controls, so drop children you can do
-  without below a width rather than relying on the cut.
+  title bar, one slim row (`theme.density.title_bar`). Open the window with
+  `atelier::custom_frame(options, cx.theme())` so the system bar is hidden. The title is centred
+  on the window; the subtitle follows it on the same line in faint text, never on a second line.
+  Leading controls and children sit at the leading edge, trailing ones at the far end. Its empty
+  space drags the window; children are shielded from the drag. On Windows it draws
+  minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on macOS it
+  leaves room for the traffic lights; on Linux it draws the three buttons too, and right-click
+  opens the window menu. When one side's controls need more than half the bar the title slides
+  away from them; in a narrow window it then truncates, subtitle first, and the leading children
+  are cut off before they reach the title, so drop children you can do without below a width
+  rather than relying on the cut. Use small controls (`ControlSize::Small`) in it.
 - `WindowFrame::new()` — the window root. Paints `theme.window_fill()`; on Linux, where the
   window draws its own decorations, it adds the resize edges, the shadow and the rounded top
   corners around the content. Elsewhere, and on an X11 desktop without a compositor (which keeps
