@@ -13,10 +13,12 @@
 //! });
 //! ```
 //!
-//! On Windows, gpui blurs through the accent policy DWM applies to the window, and DWM drops that
-//! accent while it plays the maximize, restore and snap transitions: for the length of the
-//! animation the window is plainly transparent. [`set_window_background`] turns those
-//! transitions off for a blurred window, so it changes size at once and stays frosted.
+//! On Windows, gpui blurs through the acrylic accent policy, which DWM drops while it plays the
+//! maximize, restore and snap animations: for the length of the animation the window is plainly
+//! transparent. On Windows 11 22H2 and later [`set_window_background`] asks DWM for its own
+//! acrylic system backdrop instead, which stays through those animations. Like every system
+//! backdrop it gives way to a plain fill while the window is inactive. Older Windows keeps the
+//! accent.
 //!
 //! Call it again whenever a different theme is installed: leaving a translucent material and
 //! coming back to it makes gpui build a fresh blur view.
@@ -47,11 +49,11 @@ pub fn set_window_background(window: &mut Window, theme: &Theme) {
         // The frame paints the opaque fill itself, inside the shadow margin.
         background = WindowBackgroundAppearance::Transparent;
     }
+    #[cfg(target_os = "windows")]
+    let background = windows::apply_system_backdrop(window, background, theme.appearance.is_dark());
     window.set_background_appearance(background);
     #[cfg(target_os = "macos")]
     macos::restore_blur_material(window);
-    #[cfg(target_os = "windows")]
-    windows::keep_blur_through_transitions(window, background);
 }
 
 /// Whether a window asking for `WindowBackgroundAppearance::Blurred` actually gets a blurred
@@ -132,13 +134,38 @@ mod macos {
 #[cfg(target_os = "windows")]
 mod windows {
     use std::ffi::c_void;
+    use std::sync::OnceLock;
 
     use gpui::{Window, WindowBackgroundAppearance};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-    /// `DWMWA_TRANSITIONS_FORCEDISABLED`: turns off the window's open, close, minimize, maximize
-    /// and restore animations.
-    const DWMWA_TRANSITIONS_FORCEDISABLED: u32 = 3;
+    /// The first build with `DWMWA_SYSTEMBACKDROP_TYPE`: Windows 11 22H2.
+    const SYSTEM_BACKDROP_BUILD: u32 = 22621;
+
+    const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+    const DWMWA_SYSTEMBACKDROP_TYPE: u32 = 38;
+    /// `DWMSBT_AUTO`: let DWM decide, which for a window like ours draws no backdrop.
+    const DWMSBT_AUTO: u32 = 0;
+    /// `DWMSBT_TRANSIENTWINDOW`: the acrylic backdrop.
+    const DWMSBT_TRANSIENTWINDOW: u32 = 3;
+
+    #[repr(C)]
+    struct Margins {
+        left: i32,
+        right: i32,
+        top: i32,
+        bottom: i32,
+    }
+
+    #[repr(C)]
+    struct OsVersionInfo {
+        size: u32,
+        major: u32,
+        minor: u32,
+        build: u32,
+        platform: u32,
+        service_pack: [u16; 128],
+    }
 
     #[link(name = "dwmapi")]
     unsafe extern "system" {
@@ -148,32 +175,93 @@ mod windows {
             value: *const c_void,
             size: u32,
         ) -> i32;
+        fn DwmExtendFrameIntoClientArea(hwnd: isize, margins: *const Margins) -> i32;
     }
 
-    /// Turn DWM's window transitions off while the window is blurred, and back on otherwise.
-    ///
-    /// DWM draws a transition from a snapshot of the window without its acrylic accent, so a
-    /// double-click on the title bar would show the desktop sharp behind the chrome until the
-    /// animation ends.
-    pub(super) fn keep_blur_through_transitions(
-        window: &Window,
-        background: WindowBackgroundAppearance,
-    ) {
-        let Ok(handle) = HasWindowHandle::window_handle(window) else {
-            return;
-        };
-        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
-            return;
-        };
-        // A Win32 `BOOL`.
-        let disabled = i32::from(background == WindowBackgroundAppearance::Blurred);
+    #[link(name = "ntdll")]
+    unsafe extern "system" {
+        fn RtlGetVersion(info: *mut OsVersionInfo) -> i32;
+    }
+
+    fn has_system_backdrop() -> bool {
+        static SUPPORTED: OnceLock<bool> = OnceLock::new();
+        *SUPPORTED.get_or_init(|| {
+            let mut info = OsVersionInfo {
+                size: size_of::<OsVersionInfo>() as u32,
+                major: 0,
+                minor: 0,
+                build: 0,
+                platform: 0,
+                service_pack: [0; 128],
+            };
+            // `RtlGetVersion` reports the real build, unlike `GetVersionEx` without a manifest.
+            unsafe { RtlGetVersion(&mut info) == 0 && info.build >= SYSTEM_BACKDROP_BUILD }
+        })
+    }
+
+    fn set_attribute(hwnd: isize, attribute: u32, value: u32) {
         unsafe {
             DwmSetWindowAttribute(
-                handle.hwnd.get(),
-                DWMWA_TRANSITIONS_FORCEDISABLED,
-                (&raw const disabled).cast(),
-                size_of::<i32>() as u32,
+                hwnd,
+                attribute,
+                (&raw const value).cast(),
+                size_of::<u32>() as u32,
             );
+        }
+    }
+
+    /// Put DWM's acrylic system backdrop behind a blurred window, or take it away, and return the
+    /// background gpui should still be asked for.
+    ///
+    /// With the system backdrop in place gpui is asked for an opaque window, which only turns its
+    /// accent policy off: the transparent pixels gpui renders then show the backdrop. `dark`
+    /// picks the backdrop's tint, to match the theme rather than the system.
+    pub(super) fn apply_system_backdrop(
+        window: &Window,
+        background: WindowBackgroundAppearance,
+        dark: bool,
+    ) -> WindowBackgroundAppearance {
+        if !has_system_backdrop() {
+            return background;
+        }
+        let Ok(handle) = HasWindowHandle::window_handle(window) else {
+            return background;
+        };
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return background;
+        };
+        let hwnd = handle.hwnd.get();
+        let blurred = background == WindowBackgroundAppearance::Blurred;
+
+        // A margin of -1 extends the frame over the whole client area, so the backdrop the frame
+        // draws reaches behind all of it.
+        let inset = if blurred { -1 } else { 0 };
+        let margins = Margins {
+            left: inset,
+            right: inset,
+            top: inset,
+            bottom: inset,
+        };
+        unsafe {
+            DwmExtendFrameIntoClientArea(hwnd, &margins);
+        }
+        if blurred {
+            set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, u32::from(dark));
+        }
+        set_attribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            if blurred {
+                DWMSBT_TRANSIENTWINDOW
+            } else {
+                DWMSBT_AUTO
+            },
+        );
+
+        if blurred {
+            WindowBackgroundAppearance::Opaque
+        } else {
+            background
         }
     }
 }

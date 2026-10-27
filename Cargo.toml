@@ -17,7 +17,7 @@ unicode-segmentation = "1.10"
 objc2 = "0.6"
 raw-window-handle = "0.6"
 
-# On Windows it reaches the window's `HWND` the same way, to keep DWM from animating the blur away.
+# On Windows it reaches the window's `HWND` the same way, to put DWM's own acrylic behind it.
 [target.'cfg(target_os = "windows")'.dependencies]
 raw-window-handle = "0.6"
 
