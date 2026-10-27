@@ -19,7 +19,7 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `LinePlot` + `Series::line` | `plot` | `(x, y)` points per series | `.style(Line \| Markers \| LineMarkers \| Stems \| Steps \| Area)`, `.name()`, `.color()`, `.faint()`; plot: `.x_range()`, `.y_range()`, `.x_label()`, `.y_label()`, `.legend()`, `.grid()` |
 | `Series::markers` | `scatter` | `(x, y)` points | as above |
 | `Series::stems` | `stem` | `(n, value)` | the y range always includes 0 |
-| `Histogram::new(samples)` | `histogram` | raw samples | `.bins()`, `.range()`, `.density()`, `.overlay(curve, name)` for the expected distribution, `.name()` |
+| `Histogram::new(samples)` | `histogram` | raw samples | `.bins()`, `.range()`, `.y_range()`, `.density()`, `.overlay(curve, name)` for the expected distribution, `.name()` |
 | `FieldPlot::new(cols, rows, values)` | `imagesc` + `contour` | row-major, **first row at y minimum** | `.x_range()`, `.y_range()`, `.value_range()`, `.signed()`, `.contours(n)` |
 | `Colorbar::new(min, max)` | `colorbar` | — | `.signed()`, `.label()`; give it a 64 px wide column beside the plot it explains |
 | `Plot3d::new().surface(cols, rows, z, x, y)` | `surf`, `mesh` | heights, row-major, first row at y minimum | `.shading(Faceted \| Smooth \| Mesh)` |
@@ -28,7 +28,8 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `nice_ticks`, `format_tick` | — | — | the tick rule, for custom painting |
 
 `Plot3d` takes `.view(azimuth, elevation)` in degrees, in MATLAB's convention (default
-−37.5°, 30°; top is `(0, 90)`), `.labels(x, y, z)` and `.z_range()`. It is orthographic, draws
+−37.5°, 30°; top is `(0, 90)`), `.labels(x, y, z)` and `.x_range()`, `.y_range()`,
+`.z_range()`; a fixed z range also fixes a surface's colour scale. It is orthographic, draws
 its back walls with the grid, and labels the two front floor edges and the leftmost upright.
 
 ## Axes
@@ -53,6 +54,24 @@ its back walls with the grid, and labels the two front floor edges and the leftm
   `Colorbar` of the same ramp.
 - Lighting on surfaces only darkens; the hue is the value.
 
+## Animating
+
+Plots take plain data, so a moving plot is the same plot rebuilt each frame from a clock.
+
+- Keep one simulation clock in the view: advance it by the frame time in `render` while
+  playing (cap the step, so a hidden window does not jump), and call
+  `window.request_animation_frame()`. Every plot reads the same `t`, so they stay in step and
+  pause together. Give the clock a Pause/Play button, a restart, and show `t` in the mono face.
+- **Fix the ranges of anything that moves** (`x_range`, `y_range`, `z_range`, the histogram's
+  `y_range`, a field's `value_range` and its colour bar). Auto-scaled axes that rescale every
+  frame make motion unreadable.
+- Show where the motion is: a marker at the head of a curve being traced, a comet tail (the
+  last stretch of a 3-D curve with no colour, so the heat ramp brightens toward the head) over
+  the whole path drawn in `grid_faint`.
+- Run at the physics' own speed where people can follow it (an oscillator in real time) and
+  say so; slow down anything faster ("slowed down").
+- A loop that ends should hold its final picture for a moment before it starts again.
+
 ## 3-D interaction
 
 - Turn a 3-D plot by dragging it: wrap it in a well with `.cursor_grab()` and update azimuth
@@ -60,7 +79,8 @@ its back walls with the grid, and labels the two front floor edges and the leftm
   standard views (3-D, Top, Front, Side) as a segmented control, and show the angles as
   readouts.
 - Plots that show the same space share one view, so turning one turns all.
-- A turntable is an option the person switches on, never the default.
+- A turntable is an option the person switches on, never the default; it turns with the
+  clock, so pausing stops it too.
 
 ## Rules
 

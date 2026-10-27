@@ -665,6 +665,7 @@ pub struct Histogram {
     name: Option<SharedString>,
     overlay: Option<(Vec<(f32, f32)>, SharedString)>,
     x: Axis,
+    y_range: Option<(f32, f32)>,
     y_label: Option<SharedString>,
 }
 
@@ -680,6 +681,7 @@ impl Histogram {
             name: None,
             overlay: None,
             x: Axis::default(),
+            y_range: None,
             y_label: None,
         }
     }
@@ -732,6 +734,13 @@ impl Histogram {
         self
     }
 
+    /// Fix the y range, so the axis holds still while samples arrive; by default it fits the
+    /// tallest bar or the overlay.
+    pub fn y_range(mut self, min: f32, max: f32) -> Self {
+        self.y_range = Some((min, max));
+        self
+    }
+
     /// Title over the y axis; defaults to "Count" or "Density".
     pub fn y_label(mut self, label: impl Into<SharedString>) -> Self {
         self.y_label = Some(label.into());
@@ -773,6 +782,7 @@ impl RenderOnce for Histogram {
             name,
             overlay,
             x,
+            y_range,
             ..
         } = self;
         canvas(
@@ -788,7 +798,8 @@ impl RenderOnce for Histogram {
                             .flat_map(|(points, _)| points.iter().map(|at| at.1)),
                     )
                     .fold(0f32, f32::max);
-                let y_range = round_out((0., if top > 0. { top * 1.05 } else { 1. }));
+                let y_range = y_range
+                    .unwrap_or_else(|| round_out((0., if top > 0. { top * 1.05 } else { 1. })));
                 let frame = paint_axes(
                     window,
                     cx,
@@ -1229,7 +1240,7 @@ pub struct Plot3d {
     azimuth: f32,
     elevation: f32,
     shading: Shading,
-    z_range: Option<(f32, f32)>,
+    fixed: [Option<(f32, f32)>; 3],
     labels: [Option<SharedString>; 3],
 }
 
@@ -1242,7 +1253,7 @@ impl Plot3d {
             azimuth: -37.5,
             elevation: 30.,
             shading: Shading::Faceted,
-            z_range: None,
+            fixed: [None, None, None],
             labels: [None, None, None],
         }
     }
@@ -1307,9 +1318,23 @@ impl Plot3d {
         self
     }
 
-    /// Fix the vertical range; by default it spans the data, rounded out to whole ticks.
+    /// Fix the x range; by default it spans the data (rounded out to whole ticks for curves and
+    /// points). Fix the ranges of anything that moves, so the box holds still.
+    pub fn x_range(mut self, min: f32, max: f32) -> Self {
+        self.fixed[0] = Some((min, max));
+        self
+    }
+
+    /// Fix the y range.
+    pub fn y_range(mut self, min: f32, max: f32) -> Self {
+        self.fixed[1] = Some((min, max));
+        self
+    }
+
+    /// Fix the vertical range; by default it spans the data, rounded out to whole ticks. A
+    /// surface's colours follow it, so a fixed range also keeps the colour scale still.
     pub fn z_range(mut self, min: f32, max: f32) -> Self {
-        self.z_range = Some((min, max));
+        self.fixed[2] = Some((min, max));
         self
     }
 
@@ -1438,7 +1463,7 @@ impl RenderOnce for Plot3d {
             azimuth,
             elevation,
             shading,
-            z_range,
+            fixed,
             labels,
         } = self;
         canvas(
@@ -1461,12 +1486,21 @@ impl RenderOnce for Plot3d {
                         ranges[2] = (ranges[2].0.min(heights.0), ranges[2].1.max(heights.1));
                     }
                 }
-                let heights = ranges[2];
-                ranges[2] = z_range.unwrap_or_else(|| round_out(ranges[2]));
                 if surface.is_none() {
                     ranges[0] = round_out(ranges[0]);
                     ranges[1] = round_out(ranges[1]);
                 }
+                ranges[2] = round_out(ranges[2]);
+                for (range, fixed) in ranges.iter_mut().zip(fixed) {
+                    if let Some(fixed) = fixed {
+                        *range = fixed;
+                    }
+                }
+                let heights = fixed[2].unwrap_or_else(|| {
+                    surface
+                        .as_ref()
+                        .map_or(ranges[2], |surface| extent(surface.values.iter().copied()))
+                });
                 let mut camera = Camera::new(ranges, azimuth, elevation);
                 camera.fit(bounds, px(44.));
 

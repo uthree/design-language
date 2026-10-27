@@ -1,7 +1,9 @@
 //! A mock numerical workbench in the spirit of MATLAB: a workspace of variables, and two
-//! figures of plots computed from textbook physics — a damped oscillator, thermal speeds, a
-//! limit cycle, a Fourier series and a dipole's potential in 2-D; a surface, the Lorenz
-//! attractor and a point cloud in 3-D. Drag a 3-D plot to turn it.
+//! figures of plots computed from textbook physics as they run — a damped oscillator, thermal
+//! speeds, a limit cycle, a travelling Fourier series and a turning dipole in 2-D; a ringing
+//! membrane, the Lorenz attractor and drifting point clusters in 3-D. Every plot is recomputed
+//! each frame from one simulation clock, which the title bar pauses and restarts. Drag a 3-D
+//! plot to turn it.
 //!
 //! ```text
 //! cargo run --example plot_lab -- [--figure 2d|3d] [--direction glass|studio|mono] [--appearance dark|light]
@@ -10,7 +12,7 @@
 mod common;
 
 use std::f32::consts::{PI, TAU};
-use std::time::Duration;
+use std::time::Instant;
 
 use atelier::plot::{
     Colorbar, FieldPlot, Histogram, LinePlot, Plot3d, Series, SeriesStyle, Shading,
@@ -22,13 +24,12 @@ use atelier::{
 };
 use common::Themed;
 use gpui::{
-    Animation, AnimationExt, App, Context, IntoElement, MouseButton, MouseDownEvent,
-    MouseMoveEvent, ParentElement, Pixels, Point, Render, SharedString, Styled, Window, div,
-    prelude::*, px,
+    App, Context, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels,
+    Point, Render, SharedString, Styled, Window, div, prelude::*, px,
 };
 
-/// One turn of the turntable.
-const TURN: Duration = Duration::from_secs(24);
+/// How fast the turntable turns, in degrees per second.
+const TURN_RATE: f32 = 15.;
 
 /// The views the inspector offers, as MATLAB's `view` arguments.
 const VIEWS: [(&str, f32, f32); 4] = [
@@ -122,59 +123,100 @@ fn lorenz() -> Vec<[f32; 3]> {
         .collect()
 }
 
-/// MATLAB's `peaks`: three Gaussians, a sum of shapes everyone recognises.
-fn peaks(x: f32, y: f32) -> f32 {
-    3. * (1. - x).powi(2) * (-x * x - (y + 1.).powi(2)).exp()
-        - 10. * (x / 5. - x.powi(3) - y.powi(5)) * (-x * x - y * y).exp()
-        - 1. / 3. * (-(x + 1.).powi(2) - y * y).exp()
-}
+/// Lorenz steps the moving point advances per second, and how many trail behind it.
+const LORENZ_RATE: f32 = 360.;
+const LORENZ_TAIL: usize = 700;
 
-const PEAKS: usize = 41;
+const MEMBRANE: usize = 41;
 
-fn peaks_grid() -> Vec<f32> {
-    (0..PEAKS * PEAKS)
+/// The modes ringing on the membrane: (m, n, amplitude, phase).
+const MODES: [(f32, f32, f32, f32); 5] = [
+    (1., 1., 1., 0.),
+    (2., 1., 0.6, 1.1),
+    (1., 2., 0.6, 2.3),
+    (2., 2., 0.45, 0.4),
+    (3., 1., 0.3, 1.9),
+];
+
+/// A square drum head, clamped at its rim, with five modes ringing together at time `t`. Each
+/// mode's frequency goes as √(m² + n²), slowed so the fundamental takes four seconds.
+fn membrane(t: f32) -> Vec<f32> {
+    (0..MEMBRANE * MEMBRANE)
         .map(|index| {
-            let (column, row) = (index % PEAKS, index / PEAKS);
-            let at = |i: usize| -3. + 6. * i as f32 / (PEAKS - 1) as f32;
-            peaks(at(column), at(row))
+            let at = |i: usize| i as f32 / (MEMBRANE - 1) as f32;
+            let (x, y) = (at(index % MEMBRANE), at(index / MEMBRANE));
+            MODES
+                .iter()
+                .map(|(m, n, amplitude, phase)| {
+                    let omega = TAU * 0.25 * (m * m + n * n).sqrt() / 2f32.sqrt();
+                    amplitude * (m * PI * x).sin() * (n * PI * y).sin() * (omega * t + phase).cos()
+                })
+                .sum()
         })
         .collect()
 }
 
-/// Three Gaussian clusters, as a classifier's training set might look.
+/// Three Gaussian clusters as offsets from their centres, as a classifier's training set
+/// might look.
 fn clusters() -> [Vec<[f32; 3]>; 3] {
     let mut random = Random(11);
-    [[-1.5, -1., 0.5], [1.2, 1.4, -0.4], [1.4, -1.2, 1.6]].map(|centre| {
+    [0, 1, 2].map(|_| {
         (0..180)
             .map(|_| {
                 [
-                    centre[0] + 0.55 * random.normal(),
-                    centre[1] + 0.55 * random.normal(),
-                    centre[2] + 0.45 * random.normal(),
+                    0.5 * random.normal(),
+                    0.5 * random.normal(),
+                    0.4 * random.normal(),
                 ]
             })
             .collect()
     })
 }
 
-const DIPOLE: (usize, usize) = (96, 72);
-
-/// The potential of a +q and −q pair at x = ∓0.6, clamped near the charges.
-fn dipole_potential(x: f32, y: f32) -> f32 {
-    let r = |cx: f32| ((x - cx).powi(2) + y * y).sqrt().max(0.05);
-    (1. / r(-0.6) - 1. / r(0.6)).clamp(-5., 5.)
+/// Where cluster `index` is at time `t`: the centres circle the vertical axis at different
+/// heights and each cloud breathes.
+fn cluster_at(offsets: &[[f32; 3]], index: usize, t: f32) -> Vec<[f32; 3]> {
+    let angle = 0.35 * t + index as f32 * TAU / 3.;
+    let radius = 1.7 + 0.4 * (0.5 * t + index as f32).sin();
+    let centre = [
+        radius * angle.cos(),
+        radius * angle.sin(),
+        [0.4, -0.6, 1.4][index] + 0.5 * (0.7 * t + 2. * index as f32).sin(),
+    ];
+    let spread = 1. + 0.35 * (0.9 * t + 2. * index as f32).sin();
+    offsets
+        .iter()
+        .map(|offset| std::array::from_fn(|axis| centre[axis] + spread * offset[axis]))
+        .collect()
 }
 
-fn dipole_grid() -> Vec<f32> {
+const DIPOLE: (usize, usize) = (96, 72);
+
+/// The potential of a +q and −q pair 1.2 m apart, turned by `angle` about the origin, clamped
+/// near the charges.
+fn dipole_potential(x: f32, y: f32, angle: f32) -> f32 {
+    let (dx, dy) = (0.6 * angle.cos(), 0.6 * angle.sin());
+    let r = |sign: f32| {
+        ((x + sign * dx).powi(2) + (y + sign * dy).powi(2))
+            .sqrt()
+            .max(0.05)
+    };
+    (1. / r(1.) - 1. / r(-1.)).clamp(-5., 5.)
+}
+
+fn dipole_grid(angle: f32) -> Vec<f32> {
     let (columns, rows) = DIPOLE;
     (0..columns * rows)
         .map(|index| {
             let x = -2. + 4. * (index % columns) as f32 / (columns - 1) as f32;
             let y = -1.5 + 3. * (index / columns) as f32 / (rows - 1) as f32;
-            dipole_potential(x, y)
+            dipole_potential(x, y, angle)
         })
         .collect()
 }
+
+/// How fast the dipole turns, in radians per second.
+const DIPOLE_RATE: f32 = 0.4;
 
 /// The first `terms` odd harmonics of a unit square wave.
 fn square_partial(terms: usize, t: f32) -> f32 {
@@ -197,12 +239,14 @@ struct PlotLab {
     shading: Shading,
     spin: bool,
     drag: Option<Point<Pixels>>,
+    /// Seconds on the simulation clock, which runs only while playing.
+    time: f32,
+    playing: bool,
+    last_frame: Option<Instant>,
     speeds: Vec<f32>,
     cycles: Vec<Vec<(f32, f32)>>,
     attractor: Vec<[f32; 3]>,
-    surface: Vec<f32>,
     clusters: [Vec<[f32; 3]>; 3],
-    dipole: Vec<f32>,
 }
 
 impl Themed for PlotLab {
@@ -224,15 +268,16 @@ impl PlotLab {
             shading: Shading::Faceted,
             spin: false,
             drag: None,
+            time: 0.,
+            playing: true,
+            last_frame: None,
             speeds: thermal_speeds(6000),
             cycles: [(0.1, 0.), (3.5, 2.5), (-3., -3.5)]
                 .into_iter()
                 .map(|start| van_der_pol(start, 1.2))
                 .collect(),
             attractor: lorenz(),
-            surface: peaks_grid(),
             clusters: clusters(),
-            dipole: dipole_grid(),
         }
     }
 
@@ -279,7 +324,7 @@ impl PlotLab {
             "histogram(v, 40)",
             "stem(n, b)",
             "contour(X, Y, V, 10)",
-            "surf(peaks(41))",
+            "surf(X, Y, Z)",
             "plot3(L(:,1), L(:,2), L(:,3))",
         ];
         Sidebar::new(Edge::Left)
@@ -322,13 +367,22 @@ impl PlotLab {
 
     fn oscillator(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let omega = TAU;
+        let series = cx.theme().colors.series;
+        // Traced in real time over four seconds, then held for one before it starts again.
+        let now = (self.time % 5.).min(4.);
         let curve = |zeta: f32| {
-            (0..600)
+            let steps = (now / 4. * 599.) as usize;
+            (0..=steps)
                 .map(|step| {
                     let t = step as f32 / 599. * 4.;
                     (t, oscillator(zeta, omega, t))
                 })
                 .collect::<Vec<_>>()
+        };
+        let head = |zeta: f32, color| {
+            Series::line(vec![(now, oscillator(zeta, omega, now))])
+                .style(SeriesStyle::LineMarkers)
+                .color(color)
         };
         let mut random = Random(3);
         let measured: Vec<_> = (0..32)
@@ -336,6 +390,7 @@ impl PlotLab {
                 let t = step as f32 / 31. * 4.;
                 (t, oscillator(0.15, omega, t) + 0.04 * random.normal())
             })
+            .take_while(|(t, _)| *t <= now)
             .collect();
         let envelope: Vec<_> = (0..120)
             .map(|step| {
@@ -345,7 +400,7 @@ impl PlotLab {
             .collect();
         Self::panel(
             "Damped oscillator",
-            "x(t) for three damping ratios, f₀ = 1 Hz, released from rest",
+            "x(t) for three damping ratios, f₀ = 1 Hz, traced in real time",
             cx,
         )
         .flex_1()
@@ -353,18 +408,23 @@ impl PlotLab {
         .child(
             Self::well(cx).h(px(260.)).child(
                 LinePlot::new()
-                    .series(Series::line(curve(0.04)).name("ζ = 0.04"))
+                    .series(Series::line(envelope).color(series[1]).faint())
+                    .series(Series::line(curve(0.04)).color(series[0]).name("ζ = 0.04"))
                     .series(
                         Series::line(measured)
                             .style(SeriesStyle::LineMarkers)
+                            .color(series[1])
                             .name("ζ = 0.15, measured"),
                     )
-                    .series(Series::line(curve(1.)).name("ζ = 1, critical"))
                     .series(
-                        Series::line(envelope)
-                            .color(cx.theme().colors.series[1])
-                            .faint(),
+                        Series::line(curve(1.))
+                            .color(series[2])
+                            .name("ζ = 1, critical"),
                     )
+                    .series(head(0.04, series[0]))
+                    .series(head(1., series[2]))
+                    .x_range(0., 4.)
+                    .y_range(-1., 1.)
                     .x_label("t [s]")
                     .y_label("x [m]")
                     .grid(self.grid)
@@ -374,7 +434,10 @@ impl PlotLab {
     }
 
     fn speeds(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let mean = self.speeds.iter().sum::<f32>() / self.speeds.len() as f32;
+        // Molecules arrive over ten seconds; the full sample holds for two.
+        let count = ((self.time % 12. / 10.).min(1.) * self.speeds.len() as f32).max(1.) as usize;
+        let speeds = &self.speeds[..count];
+        let mean = speeds.iter().sum::<f32>() / count as f32;
         let theory: Vec<_> = (0..200)
             .map(|step| {
                 let v = step as f32 / 199. * 1400.;
@@ -383,16 +446,17 @@ impl PlotLab {
             .collect();
         Self::panel(
             "Thermal speeds",
-            "6000 N₂ molecules at 300 K against the Maxwell–Boltzmann density",
+            "N₂ molecules at 300 K, sampled one by one, against the Maxwell–Boltzmann density",
             cx,
         )
         .w(px(440.))
         .flex_none()
         .child(
             Self::well(cx).h(px(260.)).child(
-                Histogram::new(self.speeds.clone())
+                Histogram::new(speeds.to_vec())
                     .bins(40)
                     .range(0., 1400.)
+                    .y_range(0., 0.0025)
                     .density()
                     .name("Simulated")
                     .overlay(theory, "Maxwell–Boltzmann")
@@ -403,17 +467,35 @@ impl PlotLab {
             div()
                 .flex()
                 .gap(cx.theme().spacing.sm)
+                .child(Badge::new(format!("n = {count}")))
                 .child(Badge::new(format!("mean {mean:.0} m/s")))
-                .child(Badge::new("theory 476 m/s"))
-                .child(Badge::new("χ² p = 0.62").tone(Tone::Success).dot()),
+                .child(
+                    Badge::new("theory 476 m/s")
+                        .tone(if (mean - 476.).abs() < 5. {
+                            Tone::Success
+                        } else {
+                            Tone::Neutral
+                        })
+                        .dot(),
+                ),
         )
     }
 
     fn phase(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let series = cx.theme().colors.series;
+        // Each start runs for eight seconds, then the picture holds for two.
+        let progress = (self.time % 10. / 8.).min(1.);
         let starts: Vec<_> = self.cycles.iter().map(|cycle| cycle[0]).collect();
         let mut plot = LinePlot::new();
-        for cycle in &self.cycles {
-            plot = plot.series(Series::line(cycle.clone()));
+        for (index, cycle) in self.cycles.iter().enumerate() {
+            let end = (progress * (cycle.len() - 1) as f32) as usize;
+            plot = plot
+                .series(Series::line(cycle[..=end].to_vec()).color(series[index]))
+                .series(
+                    Series::line(vec![cycle[end]])
+                        .style(SeriesStyle::LineMarkers)
+                        .color(series[index]),
+                );
         }
         Self::panel(
             "Limit cycle",
@@ -425,6 +507,8 @@ impl PlotLab {
         .child(
             Self::well(cx).h(px(280.)).child(
                 plot.series(Series::markers(starts).color(cx.theme().colors.text))
+                    .x_range(-3.5, 4.)
+                    .y_range(-4., 4.)
                     .x_label("x")
                     .y_label("dx/dt")
                     .grid(self.grid),
@@ -441,21 +525,21 @@ impl PlotLab {
                 (n as f32, b)
             })
             .collect();
-        let square: Vec<_> = (0..=4)
-            .map(|half| {
-                let t = half as f32 * PI - PI;
-                (t, if half % 2 == 0 { -1. } else { 1. })
-            })
-            .collect();
-        let sum: Vec<_> = (0..500)
-            .map(|step| {
-                let t = -PI + TAU * 2. * step as f32 / 499.;
-                (t, square_partial(terms, t))
-            })
-            .collect();
+        // Both waves travel to the right at one radian per second.
+        let shift = self.time;
+        let samples = |f: &dyn Fn(f32) -> f32| {
+            (0..800)
+                .map(|step| {
+                    let t = -PI + TAU * 2. * step as f32 / 799.;
+                    (t, f(t - shift))
+                })
+                .collect::<Vec<_>>()
+        };
+        let square = samples(&|t| t.sin().signum());
+        let sum = samples(&|t| square_partial(terms, t));
         Self::panel(
             "Fourier series",
-            "A square wave's sine coefficients, and the sum of the first few",
+            "A square wave's sine coefficients, and the sum of the first few, travelling",
             cx,
         )
         .w(px(440.))
@@ -477,7 +561,7 @@ impl PlotLab {
                 .child(
                     Self::well(cx).flex_1().h_full().child(
                         LinePlot::new()
-                            .series(Series::line(square).style(SeriesStyle::Steps).faint())
+                            .series(Series::line(square).faint())
                             .series(Series::line(sum).color(theme.colors.series[2]))
                             .x_range(-PI, 3. * PI)
                             .y_range(-1.5, 1.5)
@@ -505,9 +589,10 @@ impl PlotLab {
 
     fn dipole(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
+        let angle = self.time * DIPOLE_RATE;
         Self::panel(
             "Electric dipole",
-            "Potential of +q and −q, with nine equipotentials",
+            "Potential of +q and −q turning about the origin, with nine equipotentials",
             cx,
         )
         .flex_1()
@@ -518,7 +603,7 @@ impl PlotLab {
                 .h(px(380.))
                 .child(
                     Self::well(cx).flex_1().h_full().child(
-                        FieldPlot::new(DIPOLE.0, DIPOLE.1, self.dipole.clone())
+                        FieldPlot::new(DIPOLE.0, DIPOLE.1, dipole_grid(angle))
                             .x_range(-2., 2.)
                             .y_range(-1.5, 1.5)
                             .value_range(-3., 3.)
@@ -538,17 +623,18 @@ impl PlotLab {
     }
 
     fn cuts(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let angle = self.time * DIPOLE_RATE;
         let cut = |y: f32| {
             (0..400)
                 .map(|step| {
                     let x = -2. + 4. * step as f32 / 399.;
-                    (x, dipole_potential(x, y))
+                    (x, dipole_potential(x, y, angle))
                 })
                 .collect::<Vec<_>>()
         };
         Self::panel(
             "Cuts through the field",
-            "V along three lines parallel to the axis",
+            "V along three horizontal lines as the dipole turns",
             cx,
         )
         .w(px(440.))
@@ -582,25 +668,16 @@ impl PlotLab {
             .child(Self::row(cx).child(self.dipole(cx)).child(self.cuts(cx)))
     }
 
-    /// A 3-D plot in a well that turns when dragged, and on the turntable when it is on.
+    /// A 3-D plot in a well that turns when dragged.
     fn turnable(
         &self,
         id: &'static str,
         plot: Plot3d,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let azimuth = self.azimuth;
         let plot = plot
             .view(self.azimuth, self.elevation)
             .shading(self.shading);
-        let body = if self.spin {
-            plot.with_animation(id, Animation::new(TURN).repeat(), move |plot, t| {
-                plot.azimuth(azimuth + 360. * t)
-            })
-            .into_any_element()
-        } else {
-            plot.into_any_element()
-        };
         Self::well(cx)
             .id(id)
             .cursor_grab()
@@ -625,31 +702,47 @@ impl PlotLab {
                 this.drag = Some(event.position);
                 cx.notify();
             }))
-            .child(body)
+            .child(plot)
     }
 
     fn figure_3d(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let (low, high) = self
-            .surface
-            .iter()
-            .fold((f32::MAX, f32::MIN), |(lo, hi), z| (lo.min(*z), hi.max(*z)));
         let surface = Plot3d::new()
-            .surface(PEAKS, PEAKS, self.surface.clone(), (-3., 3.), (-3., 3.))
-            .labels("x", "y", "z");
-        let mut cloud = Plot3d::new().labels("x₁", "x₂", "x₃");
-        for (index, cluster) in self.clusters.iter().enumerate() {
-            cloud = cloud.scatter(cluster.clone(), Some(theme.colors.series[index]));
+            .surface(MEMBRANE, MEMBRANE, membrane(self.time), (0., 1.), (0., 1.))
+            .z_range(-2., 2.)
+            .labels("x [m]", "y [m]", "z");
+        let mut cloud = Plot3d::new()
+            .x_range(-4., 4.)
+            .y_range(-4., 4.)
+            .z_range(-2., 3.)
+            .labels("x₁", "x₂", "x₃");
+        for (index, offsets) in self.clusters.iter().enumerate() {
+            cloud = cloud.scatter(
+                cluster_at(offsets, index, self.time),
+                Some(theme.colors.series[index]),
+            );
         }
+        // The whole attractor stays faint behind a comet: the last steps in the heat ramp,
+        // brightest at the moving point.
+        let count = self.attractor.len();
+        let head = (self.time * LORENZ_RATE) as usize % count;
+        let tail = self.attractor[head.saturating_sub(LORENZ_TAIL)..=head].to_vec();
         let attractor = Plot3d::new()
-            .curve(self.attractor.clone(), None)
+            .curve(self.attractor.clone(), Some(theme.colors.grid_faint))
+            .curve(tail, None)
+            .scatter(vec![self.attractor[head]], Some(theme.colors.text))
             .labels("x", "y", "z");
         div()
             .flex()
             .flex_col()
             .gap(theme.spacing.lg)
             .child(
-                Self::panel("peaks(41)", "surf of three Gaussians on a 41 × 41 grid", cx).child(
+                Self::panel(
+                    "Square membrane",
+                    "surf of a drum head with five modes ringing together; slowed down",
+                    cx,
+                )
+                .child(
                     Self::row(cx)
                         .gap(theme.spacing.sm)
                         .h(px(440.))
@@ -658,7 +751,7 @@ impl PlotLab {
                             div()
                                 .w(px(64.))
                                 .h_full()
-                                .child(Colorbar::new(low, high).label("z")),
+                                .child(Colorbar::new(-2., 2.).label("z")),
                         ),
                 ),
             )
@@ -667,7 +760,7 @@ impl PlotLab {
                     .child(
                         Self::panel(
                             "Lorenz attractor",
-                            "σ = 10, ρ = 28, β = 8/3; colour runs with time",
+                            "σ = 10, ρ = 28, β = 8/3; the last 700 steps trail the moving point",
                             cx,
                         )
                         .flex_1()
@@ -675,10 +768,14 @@ impl PlotLab {
                         .child(self.turnable("lorenz", attractor, cx).h(px(340.))),
                     )
                     .child(
-                        Self::panel("Clusters", "scatter3 of three labelled classes", cx)
-                            .flex_1()
-                            .min_w_0()
-                            .child(self.turnable("cloud", cloud, cx).h(px(340.))),
+                        Self::panel(
+                            "Clusters",
+                            "scatter3 of three classes drifting and spreading",
+                            cx,
+                        )
+                        .flex_1()
+                        .min_w_0()
+                        .child(self.turnable("cloud", cloud, cx).h(px(340.))),
                     ),
             )
     }
@@ -774,9 +871,12 @@ impl PlotLab {
                             })),
                     )
                     .child(
-                        Label::new("Drag a plot to turn it. All three share one view.")
-                            .size(TextSize::Small)
-                            .color(TextColor::Faint),
+                        Label::new(
+                            "Drag a plot to turn it. All three share one view; the turntable \
+                             runs with the clock.",
+                        )
+                        .size(TextSize::Small)
+                        .color(TextColor::Faint),
                     ),
             )
             .child(
@@ -805,7 +905,23 @@ impl PlotLab {
 }
 
 impl Render for PlotLab {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Advance the clock by the time since the last frame, and ask for the next one.
+        if self.playing {
+            let now = Instant::now();
+            if let Some(last) = self.last_frame {
+                // A long gap (the window was hidden) counts as one frame, not a jump.
+                let step = (now - last).as_secs_f32().min(0.1);
+                self.time += step;
+                if self.spin {
+                    self.azimuth = (self.azimuth + TURN_RATE * step + 180.).rem_euclid(360.) - 180.;
+                }
+            }
+            self.last_frame = Some(now);
+            window.request_animation_frame();
+        } else {
+            self.last_frame = None;
+        }
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
         let figure = if self.figure == 0 {
@@ -832,9 +948,31 @@ impl Render for PlotLab {
                             })),
                     )
                     .child(
-                        Button::new("run", "Run")
+                        Button::new("play", if self.playing { "Pause" } else { "Play" })
                             .size(ControlSize::Small)
-                            .icon(IconName::Play),
+                            .icon(if self.playing {
+                                IconName::Pause
+                            } else {
+                                IconName::Play
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.playing = !this.playing;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::icon_only("restart", IconName::Refresh)
+                            .tooltip("Restart from t = 0")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.time = 0.;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Label::new(format!("t = {:.1} s", self.time))
+                            .size(TextSize::Small)
+                            .mono()
+                            .color(TextColor::Muted),
                     )
                     .trailing(switch)
                     .trailing(Divider::vertical())
