@@ -66,8 +66,9 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
 
 ## Creator-tool specifics
 
-- The window has one bar: `TitleBar` is both chrome and main toolbar. Put the document title and
-  frequent commands in it; leave its middle empty so it can be dragged.
+- The window has one bar: `TitleBar` is both chrome and main toolbar. Keep it slim and on one
+  line: the document title centred, a short subtitle beside it rather than under it, frequent
+  commands at the edges, and empty space around the title so the bar can be dragged.
 - Canvas first: the timeline/editor gets `flex_1` and `min_w_0`/`min_h_0`; inspectors and the
   agent panel are fixed-width, dismissible regions on the trailing edge.
 - Lay out for every window size between the minimum and a large display:

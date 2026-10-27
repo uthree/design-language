@@ -513,7 +513,6 @@ impl Render for Visualizer {
                 TitleBar::new()
                     .title("Analyzer")
                     .subtitle("Master bus · 48 kHz")
-                    .child(div().w(theme.spacing.md))
                     .child(
                         SegmentedControl::new(
                             "tap",

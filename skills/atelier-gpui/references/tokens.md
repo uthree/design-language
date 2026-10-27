@@ -64,7 +64,8 @@ Helpers: `mix`, `lighten`, `contrast`, `ensure_contrast`.
 
 ## Sizes
 
-- `theme.density`: `control_sm/md/lg`, `row`, `control_padding`, `panel_padding`, `toolbar`.
+- `theme.density`: `control_sm/md/lg`, `row`, `control_padding`, `panel_padding`,
+  `toolbar`, `title_bar` (the window's title bar, slimmer than a toolbar).
   `ControlSize::height(theme)` maps a component size to these.
 - `theme.spacing`: `xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32` (see rules.md).
 - `theme.shape`: `radius_xs/sm/md/lg/xl`, `capsule_controls`; use `theme.control_radius(h)`
