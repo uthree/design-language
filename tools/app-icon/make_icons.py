@@ -3,6 +3,9 @@
 
     python3 tools/app-icon/make_icons.py            # every app with ship = true, and the sheets
     python3 tools/app-icon/make_icons.py --only auris-studio --no-sheets
+    python3 tools/app-icon/make_icons.py --only auris-studio --version v0.13.0 --out build/icons
+
+The last form is what the release workflow runs (.github/actions/app-icon).
 
 The rules these numbers follow are in doc/app-icons.md. Needs fonttools, uharfbuzz, resvg-py
 and Pillow, and Inter Display (Bold and SemiBold) installed or passed with --font-dir.
@@ -216,17 +219,18 @@ class Mark:
     name: str | None = None
 
 
-def edition(version: str | None) -> str | None:
-    """What the cell shows for an app's version: the major alone, or β before 1.0, so the icon
-    changes only at a major release."""
+def shown_version(version: str | None) -> str | None:
+    """What the cell shows for a release such as `v0.13.0`: its major.minor, `0.13`."""
     if not version:
         return None
-    major = int(version.split(".")[0])
-    return str(major) if major >= 1 else "β"
+    parts = version.removeprefix("v").split("-")[0].split(".")
+    if not all(part.isdigit() for part in parts):
+        raise SystemExit(f"version {version!r} is not major.minor[.patch]")
+    return ".".join((parts + ["0"])[:2])
 
 
 def mark_of(app: dict) -> Mark:
-    return Mark(app["symbol"], app.get("number"), app["element"], edition(app.get("version")), app.get("name"))
+    return Mark(app["symbol"], app.get("number"), app["element"], shown_version(app.get("version")), app.get("name"))
 
 
 def draw(
@@ -314,7 +318,7 @@ def draw(
         glyph_fill = hex_of(p.glyph)
     body.append(f'<path transform="translate({gx:.2f} {baseline:.2f})" d="{path}" fill="{glyph_fill}"/>')
 
-    # The cell's readings, as a periodic table prints them: the number top left, the edition
+    # The cell's readings, as a periodic table prints them: the number top left, the version
     # top right (where a table puts the atomic weight), the full name along the bottom.
     semi = faces["SemiBold"]
     ink = f'fill="{hex_of(p.glyph)}" fill-opacity="{CORNER_OPACITY}"'
@@ -451,7 +455,7 @@ def write_app(app: dict, faces, out: Path):
     ico[-1].save(out / "icon.ico", sizes=[(px, px) for px in ICO_SIZES], append_images=ico[:-1])
     mac = [raster(draw(mark, faces, form="macos", detail=detail_for(px)), px) for px in ICNS_SIZES]
     mac[-1].save(out / "icon.icns", append_images=mac[:-1])
-    print(f"wrote {out.relative_to(ROOT)}")
+    print(f"wrote {out}")
 
 
 # Sheets ---------------------------------------------------------------------------------------
@@ -553,6 +557,7 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "assets" / "app-icons")
     parser.add_argument("--sheets", type=Path, default=ROOT / "doc" / "images")
     parser.add_argument("--only", help="slug of one app to write, ship or not")
+    parser.add_argument("--version", help="draw --only's app at this release (e.g. v0.13.0) instead of apps.toml's")
     parser.add_argument("--no-sheets", action="store_true")
     parser.add_argument("--font-dir", type=Path)
     args = parser.parse_args()
@@ -563,6 +568,14 @@ def main():
             raise SystemExit(f"{app['slug']}: a symbol is one capital and one lowercase letter")
         if app["element"] not in ELEMENTS:
             raise SystemExit(f"{app['slug']}: unknown element colour {app['element']!r}")
+    if args.version:
+        if not args.only:
+            raise SystemExit("--version needs --only")
+        for app in apps:
+            if app["slug"] == args.only:
+                app["version"] = args.version
+    if args.only and not any(app["slug"] == args.only for app in apps):
+        raise SystemExit(f"no app {args.only!r} in {args.apps}")
     faces = {style: Face(find_font(args.font_dir, style)) for style in ("Bold", "SemiBold")}
 
     for app in apps:
@@ -574,7 +587,7 @@ def main():
         sheet_auris(apps, faces, args.sheets)
         sheet_sizes(apps, faces, args.sheets)
         sheet_anatomy(apps, faces, args.sheets)
-        print(f"wrote sheets to {args.sheets.relative_to(ROOT)}")
+        print(f"wrote sheets to {args.sheets}")
 
 
 if __name__ == "__main__":

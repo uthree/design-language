@@ -1,6 +1,7 @@
 # The app marks drawn by make_icons.py. Each entry is one app; see doc/app-icons.md for how
-# to choose a symbol, a number, a version and an element colour. `version` is the app's
-# release; the icon shows only its major (β before 1.0), so redraw only at a major release. `metal = true` also writes
+# to choose a symbol, a number, a version and an element colour. `version` is the release
+# the committed files show (as major.minor); release builds redraw the icon at their own tag with
+# .github/actions/app-icon, so it need not be bumped by hand. `metal = true` also writes
 # icon-metal.svg for hero uses.
 
 [[app]]

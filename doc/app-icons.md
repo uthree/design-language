@@ -2,7 +2,7 @@
 
 Every app built on Atelier is marked like an element in a periodic table: **two letters, a
 capital and a lowercase, on a dark tile tinted in the app's element colour**, with the cell's
-readings around them: the app's number top left, its edition (major version) top right and its
+readings around them: the app's number top left, its version top right and its
 full name along the bottom. Auris Studio is **Au**. The marks of a suite read as one family, the way
 Adobe's Ps, Ai and Pr do, and each still has its own symbol and hue.
 
@@ -53,10 +53,10 @@ element's name. The mark does the same, in the glyph colour at 72 %, Inter Displ
 | Where | Reading | Rule |
 | --- | --- | --- |
 | Top left | **Number** | The app's place in the suite's register, assigned in the order apps are created and never reused, the way an element keeps its atomic number. Auris Studio is **1**. |
-| Top right | **Edition** | The major version alone, where a table puts the atomic weight: `1`, `2`, …, and `β` before 1.0. Auris Studio (0.13.0) shows **β**. Only a major release redraws the icon: a minor or patch release never does, because operating systems cache icons (the Dock, Finder, Explorer) and a number that changed every release would often show stale. |
+| Top right | **Version** | The release's `major.minor`, where a table puts the atomic weight: Auris Studio 0.13.0 shows **0.13**. Patch releases print the same. The icon is drawn by the release workflow at each tag (see [Release builds](#release-builds)), never bumped by hand. Operating systems cache icons (the Dock, Finder, Explorer), so an updated app can show the previous number for a while; that is accepted. |
 | Bottom | **Name** | The app's full name as it is spelled everywhere else (Auris Studio), centred. |
 
-The number and the edition are drawn from 128 px up, the name from 256 px up; below that they
+The number and the version are drawn from 128 px up, the name from 256 px up; below that they
 would be noise. A system that shows the icon at 128 px (the macOS Dock, Windows' large icons)
 therefore shows the corners but not the name, and the name appears where the icon is a picture:
 Finder's preview, an About window, a store page.
@@ -73,7 +73,7 @@ All measures are fractions of the tile's side *s* (1024 in the master).
 | Fill | Vertical gradient of the element hue: lightness 15.5 % at the top to 8.5 % at the bottom, saturation 62 → 70 % of the seed's. The tile is always dark, in light and dark appearances alike: it is an object on the desktop, not a surface of the theme. |
 | Glass | A white sheen from the top (10 % to 0 at mid-height) and a rim 1.2 % *s* wide: the hue at 34 %, its upper edge lit white (28 % fading to 0 at a third), as `colors.highlight` lights a bezel. Both are dropped at 32 px and below. |
 | Letters | Inter Display Bold, kerned, tracked −2 % of the em. Capital height 0.36 *s*, 0.44 *s* at 32 px and below. Centred horizontally on their ink; the cap height is centred vertically, then lifted 1 % *s*. The pair never spans more than 0.70 *s*; a wide pair is scaled down to fit. Letters align on the baseline and cap height, never on their bounding box, so a descender (the g of Ag) hangs below. |
-| Number, edition | Inter Display SemiBold, capital height 0.075 *s*, on one baseline 0.205 *s* from the top; the number's ink starts 0.13 *s* from the left edge, the edition's ends 0.13 *s* from the right. |
+| Number, version | Inter Display SemiBold, capital height 0.075 *s*, on one baseline 0.205 *s* from the top; the number's ink starts 0.13 *s* from the left edge, the version's ends 0.13 *s* from the right. |
 | Name | Inter Display SemiBold, capital height 0.058 *s*, baseline 0.875 *s* from the top, centred. At most 0.74 *s* wide; a long name is scaled down to fit, never wrapped or abbreviated. |
 | Colour | The glyph is the element's seed, lightened until it reaches **7:1** against the top of the tile, so the pair reads at 16 px. |
 
@@ -108,8 +108,8 @@ the welcome screen and the app's chrome share a family.
 
 | Size | Detail |
 | --- | --- |
-| 256 px and up | Full: number, edition, name, sheen, rim. `icon.svg`. |
-| 128 px | Number and edition, no name. `icon-corners.svg`. |
+| 256 px and up | Full: number, version, name, sheen, rim. `icon.svg`. |
+| 128 px | Number and version, no name. `icon-corners.svg`. |
 | 48–64 px | No readings. `icon-medium.svg`. |
 | 16–32 px | No readings, sheen or rim; letters grow to 0.44 *s*. Drawn from `icon-small.svg`, not scaled down from the master. |
 | Menu bar, tray, monochrome | `symbolic.svg`: the letters alone in black on 16 × 16, cap height 0.62. Use it as a macOS template image or a Linux `-symbolic` icon; the system tints it. |
@@ -135,7 +135,7 @@ the welcome screen and the app's chrome share a family.
 ## Making the files
 
 ```bash
-pip install fonttools uharfbuzz resvg-py pillow   # and Inter Display (Bold, SemiBold)
+pip install -r tools/app-icon/requirements.txt   # and Inter Display 4.1 (Bold, SemiBold)
 python3 tools/app-icon/make_icons.py               # apps with ship = true, and these sheets
 python3 tools/app-icon/make_icons.py --only node-editor --no-sheets
 ```
@@ -152,15 +152,62 @@ For each app it writes `assets/app-icons/<slug>/`:
 | `symbolic.svg` | Menu bar, tray and monochrome contexts. |
 
 To add an app: give it a slug, name, symbol, the next number, its current version and an
-element in `apps.toml`, set `ship = true`, run the tool and commit the folder it writes. The tool refuses a symbol that is
+element in `apps.toml`, set `ship = true`, run the tool and commit the folder it writes. The
+committed files are what development builds use; release builds draw their own (below). The tool refuses a symbol that is
 not one capital and one lowercase letter, or an element colour it does not know.
+
+## Release builds
+
+The version in the corner comes from the release tag, so nobody redraws icons by hand. This
+repository ships a composite action, [`.github/actions/app-icon`](../.github/actions/app-icon/action.yml),
+that installs the tool's pinned dependencies and Inter 4.1, then draws one app's files at a
+given release. In the app's own release workflow:
+
+```yaml
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: icon
+        uses: uthree/design-language/.github/actions/app-icon@main
+        with:
+          slug: auris-studio          # its entry in tools/app-icon/apps.toml here
+          # version defaults to the tag, e.g. v0.13.0 → "0.13"
+          out: target/app-icon
+      # Wherever the app keeps its icons: replace the committed ones, then build and package.
+      - shell: bash
+        run: cp -R "${{ steps.icon.outputs.dir }}/." assets/icon/
+      - run: cargo build --release --locked
+```
+
+- **Pin the action** to a tag or commit of this repository once the icons are settled, so a
+  change to the guide does not reach a release unannounced.
+- The app keeps the generated folder for its platform's bundling: `icon.icns` in the macOS
+  bundle (`CFBundleIconFile`), `icon.ico` embedded in the Windows executable from `build.rs`
+  (for example with the `winresource` crate), `png/<size>.png` and `icon.svg` installed into
+  Linux `hicolor`.
+- The step needs Python, which every GitHub-hosted runner has; it never runs in a local
+  `cargo build`, so contributors need nothing beyond Rust. Local builds use the committed
+  icons, whose version is whatever `apps.toml` last said.
+- On a branch or manual run there is no tag: pass `version:` explicitly, or the tool refuses
+  the branch name.
+- The register (symbol, number, colour) stays in this repository's `apps.toml`, so a new app is
+  added here first.
 
 ## Review checklist
 
 - [ ] Two letters, capital then lowercase, from the distinctive word; unique in the suite.
 - [ ] Legible at 16 px on light and dark desktops (check `png/16.png` at 100 %).
 - [ ] An element colour from the table, not the agent gradient, distinct from its neighbours.
-- [ ] Number assigned from the register, not reused; `version` is the app's current release.
+- [ ] Number assigned from the register, not reused.
 - [ ] Name spelled as everywhere else, fitting without abbreviation.
-- [ ] Generated by the tool; no hand-edited SVGs. Redrawn at every major release (and at 1.0).
+- [ ] Generated by the tool; no hand-edited SVGs. The release workflow draws the icon from the tag.
 - [ ] Every platform file present: `.icns`, `.ico`, PNGs, scalable and symbolic SVGs.
