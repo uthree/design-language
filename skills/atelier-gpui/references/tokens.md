@@ -55,6 +55,8 @@ Always label the type too (the port's name, a tooltip, a legend).
 Ornament: `metal` (9 stops at `atelier::metal::STOPS`), the reflection ramp `MetalBackdrop`
 paints: near-neutral chrome with a warm and a cool fringe either side of the horizon
 (amber/blue steel in Studio, peach/sky platinum in Glass, rose/cyan black chrome in Mono).
+A backdrop's `.palette(BackdropPalette::…)` recolours it for that backdrop only
+(`palette.metal(theme)`); the token itself stays the direction's.
 `shadow` is used by `theme.elevation`.
 
 `theme.text_on(fill)` gives readable text on any fill, e.g. a track colour.

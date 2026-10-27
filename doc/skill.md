@@ -23,5 +23,5 @@ Codex versions that predate it. To scope the Skill to one project, link it into 
 
 The Skill triggers on gpui UI work that uses the `atelier` crate, on adding an AI assistant
 panel or chat to a gpui app, and on questions about the design candidates or tokens. It points
-the agent at the crate source and `examples/showcase.rs` rather than restating the API, so it
+the agent at the crate source and the examples rather than restating the API, so it
 stays correct as the crate changes; keep `references/*.md` in step when an API changes.
