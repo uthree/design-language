@@ -21,7 +21,7 @@ use atelier::{
     Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, SectionHeader,
     Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StepList, StepState, Switch,
     Tabs, TaskProgress, TaskState, TextColor, TextField, TextSize, Theme, TitleBar, Tone,
-    menu_separator, skeleton_paragraph,
+    WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Hsla, IntoElement,
@@ -1238,13 +1238,12 @@ impl Render for Showcase {
                 cx.notify();
             }),
         );
-        div()
+        WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.window_fill())
             .child(self.title_bar(cx))
             .child(
                 div()

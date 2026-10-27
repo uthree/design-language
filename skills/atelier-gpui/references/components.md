@@ -70,7 +70,12 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   title bar. Open the window with `atelier::custom_frame(options, cx.theme())` so the system bar
   is hidden. Its empty space drags the window; children are shielded from the drag. On Windows it
   draws minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on
-  macOS it leaves room for the traffic lights; Linux keeps the system frame for now.
+  macOS it leaves room for the traffic lights; on Linux it draws the three buttons too, and
+  right-click opens the window menu.
+- `WindowFrame::new()` — the window root. Paints `theme.window_fill()`; on Linux, where the
+  window draws its own decorations, it adds the resize edges, the shadow and the rounded top
+  corners around the content. Elsewhere, and on an X11 desktop without a compositor (which keeps
+  the system frame), it is a plain full-size `div`.
 - `Toolbar::new()` — a toolbar row inside the window (chrome, bottom hairline).
 - `Sidebar::new(Edge::Left | Edge::Right).w(px(232.))` — persistent side region.
 - `Card::new()` — grouped region, hairline, no shadow.

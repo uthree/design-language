@@ -16,7 +16,7 @@ use atelier::viz::{Heatmap, Spectrum, SpectrumStyle, StringLane};
 use atelier::{
     ActiveTheme, Appearance, Badge, Button, Card, ControlSize, Direction, Divider, Edge, IconName,
     Knob, Label, LevelMeter, ListItem, SectionHeader, Segment, SegmentedControl, Sidebar,
-    StatusDot, TaskProgress, TextColor, TextSize, TitleBar, Tone,
+    StatusDot, TaskProgress, TextColor, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -472,13 +472,12 @@ impl Render for InstrumentLab {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
-        div()
+        WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
             .size_full()
             .flex()
             .flex_col()
-            .bg(theme.window_fill())
             .child(
                 TitleBar::new()
                     .title("Cello")

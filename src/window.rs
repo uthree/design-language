@@ -15,8 +15,15 @@
 //!
 //! Call it again whenever a different theme is installed: leaving a translucent material and
 //! coming back to it makes gpui build a fresh blur view.
+//!
+//! On Linux, gpui can blur only through KWin's blur protocol on Wayland; on X11 and on every other
+//! Wayland compositor a blurred window comes out plainly transparent, the desktop sharp behind
+//! the chrome. There [`Theme::window_background`] asks for an opaque window and
+//! [`Theme::window_fill`] paints the theme's background under the chrome instead. A window with
+//! client-side decorations is asked to be transparent either way, so the margin around the frame
+//! where [`crate::WindowFrame`] draws its shadow stays clear.
 
-use gpui::Window;
+use gpui::{Window, WindowBackgroundAppearance};
 
 use crate::theme::Theme;
 
@@ -25,9 +32,41 @@ use crate::theme::Theme;
 /// Use it in place of `Window::set_background_appearance`, both when the window opens and after
 /// every theme change.
 pub fn set_window_background(window: &mut Window, theme: &Theme) {
-    window.set_background_appearance(theme.window_background());
+    let mut background = theme.window_background();
+    if background == WindowBackgroundAppearance::Opaque
+        && matches!(
+            window.window_decorations(),
+            gpui::Decorations::Client { .. }
+        )
+    {
+        // The frame paints the opaque fill itself, inside the shadow margin.
+        background = WindowBackgroundAppearance::Transparent;
+    }
+    window.set_background_appearance(background);
     #[cfg(target_os = "macos")]
     macos::restore_blur_material(window);
+}
+
+/// Whether a window asking for `WindowBackgroundAppearance::Blurred` actually gets a blurred
+/// backdrop on this system.
+pub(crate) fn blur_supported() -> bool {
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *SUPPORTED.get_or_init(|| {
+            // gpui blurs through `org_kde_kwin_blur`, which only KWin offers.
+            gpui::guess_compositor() == "Wayland"
+                && std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktops| {
+                    desktops
+                        .split(':')
+                        .any(|desktop| desktop.eq_ignore_ascii_case("KDE"))
+                })
+        })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    {
+        true
+    }
 }
 
 #[cfg(target_os = "macos")]

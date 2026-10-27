@@ -471,22 +471,32 @@ impl Theme {
     /// The window background an application should request for this theme.
     ///
     /// Pass it to `WindowOptions::window_background`; once the window exists, go through
-    /// [`crate::set_window_background`] instead, which keeps the macOS blur alive.
+    /// [`crate::set_window_background`] instead, which keeps the macOS blur alive. Where the
+    /// system cannot blur — most Linux desktops — translucent themes get an opaque window.
     pub fn window_background(&self) -> WindowBackgroundAppearance {
-        match self.material {
-            Material::Opaque => WindowBackgroundAppearance::Opaque,
-            Material::Translucent => WindowBackgroundAppearance::Blurred,
+        if self.blurs_window() {
+            WindowBackgroundAppearance::Blurred
+        } else {
+            WindowBackgroundAppearance::Opaque
         }
     }
 
     /// Fill for the window root. Under translucent chrome it is clear: the chrome supplies the
     /// only tint, because a tinted root under tinted chrome composites to an opaque surface and
-    /// hides the blur.
+    /// hides the blur. Where the system cannot blur, it is the opaque background, so the chrome
+    /// reads as a tint over it rather than over the bare desktop.
     pub fn window_fill(&self) -> Hsla {
-        match self.material {
-            Material::Opaque => self.colors.background,
-            Material::Translucent => gpui::transparent_black(),
+        if self.blurs_window() {
+            gpui::transparent_black()
+        } else {
+            self.colors.background
         }
+    }
+
+    /// Whether this theme's window shows a blurred desktop: a translucent material on a system
+    /// that blurs.
+    fn blurs_window(&self) -> bool {
+        self.material == Material::Translucent && crate::window::blur_supported()
     }
 
     /// Radius for a control of the given height, honouring [`Shape::capsule_controls`].

@@ -29,7 +29,7 @@ mod window;
 pub use button::{Button, ButtonVariant, ControlSize};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
-pub use frame::{TitleBar, custom_frame};
+pub use frame::{TitleBar, WindowFrame, custom_frame};
 pub use icon::{Assets, Icon, IconName};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,

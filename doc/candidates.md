@@ -58,9 +58,13 @@ agent transcript — stay opaque so text over them never depends on what is behi
 - **Windows 10 1809+ / 11:** confirmed working. gpui 0.2.2 uses the undocumented
   `SetWindowCompositionAttribute` acrylic accent (not Mica). It needs *Settings → Personalization → Colors → Transparency
   effects* on; with it off, Windows draws the chrome solid.
-- **Linux:** depends on the compositor; on X11 without one the chrome is solid.
+- **Linux:** gpui 0.2.2 blurs only through KWin's `org_kde_kwin_blur`, so only KDE Plasma on
+  Wayland gets the frosted backdrop. Everywhere else — GNOME, wlroots compositors, any X11
+  desktop — a blurred window comes out plainly transparent, so `Theme::window_background` asks
+  for an opaque window and `Theme::window_fill` paints the opaque background under the chrome.
+  Checked under Weston (Wayland) and XWayland.
 
-The tint is enough for legibility when the blur is unavailable, so nothing needs a fallback.
+On Windows with transparency effects off, the tint alone is enough for legibility.
 
 ## Shared rules
 

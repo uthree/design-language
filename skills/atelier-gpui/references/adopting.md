@@ -11,6 +11,12 @@ atelier = { git = "https://github.com/uthree/design-language" }   # or { path = 
 Atelier pins gpui `=0.2.2`, the release Auris Studio uses, so both resolve to one gpui. When the
 app moves to a newer gpui, move Atelier in the same change.
 
+On Linux, gpui 0.2.2 pulls in `xattr` 0.2, which does not build against `libc` 0.2.190 or later
+(`libc::ENOATTR` is gone). Keep `libc` at 0.2.189 in the app's lockfile —
+`cargo update -p libc --precise 0.2.189` — until gpui drops it. Building also needs the
+system's xkbcommon, Wayland, Vulkan and fontconfig headers (`libxkbcommon-x11-dev`,
+`libwayland-dev`, `libvulkan-dev`, `libfontconfig-dev` on Debian and Ubuntu).
+
 ```rust
 use atelier::{ActiveTheme, Appearance, Assets, Direction, Theme};
 
@@ -25,8 +31,8 @@ Application::new().with_assets(Assets::with_fallback(AppAssets)).run(|cx| {
     });
 });
 
-// root view
-div().font(theme.typography.ui.clone()).text_color(theme.colors.text).bg(theme.window_fill())
+// root view: WindowFrame paints window_fill() and, on Linux, the window's frame
+WindowFrame::new().font(theme.typography.ui.clone()).text_color(theme.colors.text).flex_col()
 ```
 
 Persist the choice with `Direction::id()` / `Direction::from_id()` and `Appearance`.

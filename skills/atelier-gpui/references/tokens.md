@@ -17,8 +17,11 @@ Under Glass, `window_fill()` is clear and only chrome is tinted: do not add anot
 under the title bar or sidebars, or the blur disappears. Keep content areas on opaque
 `surface`/`background`.
 
-Paint the window root with `theme.window_fill()` and `.font(theme.typography.ui.clone())`;
-labels inherit the interface font and its CJK fallbacks from there.
+Make the window root a `WindowFrame` (it paints `theme.window_fill()` and, on Linux, the window's
+own frame) and give it `.font(theme.typography.ui.clone())`; labels inherit the interface font
+and its CJK fallbacks from there. Where the system cannot blur — every Linux desktop but KDE
+Plasma on Wayland — Glass asks for an opaque window and `window_fill()` is the opaque
+`background`, so the chrome tints that instead of the bare desktop.
 
 ## Directions (the candidates)
 

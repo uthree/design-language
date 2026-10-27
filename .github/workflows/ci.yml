@@ -27,15 +27,18 @@ jobs:
 
   check:
     name: Clippy, test, build (${{ matrix.os }})
-    # The platforms Auris Studio ships on. Linux is left out until the title bar draws
-    # client-side decorations there.
+    # The platforms Auris Studio ships on.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
