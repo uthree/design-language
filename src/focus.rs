@@ -8,7 +8,8 @@
 //! [`crate::init`] binds Tab and Shift-Tab to [`FocusNext`] and [`FocusPrevious`].
 //! [`crate::WindowFrame`] handles both and gives the window somewhere to start from, so a window
 //! built on it needs nothing more. A window with a root of its own adds [`tab_navigation`] to it
-//! and focuses that root once.
+//! and focuses an empty child of it once. Not the root itself: an element that tracks focus
+//! marks every press inside it handled, and a handled press on the title bar moves no window.
 //!
 //! A component given an id also uses it as its `debug_selector`, so a test can find it with
 //! `VisualTestContext::debug_bounds` (enable gpui's `test-support` feature in the test build).

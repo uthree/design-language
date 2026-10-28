@@ -143,8 +143,20 @@ impl RenderOnce for WindowFrame {
             window.defer(cx, move |window, _| window.focus(&root));
         }
         let theme = cx.theme();
-        let surface = tab_navigation(self.base.track_focus(&root))
+        // The root focus sits on an empty child rather than on the surface itself: an element
+        // that tracks focus takes focus on every press inside it and marks the press handled,
+        // and a handled press on the title bar is one the platform no longer starts a window
+        // move from. Actions still bubble from the child to the surface, and the surface hands
+        // focus back to it from a press nothing else claimed, without marking that press.
+        let anchor = div().absolute().size_0().track_focus(&root);
+        let surface = tab_navigation(self.base)
             .capture_any_mouse_down(|_, _, cx| set_focus_visible(false, cx))
+            .on_any_mouse_down(move |_, window, _| {
+                if !window.default_prevented() {
+                    window.focus(&root);
+                }
+            })
+            .child(anchor)
             .size_full()
             .bg(theme.window_fill());
         let Some(tiling) = client_tiling(window) else {

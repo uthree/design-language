@@ -27,8 +27,11 @@ handler is not a stop. Nothing to wire up beyond:
 
 - `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`).
 - `WindowFrame` handles them and holds the window's root focus, so Tab works from the moment
-  the window opens. A window whose root is your own element calls
-  `atelier::tab_navigation(root.track_focus(&handle))` and focuses `handle` once.
+  the window opens. A window whose root is your own element wraps it in
+  `atelier::tab_navigation(root)`, puts the focus `handle` on an empty child
+  (`div().absolute().size_0().track_focus(&handle)`) and focuses it once. Never `track_focus`
+  the root itself: an element that tracks focus marks every press inside it handled, and the
+  platform then starts no window move from the title bar.
 - The focus outline (2px of `colors.focus_ring`, a pixel outside the control's corner) shows
   only after the keyboard has moved focus, never after a click (`focus_visible(cx)`). Do not
   draw your own; a custom control built from a `div` takes `.tab_index(0)` and follows the same
