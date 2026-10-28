@@ -56,6 +56,26 @@ pub fn set_window_background(window: &mut Window, theme: &Theme) {
     macos::restore_blur_material(window);
 }
 
+/// Whether DWM draws its own caption buttons inside the window under `theme`, where they show
+/// through translucent chrome.
+///
+/// The acrylic system backdrop needs the frame extended over the whole client area, and DWM
+/// then draws the native minimise, maximise and close in the extended frame, under gpui's
+/// rendering. Through Glass's translucent title bar they show faintly behind the title bar's
+/// own buttons, and in a maximised window, where the two sets sit a few pixels apart, the glyphs
+/// look doubled. [`crate::TitleBar`] paints itself opaque when this is true.
+pub(crate) fn native_caption_shows_through(theme: &Theme) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        theme.blurs_window() && windows::has_system_backdrop()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = theme;
+        false
+    }
+}
+
 /// Whether a window asking for `WindowBackgroundAppearance::Blurred` actually gets a blurred
 /// backdrop on this system.
 pub(crate) fn blur_supported() -> bool {
@@ -183,7 +203,7 @@ mod windows {
         fn RtlGetVersion(info: *mut OsVersionInfo) -> i32;
     }
 
-    fn has_system_backdrop() -> bool {
+    pub(super) fn has_system_backdrop() -> bool {
         static SUPPORTED: OnceLock<bool> = OnceLock::new();
         *SUPPORTED.get_or_init(|| {
             let mut info = OsVersionInfo {

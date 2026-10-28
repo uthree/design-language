@@ -8,6 +8,8 @@
 //! is tinted only a little towards the palette, and the palette's warm and cool ends become the
 //! coloured fringes at its horizon.
 
+use std::time::{Duration, Instant};
+
 use gpui::{Hsla, rgb};
 
 use crate::theme::{Theme, mix};
@@ -141,5 +143,45 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+/// Where a backdrop is in its cycle: running from a moment and a phase, or stopped at a phase
+/// while its window is inactive, so it carries on from there rather than jumping.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Clock {
+    Running { since: Instant, from: f32 },
+    Stopped(f32),
+}
+
+impl Clock {
+    /// The phase, from 0 to 1, in a cycle of `period`.
+    pub(crate) fn phase(self, period: Duration) -> f32 {
+        match self {
+            Self::Running { since, from } => {
+                (from + since.elapsed().as_secs_f32() / period.as_secs_f32()).rem_euclid(1.)
+            }
+            Self::Stopped(phase) => phase,
+        }
+    }
+
+    /// Run `clock` while `running` and stop it where it is otherwise, starting from `rest` the
+    /// first time. Returns the clock as it now is.
+    pub(crate) fn advance(
+        clock: &mut Option<Self>,
+        running: bool,
+        rest: f32,
+        period: Duration,
+    ) -> Self {
+        let now = match (clock.unwrap_or(Self::Stopped(rest)), running) {
+            (Self::Stopped(from), true) => Self::Running {
+                since: Instant::now(),
+                from,
+            },
+            (running @ Self::Running { .. }, false) => Self::Stopped(running.phase(period)),
+            (clock, _) => clock,
+        };
+        *clock = Some(now);
+        now
     }
 }

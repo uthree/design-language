@@ -8,22 +8,27 @@ use gpui::{
 
 use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::Kbd;
-use crate::icon::{Icon, IconName};
+use crate::focus::focusable;
+use crate::icon::{Icon, IconName, IconSource};
 use crate::theme::{ActiveTheme, Theme};
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// The message box: context chips, the text, and a row of controls ending in Send.
 ///
-/// The text area is a slot: pass the application's editable input with [`Composer::input`], or a
-/// static [`Composer::value`] in mock-ups. While `busy`, Send becomes Stop.
+/// The text area is a slot: pass the application's editable input with [`Composer::input`] and
+/// say whether it is [`Composer::empty`], or a static [`Composer::value`] in mock-ups. The row
+/// under it holds attach, the model picker and any [`Composer::control`]s — the reasoning
+/// effort, a fast-mode switch — before Send. While `busy`, Send becomes Stop.
 #[derive(IntoElement)]
 pub struct Composer {
     id: ElementId,
     value: Option<SharedString>,
     input: Option<AnyElement>,
+    empty: Option<bool>,
     placeholder: SharedString,
     context: Vec<AnyElement>,
+    controls: Vec<AnyElement>,
     model: Option<SharedString>,
     busy: bool,
     focused: bool,
@@ -40,8 +45,10 @@ impl Composer {
             id: id.into(),
             value: None,
             input: None,
+            empty: None,
             placeholder: "Ask anything…".into(),
             context: Vec::new(),
+            controls: Vec::new(),
             model: None,
             busy: false,
             focused: false,
@@ -64,9 +71,24 @@ impl Composer {
         self
     }
 
+    /// Whether the application's input holds no text. The placeholder shows and Send is
+    /// disabled while it does; without it an input counts as never empty.
+    pub fn empty(mut self, empty: bool) -> Self {
+        self.empty = Some(empty);
+        self
+    }
+
     /// Text shown while empty.
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = placeholder.into();
+        self
+    }
+
+    /// A control in the row under the text, after the model picker: the reasoning effort, a
+    /// fast-mode switch, a voice picker. Use small ghost buttons and small segmented controls,
+    /// so the row stays one line and Send stays the only filled control in it.
+    pub fn control(mut self, control: impl IntoElement) -> Self {
+        self.controls.push(control.into_any_element());
         self
     }
 
@@ -140,8 +162,11 @@ impl RenderOnce for Composer {
         // Controls in the bottom row share the composer's corner centre.
         let control = theme.density.control_md;
         let control_radius = Theme::concentric(outer, inset).min(control / 2.);
-        let empty = self.value.is_none() && self.input.is_none();
-        let has_text = self.value.is_some() || self.input.is_some();
+        let empty = match self.empty {
+            Some(empty) => empty && self.value.is_none(),
+            None => self.value.is_none() && self.input.is_none(),
+        };
+        let has_text = !empty;
 
         let mut attach = Button::icon_only((self.id.clone(), "attach"), IconName::Paperclip)
             .tooltip("Attach context…");
@@ -161,6 +186,7 @@ impl RenderOnce for Composer {
         let action = if self.busy {
             let mut stop = Button::icon_only((self.id.clone(), "stop"), IconName::Stop)
                 .variant(ButtonVariant::Secondary)
+                .radius(control_radius)
                 .tooltip("Stop");
             if let Some(handler) = self.on_stop {
                 stop = stop.on_click(handler);
@@ -170,6 +196,7 @@ impl RenderOnce for Composer {
             let mut send = Button::icon_only((self.id.clone(), "send"), IconName::ArrowUp)
                 .primary()
                 .disabled(!has_text)
+                .radius(control_radius)
                 .tooltip("Send");
             if let Some(handler) = self.on_send {
                 send = send.on_click(handler);
@@ -211,10 +238,19 @@ impl RenderOnce for Composer {
                         self.value
                             .map(|value| div().text_color(colors.text).child(value)),
                     )
-                    .children(self.input)
+                    // The placeholder sits under the application's input, where its caret is.
+                    .relative()
                     .when(empty, |area| {
-                        area.child(div().text_color(colors.text_faint).child(self.placeholder))
-                    }),
+                        area.child(
+                            div()
+                                .absolute()
+                                .top(theme.spacing.xs)
+                                .left(theme.spacing.xs)
+                                .text_color(colors.text_faint)
+                                .child(self.placeholder),
+                        )
+                    })
+                    .children(self.input),
             )
             .child(
                 div()
@@ -223,6 +259,7 @@ impl RenderOnce for Composer {
                     .gap(theme.spacing.xs)
                     .child(attach)
                     .children(model)
+                    .children(self.controls)
                     .child(div().flex_1())
                     .when(!self.busy, |row| {
                         row.child(Kbd::new(if cfg!(target_os = "macos") {
@@ -232,7 +269,7 @@ impl RenderOnce for Composer {
                         }))
                     })
                     // The send button's radius follows the composer's corner, not the capsule rule.
-                    .child(div().rounded(control_radius).child(action)),
+                    .child(action),
             )
     }
 }
@@ -242,18 +279,22 @@ impl RenderOnce for Composer {
 pub struct ContextChip {
     id: ElementId,
     label: SharedString,
-    icon: IconName,
+    icon: IconSource,
     color: Option<gpui::Hsla>,
     on_remove: Option<ClickHandler>,
 }
 
 impl ContextChip {
     /// A chip.
-    pub fn new(id: impl Into<ElementId>, icon: IconName, label: impl Into<SharedString>) -> Self {
+    pub fn new(
+        id: impl Into<ElementId>,
+        icon: impl Into<IconSource>,
+        label: impl Into<SharedString>,
+    ) -> Self {
         Self {
             id: id.into(),
             label: label.into(),
-            icon,
+            icon: icon.into(),
             color: None,
             on_remove: None,
         }
@@ -276,22 +317,29 @@ impl ContextChip {
 }
 
 impl RenderOnce for ContextChip {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let height = theme.density.control_sm;
         let hover = colors.hover;
         let remove = self.on_remove.map(|handler| {
-            div()
-                .id((self.id.clone(), "remove"))
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(height - px(6.))
-                .rounded(theme.shape.radius_xs)
-                .hover(move |style| style.bg(hover))
-                .child(Icon::new(IconName::Close).size(px(10.)))
-                .on_click(handler)
+            let id = ElementId::from((self.id.clone(), "remove"));
+            focusable(
+                div().id(id.clone()),
+                &id,
+                false,
+                theme.shape.radius_xs,
+                window,
+                cx,
+            )
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(height - px(6.))
+            .rounded(theme.shape.radius_xs)
+            .hover(move |style| style.bg(hover))
+            .child(Icon::new(IconName::Close).size(px(10.)))
+            .on_click(handler)
         });
         div()
             .id(self.id)
@@ -327,7 +375,7 @@ impl RenderOnce for ContextChip {
 pub struct SuggestionChip {
     id: ElementId,
     label: SharedString,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
     on_click: Option<ClickHandler>,
 }
 
@@ -343,8 +391,8 @@ impl SuggestionChip {
     }
 
     /// Leading icon.
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
@@ -359,28 +407,34 @@ impl SuggestionChip {
 }
 
 impl RenderOnce for SuggestionChip {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let hover = colors.hover;
-        let mut chip = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .px(theme.spacing.md)
-            .py(theme.spacing.sm)
-            .rounded(theme.shape.radius_md)
-            .border_1()
-            .border_color(colors.border)
-            .text_size(theme.typography.size_sm)
-            .text_color(colors.text_muted)
-            .hover(move |style| style.bg(hover))
-            .children(
-                self.icon
-                    .map(|icon| Icon::new(icon).size(px(14.)).color(colors.agent)),
-            )
-            .child(div().flex_1().min_w_0().child(self.label));
+        let mut chip = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.on_click.is_none(),
+            theme.shape.radius_md,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.sm)
+        .px(theme.spacing.md)
+        .py(theme.spacing.sm)
+        .rounded(theme.shape.radius_md)
+        .border_1()
+        .border_color(colors.border)
+        .text_size(theme.typography.size_sm)
+        .text_color(colors.text_muted)
+        .hover(move |style| style.bg(hover))
+        .children(
+            self.icon
+                .map(|icon| Icon::new(icon).size(px(14.)).color(colors.agent)),
+        )
+        .child(div().flex_1().min_w_0().child(self.label));
         if let Some(handler) = self.on_click {
             chip = chip.on_click(handler);
         }
@@ -426,37 +480,43 @@ impl AskBar {
 }
 
 impl RenderOnce for AskBar {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let height = theme.density.control_md;
         let hover = colors.agent.opacity(0.5);
-        let mut bar = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .h(height)
-            .px(theme.spacing.md)
-            .rounded(theme.control_radius(height))
-            .bg(colors.agent_wash)
-            .border_1()
-            .border_color(colors.agent.opacity(0.25))
-            .hover(move |style| style.border_color(hover))
-            .child(
-                Icon::new(IconName::Sparkles)
-                    .size(px(14.))
-                    .color(colors.agent),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .truncate()
-                    .text_size(theme.typography.size_sm)
-                    .text_color(colors.text_muted)
-                    .child(self.placeholder),
-            )
-            .children(self.shortcut.map(Kbd::new));
+        let mut bar = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.on_click.is_none(),
+            theme.control_radius(height),
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.sm)
+        .h(height)
+        .px(theme.spacing.md)
+        .rounded(theme.control_radius(height))
+        .bg(colors.agent_wash)
+        .border_1()
+        .border_color(colors.agent.opacity(0.25))
+        .hover(move |style| style.border_color(hover))
+        .child(
+            Icon::new(IconName::Sparkles)
+                .size(px(14.))
+                .color(colors.agent),
+        )
+        .child(
+            div()
+                .flex_1()
+                .truncate()
+                .text_size(theme.typography.size_sm)
+                .text_color(colors.text_muted)
+                .child(self.placeholder),
+        )
+        .children(self.shortcut.map(Kbd::new));
         if let Some(handler) = self.on_click {
             bar = bar.on_click(handler);
         }

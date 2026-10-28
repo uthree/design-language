@@ -338,7 +338,6 @@ impl Render for AgentDesktop {
                         Button::icon_only("forward", IconName::ChevronRight).tooltip("Forward"),
                     )
                     .title(title)
-                    .subtitle("auris-studio · claude/fix-playback")
                     .child(atelier::agent::AgentStatusLabel::new(status))
                     .trailing(switch)
                     .trailing(Divider::vertical())

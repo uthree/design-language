@@ -29,6 +29,7 @@ use gpui::{
     point, prelude::FluentBuilder, px, svg,
 };
 
+use crate::focus::{set_focus_visible, tab_navigation};
 use crate::icon::IconName;
 use crate::text::Label;
 use crate::theme::{ActiveTheme, Theme};
@@ -41,8 +42,8 @@ const TRAFFIC_LIGHT_HEIGHT: f32 = 14.;
 const CAPTION_BUTTON_WIDTH: f32 = 46.;
 /// Narrowest the title shrinks to when the title bar runs out of room.
 const MIN_TITLE_WIDTH: f32 = 72.;
-/// Shrink factor of what gives way before the title truncates: the subtitle, and the room the
-/// title bar's sides keep to centre the title.
+/// Shrink factor of what gives way before the title truncates: the room the title bar's sides
+/// keep to centre the title.
 const YIELD_SHRINK: f32 = 1000.;
 /// Margin a client-decorated window keeps around its frame, for the shadow and the resize edges.
 const FRAME_INSET: f32 = 10.;
@@ -94,6 +95,11 @@ fn client_tiling(window: &Window) -> Option<Tiling> {
 /// Style it and add children as you would the root `div`. Under client-side decorations it keeps
 /// a margin clear on every edge not tiled against the screen, drops a shadow into it, resizes the
 /// window from it, and rounds the top corners; elsewhere it is a plain full-size `div`.
+///
+/// It is also where keyboard navigation starts: it holds the window's root focus, so Tab and
+/// Shift-Tab ([`crate::FocusNext`], [`crate::FocusPrevious`]) reach every control from the
+/// moment the window opens, and a press anywhere hides the focus ring until the keyboard moves
+/// focus again.
 #[derive(IntoElement)]
 pub struct WindowFrame {
     base: Div,
@@ -126,8 +132,33 @@ impl ParentElement for WindowFrame {
 
 impl RenderOnce for WindowFrame {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // The window's root focus: not a tab stop itself, but where Tab starts from, and where
+        // focus returns when the person clicks somewhere that takes no focus of its own.
+        let root = window
+            .use_keyed_state("atelier-window-root", cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        if window.focused(cx).is_none() {
+            let root = root.clone();
+            window.defer(cx, move |window, _| window.focus(&root));
+        }
         let theme = cx.theme();
-        let surface = self.base.size_full().bg(theme.window_fill());
+        // The root focus sits on an empty child rather than on the surface itself: an element
+        // that tracks focus takes focus on every press inside it and marks the press handled,
+        // and a handled press on the title bar is one the platform no longer starts a window
+        // move from. Actions still bubble from the child to the surface, and the surface hands
+        // focus back to it from a press nothing else claimed, without marking that press.
+        let anchor = div().absolute().size_0().track_focus(&root);
+        let surface = tab_navigation(self.base)
+            .capture_any_mouse_down(|_, _, cx| set_focus_visible(false, cx))
+            .on_any_mouse_down(move |_, window, _| {
+                if !window.default_prevented() {
+                    window.focus(&root);
+                }
+            })
+            .child(anchor)
+            .size_full()
+            .bg(theme.window_fill());
         let Some(tiling) = client_tiling(window) else {
             return surface.into_any_element();
         };
@@ -257,15 +288,19 @@ fn resize_cursor(edge: ResizeEdge) -> CursorStyle {
 ///
 /// The title stays on the window's centre line while the controls on both sides leave room for
 /// it; when one side is wider it slides away from that side instead of covering it, and then
-/// truncates, subtitle first.
+/// truncates.
+///
+/// The title is all the bar says: there is no subtitle. A save state, a path or a count belongs
+/// in the window's content or its status bar, not beside the title.
 #[derive(IntoElement)]
 pub struct TitleBar {
     base: Div,
     title: Option<SharedString>,
-    subtitle: Option<SharedString>,
     leading: Vec<AnyElement>,
     children: Vec<AnyElement>,
     trailing: Vec<AnyElement>,
+    window_controls: Option<(Pixels, AnyElement)>,
+    window_drag: bool,
 }
 
 impl TitleBar {
@@ -274,22 +309,17 @@ impl TitleBar {
         Self {
             base: div(),
             title: None,
-            subtitle: None,
             leading: Vec::new(),
             children: Vec::new(),
             trailing: Vec::new(),
+            window_controls: None,
+            window_drag: true,
         }
     }
 
     /// The document or window title, centred on the window.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = Some(title.into());
-        self
-    }
-
-    /// Muted text after the title on the same line, such as the save state.
-    pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
-        self.subtitle = Some(subtitle.into());
         self
     }
 
@@ -303,6 +333,23 @@ impl TitleBar {
     /// children and the trailing ones drags the window.
     pub fn trailing(mut self, element: impl IntoElement) -> Self {
         self.trailing.push(element.into_any_element());
+        self
+    }
+
+    /// The application's own minimise, maximise and close, `width` wide, in place of the ones
+    /// the title bar draws on Windows and Linux. For an application that hit-tests its caption
+    /// buttons natively. The title stays centred, measured against `width`. Ignored on macOS,
+    /// where the traffic lights are the system's.
+    pub fn window_controls(mut self, width: Pixels, controls: impl IntoElement) -> Self {
+        self.window_controls = Some((width, controls.into_any_element()));
+        self
+    }
+
+    /// Whether the title bar makes its free space the window's drag area (the default). Turn
+    /// it off when the application hit-tests the drag region itself — for Windows snapping and
+    /// double-click maximise through its own `WM_NCHITTEST` — and the title bar only lays out.
+    pub fn window_drag(mut self, drag: bool) -> Self {
+        self.window_drag = drag;
         self
     }
 }
@@ -335,6 +382,8 @@ impl RenderOnce for TitleBar {
         // Linux draws buttons only when the window draws its own decorations.
         let tiling = if linux { client_tiling(window) } else { None };
         let caption_buttons = windows || tiling.is_some();
+        let window_controls = self.window_controls.filter(|_| caption_buttons);
+        let drag = self.window_drag;
         // Follow the frame's rounded top corners.
         let radius = tiling
             .filter(|tiling| !tiling.is_tiled())
@@ -342,32 +391,17 @@ impl RenderOnce for TitleBar {
         let height = theme.density.title_bar;
 
         let heading = self.title.map(|title| {
-            // One line: the subtitle gives way first, then the title, down to a few characters.
-            let subtitle = self.subtitle.map(|subtitle| {
-                let mut part = div().flex().min_w_0();
-                part.style().flex_shrink = Some(YIELD_SHRINK);
-                part.child(
-                    Label::new(subtitle)
-                        .size(crate::TextSize::Small)
-                        .color(crate::TextColor::Faint)
-                        .truncate(),
-                )
-            });
+            // One line, truncating down to a few characters when the bar runs out of room.
             div()
                 .flex()
                 .flex_shrink()
-                .items_baseline()
-                .gap(theme.spacing.sm)
                 .min_w(px(MIN_TITLE_WIDTH))
                 .overflow_hidden()
                 .child(
-                    div().flex().flex_shrink().min_w_0().child(
-                        Label::new(title)
-                            .weight(theme.typography.label_weight)
-                            .truncate(),
-                    ),
+                    Label::new(title)
+                        .weight(theme.typography.label_weight)
+                        .truncate(),
                 )
-                .children(subtitle)
         });
 
         // The edges the system's buttons take: the traffic lights at the leading end, the caption
@@ -377,14 +411,18 @@ impl RenderOnce for TitleBar {
         } else {
             theme.spacing.md
         };
-        let trailing_edge = if caption_buttons {
+        let trailing_edge = if let Some((width, _)) = &window_controls {
+            *width + theme.spacing.sm
+        } else if caption_buttons {
             px(CAPTION_BUTTON_WIDTH * 3.) + theme.spacing.sm
         } else {
             theme.spacing.md
         };
         // The two sides grow by the same amount from these bases, which make up for the uneven
         // edges, so the title sits on the window's centre line. A side whose controls need more
-        // keeps them and pushes the title over, which then truncates.
+        // keeps them and pushes the title over, which then truncates. The sides carry no padding
+        // of their own: a basis smaller than a side's padding is raised to it, and the title
+        // would drift off the centre line by the difference.
         let mut leading_side = div();
         let mut trailing_side = div();
         for side in [&mut leading_side, &mut trailing_side] {
@@ -428,21 +466,21 @@ impl RenderOnce for TitleBar {
             .items_center()
             .w_full()
             .h(height)
-            .bg(theme.colors.chrome)
+            .bg(title_bar_fill(theme))
             .when_some(radius, |bar, radius| {
                 bar.rounded_tl(radius).rounded_tr(radius)
             })
             .border_b_1()
             .border_color(theme.colors.border)
-            .window_control_area(WindowControlArea::Drag)
-            .when(mac, |bar| {
+            .when(drag, |bar| bar.window_control_area(WindowControlArea::Drag))
+            .when(mac && drag, |bar| {
                 bar.on_click(|event, window, _| {
                     if event.click_count() == 2 {
                         window.titlebar_double_click();
                     }
                 })
             })
-            .when(linux && caption_buttons, |bar| {
+            .when(linux && caption_buttons && drag, |bar| {
                 bar.on_mouse_down(MouseButton::Left, |event, window, _| {
                     if event.click_count == 2 {
                         window.zoom_window();
@@ -472,14 +510,32 @@ impl RenderOnce for TitleBar {
                     .children(heading)
                     .child(trailing_side),
             )
-            .map(|bar| {
-                if caption_buttons {
-                    bar.child(div().flex_none().w(theme.spacing.sm))
-                        .child(CaptionButtons { radius })
-                } else {
-                    bar.child(div().flex_none().w(trailing_edge))
-                }
+            .map(|bar| match window_controls {
+                Some((width, controls)) => bar
+                    .child(div().flex_none().w(theme.spacing.sm))
+                    .child(div().flex().flex_none().w(width).h_full().child(controls)),
+                None if caption_buttons => bar
+                    .child(div().flex_none().w(theme.spacing.sm))
+                    .child(CaptionButtons { radius }),
+                None => bar.child(div().flex_none().w(trailing_edge)),
             })
+    }
+}
+
+/// The title bar's fill: the chrome tint, or on Windows under the acrylic system backdrop the
+/// same tint composited over the background and made opaque, so the caption buttons DWM draws
+/// in the extended frame do not show through (see `native_caption_shows_through`).
+fn title_bar_fill(theme: &Theme) -> gpui::Hsla {
+    let chrome = theme.colors.chrome;
+    if crate::window::native_caption_shows_through(theme) {
+        let opaque = |color: gpui::Hsla| gpui::Hsla { a: 1., ..color };
+        opaque(crate::theme::mix(
+            opaque(theme.colors.background),
+            opaque(chrome),
+            chrome.a,
+        ))
+    } else {
+        chrome
     }
 }
 

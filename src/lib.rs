@@ -16,6 +16,8 @@ mod backdrop;
 mod button;
 mod controls;
 mod display;
+mod focus;
+mod form;
 mod frame;
 mod gpu;
 mod icon;
@@ -36,14 +38,16 @@ pub use backdrop::BackdropPalette;
 pub use button::{Button, ButtonVariant, ControlSize};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
+pub use focus::{FocusNext, FocusPrevious, focus_visible, set_focus_visible, tab_navigation};
+pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
-pub use icon::{Assets, Icon, IconName};
+pub use icon::{Assets, Icon, IconName, IconSource};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
 pub use media::AudioPlayer;
 pub use metal::MetalBackdrop;
-pub use motion::Motion;
+pub use motion::{Measure, Morph, Motion};
 pub use overlay::{MenuItem, Popover, Tooltip, menu_separator};
 pub use progress::{
     ProgressBar, ProgressRing, Skeleton, StepList, StepState, TaskProgress, TaskState,
@@ -56,7 +60,9 @@ pub use theme::{
 };
 pub use window::set_window_background;
 
-/// Install `theme`. Call once at start-up, before opening windows.
+/// Install `theme` and bind Tab and Shift-Tab to move keyboard focus. Call once at start-up,
+/// before opening windows.
 pub fn init(cx: &mut gpui::App, theme: Theme) {
+    focus::init(cx);
     theme.install(cx);
 }

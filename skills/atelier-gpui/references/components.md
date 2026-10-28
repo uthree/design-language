@@ -9,6 +9,39 @@ Assets: start the app with `Application::new().with_assets(atelier::Assets::defa
 `Assets::with_fallback(your_source)` to serve your own files too. Icons are `IconName::*`
 drawn with `Icon::new(name).size(px).color(c)`.
 
+**Your own icons.** Every icon argument (`Button::icon`, `ListItem::icon`, `OptionCard::new`,
+`EmptyState::new`, `ContextChip::new`, `Segment::icon`, `MenuItem::icon`, …) takes
+`impl Into<IconSource>`: an `IconName`, `IconSource::svg("icons/app-punch.svg")` for an app's own
+single-colour glyph (drawn as a mask in the given colour, so draw it on the set's 24×24 grid
+with a 2px stroke), or `IconSource::image("logos/provider.png")` for a full-colour logo. Serve
+the files through `Assets::with_fallback`. Check `IconName::ALL` before drawing one: the set
+includes `Undo`/`Redo`, `Bolt` (fast mode), `Keyboard`, `Volume`/`VolumeOff`, `Knob`,
+`Headphones`.
+
+## Keyboard
+
+Every component that takes a click is a tab stop: Tab and Shift-Tab move through them in the
+order they are drawn, Enter and Space press the focused one (its `on_click`, `on_select` or
+`on_toggle` runs), and `.disabled(true)` takes it out of the order. A row or chip without a
+handler is not a stop. Nothing to wire up beyond:
+
+- `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`).
+- `WindowFrame` handles them and holds the window's root focus, so Tab works from the moment
+  the window opens. A window whose root is your own element wraps it in
+  `atelier::tab_navigation(root)`, puts the focus `handle` on an empty child
+  (`div().absolute().size_0().track_focus(&handle)`) and focuses it once. Never `track_focus`
+  the root itself: an element that tracks focus marks every press inside it handled, and the
+  platform then starts no window move from the title bar.
+- The focus outline (2px of `colors.focus_ring`, a pixel outside the control's corner) shows
+  only after the keyboard has moved focus, never after a click (`focus_visible(cx)`). Do not
+  draw your own; a custom control built from a `div` takes `.tab_index(0)` and follows the same
+  rule.
+- Every component given an id uses it as its `debug_selector`, so a test finds it with
+  `VisualTestContext::debug_bounds("export")` (enable gpui's `test-support` in the test build).
+  Do not wrap components in `div().debug_selector(..)`. `tests/keyboard.rs` shows how to drive
+  Tab, Enter and Space in a test (gpui presses a control on the key's release, so simulate the
+  `KeyUpEvent` too).
+
 ## Text
 
 `Label::new(text)` with `.size(TextSize::XSmall|Small|Medium|Large|XLarge|Display)`,
@@ -29,21 +62,40 @@ Button::icon_only("settings", IconName::Settings).tooltip("Project settings…")
 Button::new(("solo", i), "S").size(ControlSize::Small).selected(solo).tint(colors.warning)
 ```
 
-Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`.
+Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, and
+`.radius(px)` for a button sitting in a surface's corner, which must follow that corner:
+`Theme::concentric(surface_radius, inset)`, as the composer's Send does.
 
 ## Controls
 
 - `Switch::new(id, on).label("Snap to grid")` — a setting that applies immediately.
-- `Checkbox::new(id, checked).label("Count-in")` — an independent choice.
+- `Checkbox::new(id, checked).label("Count-in")` — an independent choice. Both take
+  `.disabled(bool)`.
 - `SegmentedControl::new(id, [Segment::label("Light"), Segment::icon(IconName::Play)], selected)`
   `.size(ControlSize::Small).on_select(cx.listener(|this, index: &usize, window, cx| ...))`.
 - `Tabs::new(id, ["Score", "Piano roll"], selected).on_select(...)` — views of one object.
 - `Slider::new(0..=1 value).label("Volume").readout("-3.2 dB")`, `.bipolar()` for pan.
 - `Knob::new(value).label("Drive").readout("80 %")`, `.bipolar()`, `.color(track_colour)`,
   `.diameter(px)`.
-- `TextField::new().icon(IconName::Search).placeholder("Search sounds…")`; put the app's
-  editable input inside with `.child(input)`, or `.value(..)` for mock-ups; `.focused(true)`
-  draws the ring.
+- `TextField::new().icon(IconName::Search).placeholder("Search sounds…")` — the frame of a
+  text input. Atelier draws the well, the height, the radius and the ring; the application owns
+  the editing (caret, selection, IME). This is the supported way to use it:
+
+  ```rust
+  TextField::new()
+      .id("project-name")                        // stateful; also the test selector
+      .track_focus(&self.name_focus)             // ring while focused, by itself
+      .on_mouse_down(MouseButton::Left, cx.listener(Self::place_caret))
+      .key_context("TextInput")
+      .placeholder("Untitled")
+      .empty(self.name.is_empty())               // placeholder under your input
+      .trailing(Button::new("browse", "Choose…").size(ControlSize::Small))
+      .child(self.name_input.clone())            // your editable element
+  ```
+
+  It is an interactive element like a `div` (`on_mouse_down`, `on_key_down`, `on_action`,
+  `track_focus`, `key_context`), and `.id(..)` makes it stateful (`.on_click`). `.value(..)` is
+  for mock-ups; `.focused(true)` draws the ring by hand.
 
 Dragging and keyboard stepping for sliders and knobs belong to the application (it owns the value
 and its undo); wrap the component in an element that handles the gesture.
@@ -64,30 +116,69 @@ how components animate: [motion.md](motion.md).
 
 ## Layout
 
-These implement `Styled` and `ParentElement`, so chain sizes and children:
+These implement `Styled`, `ParentElement` and gpui's interactive-element traits, so chain
+sizes, children and listeners. Give a container (`Sidebar`, `Toolbar`, `Card`) an `.id(..)`
+first and it becomes stateful like `div().id(..)`: it can then scroll
+(`Sidebar::new(Edge::Left).id("pages").overflow_y_scroll()`), track a `ScrollHandle`, take
+clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
 
-- `TitleBar::new().leading(..).title(..).subtitle(..).child(..).trailing(..)` — the window's own
+- `TitleBar::new().leading(..).title(..).child(..).trailing(..)` — the window's own
   title bar, one slim row (`theme.density.title_bar`). Open the window with
   `atelier::custom_frame(options, cx.theme())` so the system bar is hidden. The title is centred
-  on the window; the subtitle follows it on the same line in faint text, never on a second line.
+  on the window and is the only text in the bar: there is no subtitle (a save state, a path or a
+  count goes in the content or the `StatusBar`).
   Leading controls and children sit at the leading edge, trailing ones at the far end. Its empty
   space drags the window; children are shielded from the drag. On Windows it draws
   minimise/maximise/close and lets the OS hit-test them (snap layouts keep working); on macOS it
   leaves room for the traffic lights; on Linux it draws the three buttons too, and right-click
   opens the window menu. When one side's controls need more than half the bar the title slides
-  away from them; in a narrow window it then truncates, subtitle first, and the leading children
+  away from them; in a narrow window it then truncates, and the leading children
   are cut off before they reach the title, so drop children you can do without below a width
   rather than relying on the cut. Use small controls (`ControlSize::Small`) in it.
+  An application that hit-tests its caption natively (Windows snapping and double-click
+  maximise through its own `WM_NCHITTEST`) keeps that and still uses `TitleBar` for the layout:
+  `.window_controls(width, its_buttons)` puts its own minimise/maximise/close in place of the
+  title bar's (the title stays centred against `width`), and `.window_drag(false)` leaves the
+  drag region to it. On Windows 11 22H2 and later under Glass, the acrylic backdrop makes DWM
+  draw its own caption buttons under the window; the title bar paints its chrome opaque there so
+  they never show through its own (doubled glyphs when maximised). Do not paint it yourself.
+  Do not re-implement the bar's centring: the sides carry no padding, because
+  a flex basis smaller than a side's padding is raised to it and the title drifts.
 - `WindowFrame::new()` — the window root. Paints `theme.window_fill()`; on Linux, where the
   window draws its own decorations, it adds the resize edges, the shadow and the rounded top
   corners around the content. Elsewhere, and on an X11 desktop without a compositor (which keeps
-  the system frame), it is a plain full-size `div`.
+  the system frame), it is a plain full-size `div`. It also starts keyboard navigation (above).
 - `Toolbar::new()` — a toolbar row inside the window (chrome, bottom hairline).
 - `Sidebar::new(Edge::Left | Edge::Right).w(px(232.))` — persistent side region.
 - `Card::new()` — grouped region, hairline, no shadow.
 - `SectionHeader::new(title).description(..).action(button)`; `SectionHeader::caption(title)`.
 - `ListItem::new(id, label).icon(..).icon_color(..).description(..).trailing(..)
-  .selected(bool).indent(depth)` — sidebar, list and tree rows with fixed icon/trailing lanes.
+  .selected(bool).indent(depth).disabled(bool)` — sidebar, list and tree rows with fixed
+  icon/trailing lanes. The description is cut to one line; `.description_lines(2)` lets it wrap
+  (use it for Japanese sidebar descriptions, which run long without spaces).
+- `StatusBar::new().message("保存しました").tone(Tone::Success).busy(bool).trailing(..)` — the
+  thin line along a window's bottom edge (`density.status_bar`) that reports what the last
+  action did. It reports, never asks; a non-neutral tone carries its mark.
+
+## Forms and preferences
+
+`FormField::new(label).description(..).error(..).child(control)` — one labelled setting; the
+label sits above the control (`LabelPlacement::Above`, the default) or, for a switch or
+checkbox, `.beside()` it with the control at the trailing edge. `FormGroup::new(title)
+.description(..)` holds fields on one surface; `FormGroup::untitled()` for a single group.
+A preferences window, as `examples/preferences.rs` builds it:
+
+- a `Sidebar(Edge::Left)` of `ListItem` pages (search field first, a setup or help link last);
+- per page a `SectionHeader::new(title).description(..)`, then `FormGroup`s in a column of at
+  most `theme.density.form_width`, on `colors.surface`;
+- the page's actions at its foot, the primary at the trailing end, a reset as a ghost at the
+  leading end;
+- a `StatusBar` along the window's bottom edge.
+
+Rules (also in [rules.md](rules.md)): labels above fields you type into, beside toggles. A
+`Switch` applies at once and needs no Save; anything else on the page is committed together by
+the page's primary (Save), which stays disabled until something changed. Describe what a
+setting changes, not the control. Errors say what is wrong and how to fix it, next to the field.
 - `Disclosure::new(id, label, open).on_toggle(..)`.
 - `EmptyState::new(icon, title).description(..).action(button)`.
 
@@ -96,7 +187,8 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
 - `AudioPlayer::new(id, position, "1:32", "2:00").peaks(peaks).playing(bool).volume(v)` — a
   preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made.
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
-  hands work to the agent. Use a row of them when choosing is the point of the screen.
+  hands work to the agent. Use a row of them when choosing is the point of the screen. Moving
+  from a card to the screen it starts uses the hand-off in [motion.md](motion.md).
 
 ## Ornament
 
@@ -108,8 +200,11 @@ These implement `Styled` and `ParentElement`, so chain sizes and children:
   metal) and the window (the liquid sloshes when the window is moved or resized), and its drops
   can be picked up: press on one to carry it, carried drops fuse with whatever they touch, fused
   drops shed drops now and then (often when the pointer brushes them, at once when carried too
-  fast), and a double click parts them all. There is nothing to wire up, but anything laid over the metal
-  that takes clicks (the card, a bar of controls) must `.occlude()`, or presses reach the metal. `.phase(t)` draws one still frame and answers nothing. It is shaded off
+  fast), and a double click parts them all. There is nothing to wire up, but **anything laid
+  over the metal that takes clicks (the card, a bar of controls) must `.occlude()`**, or presses
+  and drags on it reach the metal underneath. While its window is inactive it holds still where
+  it was and flows on from there when the window comes back (the ambient scenes do the same);
+  there is nothing to add for that either. `.phase(t)` draws one still frame and answers nothing. It is shaded off
   screen on its own wgpu device (one still frame on the CPU when there is no GPU) and read back at 30 frames a
   second, 60 while it answers, so keep it to the welcome screen. Do not use metal on controls or
   anywhere work happens.
@@ -146,7 +241,7 @@ There is no node-graph component: compose one from the pieces above on a `canvas
 
 ## Overlays
 
-`Popover::new().w(..).child(MenuItem::new(id, "Duplicate").shortcut("Ctrl+D"))`,
+`Popover::new().w(..).child(MenuItem::new(id, "Duplicate").shortcut("Ctrl+D").on_click(..))`,
 `menu_separator(cx)`, `MenuItem::checked/danger/disabled/icon`. Position them with gpui's
 `anchored()` + `deferred()`. Tooltips: `Button::tooltip(..)`, or on any stateful div
 `.tooltip(|window, cx| Tooltip::new("Text").shortcut("⌘B").build(window, cx))`.

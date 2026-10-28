@@ -1,6 +1,10 @@
 //! Two Auris Studio windows redrawn in Atelier: the project chooser and "AIで曲を作る…".
 //! The text is Auris's Japanese interface; the takes, players and generation are mock data.
 //!
+//! "AIで作り始める…" hands the chooser over to the compose screen with a [`Morph`]: the AI card's
+//! shape grows to fill the window and the compose screen, laid out at its final size, fades in
+//! over it.
+//!
 //! ```text
 //! cargo run --example auris_screens -- [--screen chooser|compose]
 //!                                       [--direction glass|studio|mono] [--appearance dark|light]
@@ -11,8 +15,9 @@ mod common;
 use atelier::agent::{AssistantMessage, Composer, UserMessage};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ControlSize, Direction, Divider, Edge,
-    IconName, Label, ListItem, OptionCard, ProgressBar, SectionHeader, Segment, SegmentedControl,
-    Sidebar, Spinner, StepList, StepState, Switch, TextColor, TextSize, TitleBar, WindowFrame,
+    IconName, Label, ListItem, Measure, Morph, OptionCard, ProgressBar, SectionHeader, Segment,
+    SegmentedControl, Sidebar, Spinner, StepList, StepState, Switch, TextColor, TextSize, TitleBar,
+    WindowFrame, motion::appear,
 };
 use common::Themed;
 use gpui::{
@@ -35,6 +40,15 @@ struct AurisScreens {
     /// Compose: which take is playing.
     playing: Option<usize>,
     learn_preferences: bool,
+    /// Compose: the reasoning effort, 0 low to 2 high.
+    effort: usize,
+    /// Compose: fast mode.
+    fast: bool,
+    /// Where the AI card was laid out, for the hand-off.
+    ai_card: Measure,
+    /// The hand-off in progress: its number, so each one plays once, and where it started.
+    handoff: Option<(usize, gpui::Bounds<gpui::Pixels>)>,
+    handoffs: usize,
 }
 
 impl Themed for AurisScreens {
@@ -104,14 +118,18 @@ impl AurisScreens {
 
         let body = if self.chooser_page == 0 {
             let card = |index: usize, card: OptionCard, cx: &Context<Self>| {
-                div().flex_1().min_w_0().max_w(px(340.)).child(
-                    card.selected(self.start == index).on_click(cx.listener(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_w_0()
+                    .max_w(px(340.))
+                    .when(index == 1, |slot| slot.child(self.ai_card.probe()))
+                    .child(card.selected(self.start == index).on_click(cx.listener(
                         move |this, _, _, cx| {
                             this.start = index;
                             cx.notify();
                         },
-                    )),
-                )
+                    )))
             };
             div()
                 .flex()
@@ -203,7 +221,15 @@ impl AurisScreens {
                         "作成"
                     },
                 )
-                .primary(),
+                .primary()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if this.start == 1 {
+                        this.handoffs += 1;
+                        this.handoff = this.ai_card.bounds().map(|from| (this.handoffs, from));
+                        this.screen = Screen::Compose;
+                        cx.notify();
+                    }
+                })),
             );
 
         div()
@@ -388,7 +414,8 @@ impl AurisScreens {
                     "空戦の疾走感と英雄的なスケールを軸に、方向性の異なるオリジナル曲を3案作ります。気に入った案を選ぶと、その曲で続けて編集できます。",
                 )
                 .id("reply")
-                .name("作曲アシスタント")
+                // Two voices only: the bubble is the person, the prose is the assistant.
+                .anonymous()
                 .meta("GPT-6-Sol (Codex) · 2分14秒"),
             )
             .child(
@@ -415,7 +442,33 @@ impl AurisScreens {
 
         let composer = Composer::new("composer")
             .placeholder("要望を追加する（例：もっとブラスを前に）…")
-            .model("GPT-6-Sol (Codex) · effort: medium")
+            .model("GPT-6-Sol (Codex)")
+            .control(
+                SegmentedControl::new(
+                    "effort",
+                    [
+                        Segment::label("低"),
+                        Segment::label("中"),
+                        Segment::label("高"),
+                    ],
+                    self.effort,
+                )
+                .size(ControlSize::Small)
+                .on_select(cx.listener(|this, index: &usize, _, cx| {
+                    this.effort = *index;
+                    cx.notify();
+                })),
+            )
+            .control(
+                Button::icon_only("fast", IconName::Bolt)
+                    .size(ControlSize::Small)
+                    .selected(self.fast)
+                    .tooltip("高速モード")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.fast = !this.fast;
+                        cx.notify();
+                    })),
+            )
             .busy(true);
 
         let footer = div()
@@ -487,14 +540,35 @@ impl Render for AurisScreens {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let switch = common::theme_switch(self, cx);
-        let (title, subtitle) = match self.screen {
-            Screen::Chooser => ("プロジェクトを選択", "Auris Studio"),
-            Screen::Compose => ("AIで曲を作る", "3案 · 1案を生成中"),
+        let title = match self.screen {
+            Screen::Chooser => "プロジェクトを選択",
+            Screen::Compose => "AIで曲を作る",
         };
-        let body = match self.screen {
-            Screen::Chooser => self.chooser(cx),
-            Screen::Compose => self.compose(cx),
+        let body = match (self.screen, self.handoff) {
+            (Screen::Chooser, _) => self.chooser(cx),
+            (Screen::Compose, None) => self.compose(cx),
+            // Only the card's shape travels; the compose screen fades in over it at its final
+            // size.
+            (Screen::Compose, Some((number, _))) => {
+                let screen = div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.compose(cx));
+                appear(screen, ("compose", number), cx, |screen, delta| {
+                    screen.opacity(delta)
+                })
+            }
         };
+        let morph =
+            self.handoff
+                .filter(|_| self.screen == Screen::Compose)
+                .map(|(number, from)| {
+                    Morph::new(("handoff", number), from)
+                        .radius(theme.shape.radius_lg, px(0.))
+                        .fill(theme.colors.elevated)
+                });
         WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
@@ -504,7 +578,6 @@ impl Render for AurisScreens {
             .child(
                 TitleBar::new()
                     .title(title)
-                    .subtitle(subtitle)
                     .trailing(
                         SegmentedControl::new(
                             "screen",
@@ -529,7 +602,16 @@ impl Render for AurisScreens {
                     .trailing(Divider::vertical())
                     .trailing(switch),
             )
-            .child(body)
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .children(morph)
+                    .child(body),
+            )
     }
 }
 
@@ -545,5 +627,10 @@ fn main() {
         start: 1,
         playing: Some(0),
         learn_preferences: true,
+        effort: 1,
+        fast: false,
+        ai_card: Measure::new(),
+        handoff: None,
+        handoffs: 0,
     });
 }

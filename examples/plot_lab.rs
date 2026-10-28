@@ -1013,7 +1013,6 @@ impl Render for PlotLab {
             .child(
                 TitleBar::new()
                     .title("Plot lab")
-                    .subtitle("oscillators.m · saved")
                     .child(
                         Tabs::new("figure", ["Figure 1 · 2-D", "Figure 2 · 3-D"], self.figure)
                             .on_select(cx.listener(|this, index: &usize, _, cx| {

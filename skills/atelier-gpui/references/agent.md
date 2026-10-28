@@ -8,7 +8,12 @@ them. They know nothing about providers or transport.
 - **One colour for the AI** (`colors.agent`). Agent avatar, running work, AI drafts, the
   `Agent` button variant, `Tone::Agent` badges. Nothing else.
 - **Two voices, two forms.** The person: a bubble on the trailing edge (`UserMessage`). The
-  agent: full-width prose under a small identity line (`AssistantMessage`).
+  agent: full-width prose (`AssistantMessage`). **When only these two speak, leave out the
+  agent's identity line** with `AssistantMessage::anonymous()`: the bubble already says which
+  voice is the person, so a name and avatar on every answer only repeat it (Auris's compose
+  window does this; its people said the name was noise). Keep the identity line — `.name(..)`,
+  with the avatar — only where more than one agent or person speaks. An anonymous message moves
+  its `.meta(..)` into the footer.
 - **The answer leads; the work folds.** Reasoning and tool calls are collapsed one-liners
   (`ReasoningBlock`, `ToolCall` in a `ToolGroup`) that open on click.
 - **Ask before acting on something the person owns.** `ApprovalCard` names the verb and object;
@@ -52,8 +57,18 @@ again.").action(Button::new("retry", "Retry"))`.
 `AssistantMessage` renders paragraphs, `- ` bullets, `# ` headings and fenced code. Pass a real
 Markdown view with `.body(element)` when you have one (Auris uses gpui-component's).
 
-The composer's text area is a slot: pass your editable input entity with `.input(...)`. Atelier
-does not ship a text editor; `.value(..)` is for mock-ups.
+The composer's text area is a slot: pass your editable input entity with `.input(...)` and say
+whether it holds text with `.empty(bool)` — the composer then shows the placeholder under your
+input and disables Send while it is empty. Atelier does not ship a text editor; `.value(..)` is
+for mock-ups.
+
+The row under the text holds attach, the model picker (`.model(label)`, `.on_model(..)`) and
+then your own `.control(..)`s before Send: the reasoning effort as a small `SegmentedControl`,
+fast mode as a small latching `Button::icon_only(id, IconName::Bolt).selected(fast)`, a voice
+picker as a small ghost button with a chevron. Keep them small and unfilled so the row stays one
+line and Send is the only filled control in it. Do not rebuild the frame to add a control. Send
+and Stop already follow the composer's corner (`Theme::concentric(radius_lg, spacing.sm)`); a
+button you place in another rounded surface's corner does the same with `Button::radius(..)`.
 
 ## Entry points
 

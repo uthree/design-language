@@ -179,6 +179,31 @@ tempo and key, a waveform player rather than a bare slider, "この曲で続け�
 "作り直す". The take still being made is tinted in the agent colour and shows its steps and
 time left instead of an empty player. Stopping generation moved into the composer (Send becomes
 Stop), so the footer keeps only navigation, the preference switch and the editor hand-off,
-which explains why it is disabled.
+which explains why it is disabled. Only two voices speak, so the assistant's answer has no name
+line (`AssistantMessage::anonymous()`); the model picker, the reasoning effort and fast mode sit
+in the composer's own control row.
 
 ![AI compose](images/auris-compose.png)
+
+**The hand-off.** "AIで作り始める…" grows the AI tile's shape to fill the window while the compose
+screen, already laid out at its final size, fades in over it (`Morph`; captured mid-way on
+Linux).
+
+![Hand-off from the chooser to the compose window](images/auris-handoff.png)
+
+## preferences — a settings window
+
+```bash
+cargo run --example preferences -- --page general|voice|assistant|keys
+```
+
+The shape Auris Studio's settings take: pages in a sidebar that scrolls, with search first, two
+lines of description per page and the setup guide last; each page a header and groups of
+labelled fields in a readable column (`density.form_width`), labels above fields and beside
+switches; the page's actions at its foot with Save at the trailing end; and a status bar that
+reports what the last action did. Every control is reached with Tab; in the first picture the
+outline sits on the "クラウド" segment after tabbing to it. Captured on Linux.
+
+![Preferences, voice synthesis, keyboard focus on a segment](images/preferences.png)
+
+![Preferences, voice synthesis, with a field error](images/preferences-voice.png)

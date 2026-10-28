@@ -36,7 +36,9 @@
 //! press on it will reach the metal beneath.
 //!
 //! Put the screen's words on a card above the metal, never on it. When
-//! [`crate::Motion::enabled`] is off it stands still and answers nothing.
+//! [`crate::Motion::enabled`] is off it stands still and answers nothing. While its window is
+//! not the active one it stands still too, where it was, and flows on from there when the
+//! window comes back: a backdrop in a window nobody is looking at should cost nothing.
 
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
@@ -52,8 +54,7 @@ use image::{Frame, ImageBuffer};
 mod gpu;
 mod sim;
 
-use crate::backdrop::BackdropPalette;
-use crate::motion::looping;
+use crate::backdrop::{BackdropPalette, Clock};
 use crate::theme::{ActiveTheme, Appearance, Direction};
 
 /// Where the stops of [`crate::Colors::metal`] fall, from straight up (0) through the horizon
@@ -113,6 +114,7 @@ struct Cache {
     key: Option<Key>,
     image: Option<Arc<RenderImage>>,
     sim: sim::Sim,
+    clock: Option<Clock>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -134,19 +136,28 @@ impl RenderOnce for MetalBackdrop {
         // Without a GPU the metal is a still image: shading it on the CPU every frame would cost
         // far more than a backdrop is worth.
         let still = self.phase.is_some() || !gpu::available();
-        let scene = Scene {
-            palette: self.palette,
-            phase: self.phase.unwrap_or(REST),
-            frames,
-            interactive: !still && cx.theme().motion.enabled,
-            cache,
+        let flowing = !still && cx.theme().motion.enabled;
+        // In an inactive window it holds still where it was.
+        let running = flowing && window.is_window_active();
+        let period = self.period;
+        let clock = cache.update(cx, |cache, _| {
+            Clock::advance(&mut cache.clock, running, REST, period)
+        });
+        let phase = match self.phase {
+            Some(phase) => phase,
+            None if flowing => clock.phase(period),
+            None => REST,
         };
-        if still {
-            return scene.into_any_element();
+        if running {
+            window.request_animation_frame();
         }
-        looping(scene, self.id, self.period, REST, cx, |scene, phase| {
-            Scene { phase, ..scene }
-        })
+        Scene {
+            palette: self.palette,
+            phase,
+            frames,
+            interactive: running,
+            cache,
+        }
     }
 }
 

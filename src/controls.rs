@@ -6,13 +6,15 @@
 use std::f32::consts::PI;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement,
-    ParentElement, PathBuilder, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
-    Styled, Window, canvas, div, fill, point, prelude::FluentBuilder, px, relative, size,
+    AnyElement, App, Bounds, ClickEvent, Div, ElementId, Hsla, InteractiveElement, Interactivity,
+    IntoElement, ParentElement, PathBuilder, Pixels, RenderOnce, SharedString,
+    StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill, point,
+    prelude::FluentBuilder, px, relative, size,
 };
 
 use crate::button::ControlSize;
-use crate::icon::{Icon, IconName};
+use crate::focus::{focusable, selector};
+use crate::icon::{Icon, IconName, IconSource};
 use crate::motion::{lerp, transition};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
@@ -55,13 +57,13 @@ impl Switch {
         self
     }
 
-    /// Greyed out.
+    /// Greyed out and out of the Tab order.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Called on click; flip the value there.
+    /// Called on click, Enter or Space; flip the value there.
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -131,16 +133,23 @@ impl RenderOnce for Switch {
             cx,
             move |track, delta| track.bg(mix(from_track, to_track, delta)),
         );
-        let mut row = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .child(track)
-            .children(
-                self.label
-                    .map(|label| Label::new(label).size(TextSize::Medium)),
-            );
+        let mut row = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.disabled,
+            height / 2.,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.sm)
+        .rounded(height / 2.)
+        .child(track)
+        .children(
+            self.label
+                .map(|label| Label::new(label).size(TextSize::Medium)),
+        );
         if self.disabled {
             return row.opacity(0.45);
         }
@@ -157,6 +166,7 @@ pub struct Checkbox {
     id: ElementId,
     checked: bool,
     label: Option<SharedString>,
+    disabled: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -167,6 +177,7 @@ impl Checkbox {
             id: id.into(),
             checked,
             label: None,
+            disabled: false,
             on_click: None,
         }
     }
@@ -177,7 +188,13 @@ impl Checkbox {
         self
     }
 
-    /// Called on click.
+    /// Greyed out and out of the Tab order.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Called on click, Enter or Space.
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -204,31 +221,41 @@ impl RenderOnce for Checkbox {
                 |icon, delta| icon.size(px(lerp(6., 12., delta))),
             )
         });
-        let mut row = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .size(px(16.))
-                    .rounded(theme.shape.radius_xs)
-                    .when_else(
-                        self.checked,
-                        |el| el.bg(fill_color),
-                        |el| {
-                            el.bg(theme.colors.sunken)
-                                .border_1()
-                                .border_color(theme.colors.border_strong)
-                        },
-                    )
-                    .children(check),
-            )
-            .children(self.label.map(Label::new));
+        let mut row = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.disabled,
+            theme.shape.radius_xs,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.sm)
+        .rounded(theme.shape.radius_xs)
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(16.))
+                .rounded(theme.shape.radius_xs)
+                .when_else(
+                    self.checked,
+                    |el| el.bg(fill_color),
+                    |el| {
+                        el.bg(theme.colors.sunken)
+                            .border_1()
+                            .border_color(theme.colors.border_strong)
+                    },
+                )
+                .children(check),
+        )
+        .children(self.label.map(Label::new));
+        if self.disabled {
+            return row.opacity(0.45);
+        }
         if let Some(handler) = self.on_click {
             row = row.on_click(handler);
         }
@@ -239,7 +266,7 @@ impl RenderOnce for Checkbox {
 /// One segment of a [`SegmentedControl`].
 pub struct Segment {
     label: Option<SharedString>,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
 }
 
 impl Segment {
@@ -252,16 +279,16 @@ impl Segment {
     }
 
     /// An icon segment.
-    pub fn icon(icon: IconName) -> Self {
+    pub fn icon(icon: impl Into<IconSource>) -> Self {
         Self {
             label: None,
-            icon: Some(icon),
+            icon: Some(icon.into()),
         }
     }
 
     /// Add an icon before the label.
-    pub fn with_icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    pub fn with_icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 }
@@ -300,7 +327,8 @@ impl SegmentedControl {
         self
     }
 
-    /// Called with the index of the clicked segment.
+    /// Called with the index of the segment clicked or pressed with Enter or Space. Each segment
+    /// is a tab stop.
     pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(std::rc::Rc::new(handler));
         self
@@ -315,8 +343,7 @@ impl RenderOnce for SegmentedControl {
         let inset = px(2.);
         let inner = height - inset * 2.;
         let id = self.id.clone();
-        div()
-            .id(self.id)
+        selector(div().id(self.id), &id)
             .flex()
             .flex_none()
             .items_center()
@@ -341,30 +368,35 @@ impl RenderOnce for SegmentedControl {
                     } else {
                         theme.colors.text_muted
                     };
-                    let mut item = div()
-                        .id(ElementId::NamedChild(
-                            Box::new(id.clone()),
-                            index.to_string().into(),
-                        ))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .flex_none()
-                        .gap(px(5.))
-                        .h(inner)
-                        .min_w(inner)
-                        .whitespace_nowrap()
-                        .px(theme.density.control_padding * 0.8)
-                        .rounded(Theme::concentric(theme.control_radius(height), inset))
-                        .text_size(theme.typography.size_sm)
-                        .font_weight(theme.typography.label_weight)
-                        .text_color(text)
-                        .children(
-                            segment
-                                .icon
-                                .map(|icon| Icon::new(icon).size(px(14.)).color(text)),
-                        )
-                        .children(segment.label);
+                    let item_id =
+                        ElementId::NamedChild(Box::new(id.clone()), index.to_string().into());
+                    let mut item = focusable(
+                        div().id(item_id.clone()),
+                        &item_id,
+                        false,
+                        Theme::concentric(theme.control_radius(height), inset),
+                        window,
+                        cx,
+                    )
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .flex_none()
+                    .gap(px(5.))
+                    .h(inner)
+                    .min_w(inner)
+                    .whitespace_nowrap()
+                    .px(theme.density.control_padding * 0.8)
+                    .rounded(Theme::concentric(theme.control_radius(height), inset))
+                    .text_size(theme.typography.size_sm)
+                    .font_weight(theme.typography.label_weight)
+                    .text_color(text)
+                    .children(
+                        segment
+                            .icon
+                            .map(|icon| Icon::new(icon).size(px(14.)).color(text)),
+                    )
+                    .children(segment.label);
                     if selected {
                         item = item.bg(selected_fill).shadow(theme.elevation.low.clone());
                     } else {
@@ -684,29 +716,64 @@ impl RenderOnce for Knob {
     }
 }
 
-/// A framed text field. Put the application's own editable input inside with `.child(...)`, or
-/// show a static value with [`TextField::value`] in mock-ups.
+/// A framed text field: the sunken well, the control height and radius, and the focus ring.
+///
+/// Atelier draws the frame; the application owns the editing. Put its editable input inside with
+/// `.child(...)` — the element that holds the caret, the selection and the IME — and route the
+/// field's own events to it: the field is an interactive element, so it takes `.id(...)`,
+/// `.track_focus(...)`, `.on_mouse_down(...)`, `.on_key_down(...)`, `.on_action(...)` and
+/// `.key_context(...)` like a `div`. While its focus handle is focused it draws the ring by
+/// itself; [`TextField::focused`] draws it by hand. Tell it [`TextField::empty`] so the
+/// placeholder shows under the application's input. A static [`TextField::value`] is for
+/// mock-ups.
+///
+/// ```ignore
+/// TextField::new()
+///     .id("project-name")
+///     .track_focus(&self.name.focus_handle(cx))
+///     .on_mouse_down(MouseButton::Left, cx.listener(Self::place_caret))
+///     .placeholder("Untitled")
+///     .empty(self.name.read(cx).is_empty())
+///     .child(self.name.clone())
+/// ```
 #[derive(IntoElement)]
 pub struct TextField {
+    base: Div,
+    id: Option<ElementId>,
     value: Option<SharedString>,
     placeholder: Option<SharedString>,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
     focused: bool,
+    empty: Option<bool>,
     size: ControlSize,
     children: Vec<AnyElement>,
+    trailing: Option<AnyElement>,
+    on_click: Option<ClickHandler>,
 }
 
 impl TextField {
     /// An empty field.
     pub fn new() -> Self {
         Self {
+            base: div(),
+            id: None,
             value: None,
             placeholder: None,
             icon: None,
             focused: false,
+            empty: None,
             size: ControlSize::default(),
             children: Vec::new(),
+            trailing: None,
+            on_click: None,
         }
+    }
+
+    /// An id, which keeps the field's interaction state across frames and becomes its test
+    /// selector. Needed for [`TextField::on_click`].
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Static content.
@@ -721,13 +788,27 @@ impl TextField {
         self
     }
 
-    /// Leading icon, typically [`IconName::Search`].
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    /// Whether the application's input is empty, which decides whether the placeholder shows.
+    /// Without it the field counts as empty while it has no value and no children.
+    pub fn empty(mut self, empty: bool) -> Self {
+        self.empty = Some(empty);
         self
     }
 
-    /// Draw the focus ring.
+    /// Leading icon, typically [`IconName::Search`].
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    /// Trailing content inside the frame: a clear button, a unit, a shortcut.
+    pub fn trailing(mut self, trailing: impl IntoElement) -> Self {
+        self.trailing = Some(trailing.into_any_element());
+        self
+    }
+
+    /// Draw the focus ring by hand. A field tracking a focus handle draws it while that handle
+    /// is focused without being told.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -738,11 +819,32 @@ impl TextField {
         self.size = size;
         self
     }
+
+    /// Called on click. Needs [`TextField::id`].
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
 }
 
 impl Default for TextField {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Styled for TextField {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.base.style()
+    }
+}
+
+impl InteractiveElement for TextField {
+    fn interactivity(&mut self) -> &mut Interactivity {
+        self.base.interactivity()
     }
 }
 
@@ -756,8 +858,13 @@ impl RenderOnce for TextField {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let height = self.size.height(theme);
-        let empty = self.value.is_none() && self.children.is_empty();
-        div()
+        let empty = self
+            .empty
+            .unwrap_or(self.value.is_none() && self.children.is_empty());
+        let ring = theme.focus_ring();
+        let accent = theme.colors.accent;
+        let field = self
+            .base
             .flex()
             .items_center()
             .gap(px(6.))
@@ -772,14 +879,11 @@ impl RenderOnce for TextField {
             } else {
                 theme.colors.border
             })
-            .when(self.focused, |el| {
-                el.shadow(vec![gpui::BoxShadow {
-                    color: theme.colors.focus_ring.opacity(0.35),
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(3.),
-                }])
-            })
+            .when(self.focused, |el| el.shadow(ring.clone()))
+            // A text field shows its ring whenever it has focus, from the pointer or the keyboard:
+            // it is where typing goes.
+            .focus(move |style| style.border_color(accent).shadow(ring))
+            .cursor_text()
             .text_size(theme.typography.size_md)
             .children(
                 self.icon
@@ -800,10 +904,22 @@ impl RenderOnce for TextField {
                     .map(|placeholder| {
                         div()
                             .flex_1()
+                            .min_w_0()
                             .truncate()
                             .text_color(theme.colors.text_faint)
                             .child(placeholder)
                     }),
             )
+            .children(self.trailing);
+        match self.id {
+            Some(id) => {
+                let mut field = selector(field, &id).id(id);
+                if let Some(handler) = self.on_click {
+                    field = field.on_click(handler);
+                }
+                field.into_any_element()
+            }
+            None => field.into_any_element(),
+        }
     }
 }

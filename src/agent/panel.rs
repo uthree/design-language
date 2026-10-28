@@ -9,6 +9,7 @@ use gpui::{
 use super::{AgentStatus, AgentStatusLabel};
 use crate::button::Button;
 use crate::display::Avatar;
+use crate::focus::focusable;
 use crate::icon::{Icon, IconName};
 use crate::motion::{lerp, looping};
 use crate::text::{Label, TextColor, TextSize};
@@ -240,53 +241,59 @@ impl AgentToggle {
 }
 
 impl RenderOnce for AgentToggle {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let height = theme.density.control_md;
         let color = self.status.color(theme);
         let hover = colors.hover;
         let mark = self.status.mark();
-        let mut toggle = div()
-            .id(self.id)
-            .relative()
-            .flex()
-            .items_center()
-            .gap(theme.spacing.xs)
-            .h(height)
-            .px(theme.spacing.sm)
-            .rounded(theme.control_radius(height))
-            .text_size(theme.typography.size_sm)
-            .font_weight(theme.typography.label_weight)
-            .when(self.open, |toggle| {
-                toggle.bg(colors.agent_wash).text_color(colors.agent)
-            })
-            .when(!self.open, |toggle| {
-                toggle
-                    .text_color(colors.text_muted)
-                    .hover(move |style| style.bg(hover))
-            })
-            .child(
-                Icon::new(IconName::Sparkles)
-                    .size(px(15.))
-                    .color(colors.agent),
+        let mut toggle = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.on_click.is_none(),
+            theme.control_radius(height),
+            window,
+            cx,
+        )
+        .relative()
+        .flex()
+        .items_center()
+        .gap(theme.spacing.xs)
+        .h(height)
+        .px(theme.spacing.sm)
+        .rounded(theme.control_radius(height))
+        .text_size(theme.typography.size_sm)
+        .font_weight(theme.typography.label_weight)
+        .when(self.open, |toggle| {
+            toggle.bg(colors.agent_wash).text_color(colors.agent)
+        })
+        .when(!self.open, |toggle| {
+            toggle
+                .text_color(colors.text_muted)
+                .hover(move |style| style.bg(hover))
+        })
+        .child(
+            Icon::new(IconName::Sparkles)
+                .size(px(15.))
+                .color(colors.agent),
+        )
+        .child("Assistant")
+        // The state badge only matters while the panel cannot show it itself.
+        .when(!self.open && !mark.is_empty(), |toggle| {
+            toggle.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(px(14.))
+                    .rounded(px(7.))
+                    .bg(color)
+                    .text_size(px(9.))
+                    .text_color(theme.text_on(color))
+                    .child(mark),
             )
-            .child("Assistant")
-            // The state badge only matters while the panel cannot show it itself.
-            .when(!self.open && !mark.is_empty(), |toggle| {
-                toggle.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .size(px(14.))
-                        .rounded(px(7.))
-                        .bg(color)
-                        .text_size(px(9.))
-                        .text_color(theme.text_on(color))
-                        .child(mark),
-                )
-            });
+        });
         if let Some(handler) = self.on_click {
             toggle = toggle.on_click(handler);
         }
@@ -345,7 +352,7 @@ impl ConversationRow {
 }
 
 impl RenderOnce for ConversationRow {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let hover = colors.hover;
@@ -353,35 +360,41 @@ impl RenderOnce for ConversationRow {
             self.status,
             AgentStatus::Running | AgentStatus::AwaitingApproval
         );
-        let mut row = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .h(theme.density.row)
-            .px(theme.spacing.sm)
-            .rounded(theme.shape.radius_sm)
-            .when(self.selected, |row| row.bg(colors.selected))
-            .when(!self.selected, |row| {
-                row.hover(move |style| style.bg(hover))
-            })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(theme.typography.size_md)
-                    .text_color(colors.text)
-                    .child(self.title),
+        let mut row = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.on_click.is_none(),
+            theme.shape.radius_sm,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.sm)
+        .h(theme.density.row)
+        .px(theme.spacing.sm)
+        .rounded(theme.shape.radius_sm)
+        .when(self.selected, |row| row.bg(colors.selected))
+        .when(!self.selected, |row| {
+            row.hover(move |style| style.bg(hover))
+        })
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(theme.typography.size_md)
+                .text_color(colors.text)
+                .child(self.title),
+        )
+        .when(live, |row| row.child(AgentStatusLabel::new(self.status)))
+        .when(!live, |row| {
+            row.child(
+                Label::new(self.time)
+                    .size(TextSize::XSmall)
+                    .color(TextColor::Faint),
             )
-            .when(live, |row| row.child(AgentStatusLabel::new(self.status)))
-            .when(!live, |row| {
-                row.child(
-                    Label::new(self.time)
-                        .size(TextSize::XSmall)
-                        .color(TextColor::Faint),
-                )
-            });
+        });
         if let Some(handler) = self.on_click {
             row = row.on_click(handler);
         }
