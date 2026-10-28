@@ -1762,7 +1762,6 @@ impl Render for NodeEditor {
             .child(
                 TitleBar::new()
                     .title("Pad textures")
-                    .subtitle(format!("Workflow · {} nodes", self.nodes.len()))
                     .child(run_button)
                     .when(missing > 0, |bar| {
                         bar.child(

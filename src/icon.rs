@@ -7,7 +7,8 @@
 use std::borrow::Cow;
 
 use gpui::{
-    App, AssetSource, Hsla, IntoElement, Pixels, RenderOnce, SharedString, Styled, Window, px, svg,
+    App, AssetSource, Hsla, IntoElement, Pixels, RenderOnce, SharedString, Styled, Window, img, px,
+    svg,
 };
 
 use crate::theme::ActiveTheme;
@@ -56,6 +57,7 @@ macro_rules! icons {
 icons! {
     Alert => "alert",
     ArrowUp => "arrow-up",
+    Bolt => "bolt",
     Brain => "brain",
     Check => "check",
     ChevronDown => "chevron-down",
@@ -69,8 +71,11 @@ icons! {
     Eye => "eye",
     File => "file",
     Folder => "folder",
+    Headphones => "headphones",
     History => "history",
     Info => "info",
+    Keyboard => "keyboard",
+    Knob => "knob",
     Loop => "loop",
     Metronome => "metronome",
     Mic => "mic",
@@ -82,6 +87,7 @@ icons! {
     Play => "play",
     Plus => "plus",
     Record => "record",
+    Redo => "redo",
     Refresh => "refresh",
     Search => "search",
     Settings => "settings",
@@ -96,6 +102,8 @@ icons! {
     Trash => "trash",
     Undo => "undo",
     User => "user",
+    Volume => "volume",
+    VolumeOff => "volume-off",
     Waveform => "waveform",
     WindowClose => "window-close",
     WindowMaximize => "window-maximize",
@@ -150,19 +158,60 @@ impl AssetSource for Assets {
     }
 }
 
+/// What an icon draws: one of the set, an application's own SVG, or a full-colour image.
+///
+/// Everything that takes an icon takes `impl Into<IconSource>`, so an [`IconName`] still works
+/// as before and an application's own glyph goes in the same place:
+///
+/// ```ignore
+/// ListItem::new("tempo", "Tempo").icon(IconName::Metronome)
+/// ListItem::new("punch", "Punch in").icon(IconSource::svg("icons/auris-punch.svg"))
+/// OptionCard::new("openai", IconSource::image("logos/provider.png"), "Provider")
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum IconSource {
+    /// An icon from the set.
+    Named(IconName),
+    /// A single-colour SVG served by the application's asset source (see
+    /// [`Assets::with_fallback`]). It is drawn as a mask in the colour it is given, like the set,
+    /// so draw it on the same 24×24 grid and 2px stroke.
+    Svg(SharedString),
+    /// A full-colour image served by the asset source, drawn as it is: a provider's logo, an
+    /// avatar. It takes no colour.
+    Image(SharedString),
+}
+
+impl IconSource {
+    /// An application SVG drawn like the set.
+    pub fn svg(path: impl Into<SharedString>) -> Self {
+        Self::Svg(path.into())
+    }
+
+    /// A full-colour image.
+    pub fn image(path: impl Into<SharedString>) -> Self {
+        Self::Image(path.into())
+    }
+}
+
+impl From<IconName> for IconSource {
+    fn from(name: IconName) -> Self {
+        Self::Named(name)
+    }
+}
+
 /// An icon element. Defaults to the muted text colour at 16px.
 #[derive(IntoElement)]
 pub struct Icon {
-    name: IconName,
+    source: IconSource,
     size: Option<Pixels>,
     color: Option<Hsla>,
 }
 
 impl Icon {
-    /// The named icon.
-    pub fn new(name: IconName) -> Self {
+    /// The icon drawing `source`: an [`IconName`] or an [`IconSource`].
+    pub fn new(source: impl Into<IconSource>) -> Self {
         Self {
-            name,
+            source: source.into(),
             size: None,
             color: None,
         }
@@ -174,7 +223,7 @@ impl Icon {
         self
     }
 
-    /// Colour; defaults to [`crate::Colors::text_muted`].
+    /// Colour; defaults to [`crate::Colors::text_muted`]. An [`IconSource::Image`] ignores it.
     pub fn color(mut self, color: Hsla) -> Self {
         self.color = Some(color);
         self
@@ -187,14 +236,28 @@ impl From<IconName> for Icon {
     }
 }
 
+impl From<IconSource> for Icon {
+    fn from(source: IconSource) -> Self {
+        Self::new(source)
+    }
+}
+
 impl RenderOnce for Icon {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let size = self.size.unwrap_or(px(16.));
+        let path: SharedString = match self.source {
+            IconSource::Named(name) => name.path().into(),
+            IconSource::Svg(path) => path,
+            IconSource::Image(path) => {
+                return img(path).flex_none().size(size).into_any_element();
+            }
+        };
         svg()
-            .path(self.name.path())
+            .path(path)
             .flex_none()
             .size(size)
             .text_color(self.color.unwrap_or(cx.theme().colors.text_muted))
+            .into_any_element()
     }
 }
 

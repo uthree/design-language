@@ -9,13 +9,16 @@
 //! Motion explains change; it is never decoration. Keep it short, and let an application turn it
 //! off through [`Motion::enabled`] (for a reduced-motion preference).
 
-use std::time::Duration;
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use std::f32::consts::FRAC_PI_2;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Div, ElementId, Hsla, IntoElement, Pixels,
-    SharedString, Styled, Transformation, Window, px, radians, svg,
+    Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, Hsla, IntoElement, Pixels,
+    RenderOnce, SharedString, Styled, Transformation, Window, canvas, fill, point, px, radians,
+    size, svg,
 };
 
 use crate::icon::IconName;
@@ -229,6 +232,158 @@ pub fn reveal(element: Div, id: impl Into<ElementId>, cx: &App) -> AnyElement {
     appear(element, id, cx, |element, delta| {
         element.opacity(delta).mt(px(lerp(-4., 0., delta)))
     })
+}
+
+/// Where an element was last laid out, in window coordinates: the "from" of a [`Morph`].
+///
+/// Put [`Measure::probe`] inside the element (which must be `relative()`), and read
+/// [`Measure::bounds`] when the hand-off starts.
+#[derive(Clone, Debug, Default)]
+pub struct Measure(Rc<Cell<Option<Bounds<Pixels>>>>);
+
+impl Measure {
+    /// Nothing measured yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The bounds the probe last saw.
+    pub fn bounds(&self) -> Option<Bounds<Pixels>> {
+        self.0.get()
+    }
+
+    /// An invisible child that records its parent's bounds each frame.
+    pub fn probe(&self) -> impl IntoElement + use<> {
+        let cell = self.0.clone();
+        canvas(move |bounds, _, _| cell.set(Some(bounds)), |_, _, _, _| {})
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+    }
+}
+
+/// A shared-element hand-off between two screens: a surface that grows from the rectangle the
+/// person acted on to the rectangle of the screen that replaces it.
+///
+/// Only the shape moves. The arriving screen is laid out at its final size from its first
+/// frame and fades in over the shape ([`appear`] with opacity); nothing inside either screen is
+/// re-laid out while the shape grows. It runs once, over [`Motion::normal`], the first time an
+/// id is drawn, and with motion off the shape is simply at its end.
+///
+/// ```ignore
+/// // On "Compose with AI": remember where the card was and switch screens.
+/// self.handoff = self.card.bounds();
+/// // In the window's root, the shape first and the arriving screen over it:
+/// .children(self.handoff.map(|from| Morph::new("compose-handoff", from)))
+/// .child(appear(compose_screen, "compose-screen", cx, |screen, delta| screen.opacity(delta)))
+/// // Drop `self.handoff` once the screen has settled, or keep it: at rest the shape is just the
+/// // screen's own background.
+/// ```
+#[derive(IntoElement)]
+pub struct Morph {
+    id: ElementId,
+    from: Bounds<Pixels>,
+    to: Option<Bounds<Pixels>>,
+    from_radius: Option<Pixels>,
+    to_radius: Pixels,
+    fill: Option<Hsla>,
+    duration: Option<Duration>,
+}
+
+impl Morph {
+    /// A shape that grows from `from` to the bounds of wherever it is placed: it fills its
+    /// parent absolutely, so place it in the window's root (which must be `relative()`), before
+    /// the arriving screen.
+    pub fn new(id: impl Into<ElementId>, from: Bounds<Pixels>) -> Self {
+        Self {
+            id: id.into(),
+            from,
+            to: None,
+            from_radius: None,
+            to_radius: px(0.),
+            fill: None,
+            duration: None,
+        }
+    }
+
+    /// Grow to `to`, in window coordinates, instead of to the element's own bounds.
+    pub fn to(mut self, to: Bounds<Pixels>) -> Self {
+        self.to = Some(to);
+        self
+    }
+
+    /// The corner radii at either end; from the large radius to square by default.
+    pub fn radius(mut self, from: Pixels, to: Pixels) -> Self {
+        self.from_radius = Some(from);
+        self.to_radius = to;
+        self
+    }
+
+    /// The surface's colour; the theme's surface by default, the colour of the panel it grows
+    /// from.
+    pub fn fill(mut self, fill: Hsla) -> Self {
+        self.fill = Some(fill);
+        self
+    }
+
+    /// How long it takes; [`Motion::normal`] by default.
+    pub fn duration(mut self, duration: Duration) -> Self {
+        self.duration = Some(duration);
+        self
+    }
+}
+
+impl RenderOnce for Morph {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let motion = theme.motion;
+        let duration = self.duration.unwrap_or(motion.normal);
+        let fill_color = self.fill.unwrap_or(theme.colors.surface);
+        let from_radius = self.from_radius.unwrap_or(theme.shape.radius_lg);
+        let to_radius = self.to_radius;
+        let started = window
+            .use_keyed_state(
+                ElementId::NamedChild(Box::new(self.id), "morph".into()),
+                cx,
+                |_, _| Instant::now(),
+            )
+            .read(cx)
+            .to_owned();
+        let delta = if motion.enabled && !duration.is_zero() {
+            (started.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.)
+        } else {
+            1.
+        };
+        if delta < 1. {
+            window.request_animation_frame();
+        }
+        let delta = ease_out(delta);
+        let (from, to) = (self.from, self.to);
+        canvas(
+            |_, _, _| {},
+            move |own, _, window, _| {
+                let to = to.unwrap_or(own);
+                let at = |a: Pixels, b: Pixels| px(lerp(f32::from(a), f32::from(b), delta));
+                let bounds = Bounds::new(
+                    point(
+                        at(from.origin.x, to.origin.x),
+                        at(from.origin.y, to.origin.y),
+                    ),
+                    size(
+                        at(from.size.width, to.size.width),
+                        at(from.size.height, to.size.height),
+                    ),
+                );
+                window
+                    .paint_quad(fill(bounds, fill_color).corner_radii(at(from_radius, to_radius)));
+            },
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+    }
 }
 
 #[cfg(test)]

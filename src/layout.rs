@@ -1,20 +1,33 @@
 //! Structure: panels, toolbars, sidebars, rows, tabs and section headers.
 //!
-//! The container builders here implement `Styled` and `ParentElement` by delegating to an inner
-//! `div`, so they compose like any gpui element while owning their surface treatment.
+//! The container builders here implement `Styled`, `ParentElement` and the interactive-element
+//! traits by delegating to an inner `div`, so they compose like any gpui element while owning
+//! their surface treatment. Give one an `.id(...)` and it becomes stateful like a `div` does: it
+//! can scroll (`.overflow_y_scroll()`), track a scroll handle, take clicks and tooltips.
 
 use gpui::{
-    AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder, px,
+    AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, Interactivity, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    Window, div, prelude::FluentBuilder, px,
 };
 
-use crate::icon::{Icon, IconName};
+use crate::focus::{focusable, selector};
+use crate::icon::{Icon, IconSource};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
 macro_rules! container {
     ($name:ident) => {
+        impl $name {
+            /// An id, which makes the container stateful like `div().id(...)`: it can then
+            /// scroll, take clicks and tooltips, and it becomes the container's test selector.
+            /// Give it before the stateful calls that need it.
+            pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+                self.id = Some(id.into());
+                self
+            }
+        }
+
         impl Styled for $name {
             fn style(&mut self) -> &mut StyleRefinement {
                 self.base.style()
@@ -26,7 +39,23 @@ macro_rules! container {
                 self.base.extend(elements)
             }
         }
+
+        impl InteractiveElement for $name {
+            fn interactivity(&mut self) -> &mut Interactivity {
+                self.base.interactivity()
+            }
+        }
+
+        impl StatefulInteractiveElement for $name {}
     };
+}
+
+/// The finished surface of a container: stateful under its id, if it has one.
+fn finish(surface: Div, id: Option<ElementId>) -> AnyElement {
+    match id {
+        Some(id) => selector(surface, &id).id(id).into_any_element(),
+        None => surface.into_any_element(),
+    }
 }
 
 /// Which edge of a region borders the rest of the window.
@@ -56,12 +85,16 @@ fn border_edge(element: Div, edge: Edge, theme: &Theme) -> Div {
 #[derive(IntoElement)]
 pub struct Toolbar {
     base: Div,
+    id: Option<ElementId>,
 }
 
 impl Toolbar {
     /// An empty toolbar.
     pub fn new() -> Self {
-        Self { base: div() }
+        Self {
+            base: div(),
+            id: None,
+        }
     }
 }
 
@@ -76,7 +109,7 @@ container!(Toolbar);
 impl RenderOnce for Toolbar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        border_edge(
+        let surface = border_edge(
             self.base
                 .flex()
                 .flex_none()
@@ -87,14 +120,18 @@ impl RenderOnce for Toolbar {
                 .bg(theme.colors.chrome),
             Edge::Bottom,
             theme,
-        )
+        );
+        finish(surface, self.id)
     }
 }
 
 /// A persistent side region: navigation on the leading edge, inspectors on the trailing one.
+///
+/// A long one scrolls: `Sidebar::new(Edge::Left).id("pages").overflow_y_scroll()`.
 #[derive(IntoElement)]
 pub struct Sidebar {
     base: Div,
+    id: Option<ElementId>,
     edge: Edge,
 }
 
@@ -102,7 +139,11 @@ impl Sidebar {
     /// A sidebar whose border faces `edge`'s opposite: a [`Edge::Left`] sidebar borders on its
     /// right.
     pub fn new(edge: Edge) -> Self {
-        Self { base: div(), edge }
+        Self {
+            base: div(),
+            id: None,
+            edge,
+        }
     }
 }
 
@@ -117,7 +158,7 @@ impl RenderOnce for Sidebar {
             Edge::Top => Edge::Bottom,
             Edge::Bottom => Edge::Top,
         };
-        border_edge(
+        let surface = border_edge(
             self.base
                 .flex()
                 .flex_col()
@@ -125,7 +166,8 @@ impl RenderOnce for Sidebar {
                 .bg(theme.colors.chrome),
             border,
             theme,
-        )
+        );
+        finish(surface, self.id)
     }
 }
 
@@ -133,12 +175,16 @@ impl RenderOnce for Sidebar {
 #[derive(IntoElement)]
 pub struct Card {
     base: Div,
+    id: Option<ElementId>,
 }
 
 impl Card {
     /// An empty card.
     pub fn new() -> Self {
-        Self { base: div() }
+        Self {
+            base: div(),
+            id: None,
+        }
     }
 }
 
@@ -153,13 +199,15 @@ container!(Card);
 impl RenderOnce for Card {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        self.base
+        let surface = self
+            .base
             .flex()
             .flex_col()
             .rounded(theme.shape.radius_md)
             .bg(theme.colors.elevated)
             .border_1()
-            .border_color(theme.colors.border)
+            .border_color(theme.colors.border);
+        finish(surface, self.id)
     }
 }
 
@@ -238,15 +286,19 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// A row in a sidebar, list or tree. Icon, label and trailing slot keep fixed lanes, so rows
 /// line up whether or not each has an icon.
+///
+/// A row that takes [`ListItem::on_click`] is a tab stop: Enter and Space choose it.
 #[derive(IntoElement)]
 pub struct ListItem {
     id: ElementId,
     label: SharedString,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
     icon_color: Option<gpui::Hsla>,
     description: Option<SharedString>,
+    description_lines: usize,
     trailing: Option<AnyElement>,
     selected: bool,
+    disabled: bool,
     indent: usize,
     icon_lane: bool,
     on_click: Option<ClickHandler>,
@@ -261,17 +313,19 @@ impl ListItem {
             icon: None,
             icon_color: None,
             description: None,
+            description_lines: 1,
             trailing: None,
             selected: false,
+            disabled: false,
             indent: 0,
             icon_lane: true,
             on_click: None,
         }
     }
 
-    /// Leading icon.
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    /// Leading icon: an [`crate::IconName`] or an application's own [`IconSource`].
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
@@ -281,9 +335,17 @@ impl ListItem {
         self
     }
 
-    /// Muted second line.
+    /// Muted second line, cut to one line unless [`ListItem::description_lines`] allows more.
     pub fn description(mut self, description: impl Into<SharedString>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// How many lines the description may wrap to before it is cut, from 1 (the default) to 3.
+    /// Allow 2 in a sidebar whose descriptions are in a language that runs long without spaces,
+    /// such as Japanese; the row grows to fit.
+    pub fn description_lines(mut self, lines: usize) -> Self {
+        self.description_lines = lines.clamp(1, 3);
         self
     }
 
@@ -299,6 +361,12 @@ impl ListItem {
         self
     }
 
+    /// Greyed out, unclickable, and out of the Tab order.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
     /// Tree depth.
     pub fn indent(mut self, indent: usize) -> Self {
         self.indent = indent;
@@ -311,7 +379,7 @@ impl ListItem {
         self
     }
 
-    /// Called on click.
+    /// Called on click, Enter or Space.
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -322,7 +390,7 @@ impl ListItem {
 }
 
 impl RenderOnce for ListItem {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let text = if self.selected {
@@ -341,13 +409,27 @@ impl RenderOnce for ListItem {
         } else {
             theme.density.row
         };
-        let mut row = div()
-            .id(self.id)
+        let wraps = self.description.is_some() && self.description_lines > 1;
+        // Only a row that does something is a tab stop.
+        let interactive = self.on_click.is_some() && !self.disabled;
+        let row = div().id(self.id.clone());
+        let row = if interactive {
+            focusable(row, &self.id, false, theme.shape.radius_sm, window, cx)
+        } else {
+            selector(row, &self.id)
+        };
+        let mut row = row
             .flex()
             .flex_none()
             .items_center()
             .gap(theme.spacing.sm)
-            .h(height)
+            .map(|row| {
+                if wraps {
+                    row.min_h(height).py(theme.spacing.xs)
+                } else {
+                    row.h(height)
+                }
+            })
             .pl(theme.spacing.sm + theme.spacing.lg * self.indent as f32)
             .pr(theme.spacing.sm)
             .rounded(theme.shape.radius_sm)
@@ -357,7 +439,7 @@ impl RenderOnce for ListItem {
                 row.bg(colors.selected)
                     .font_weight(theme.typography.label_weight)
             })
-            .when(!self.selected, |row| {
+            .when(!self.selected && !self.disabled, |row| {
                 row.hover(move |style| style.bg(hover))
             })
             .when(self.icon_lane, |row| {
@@ -381,13 +463,24 @@ impl RenderOnce for ListItem {
                     .min_w_0()
                     .child(div().truncate().child(self.label))
                     .children(self.description.map(|description| {
-                        Label::new(description)
-                            .size(TextSize::Small)
-                            .color(TextColor::Faint)
-                            .truncate()
+                        let line = div()
+                            .text_size(theme.typography.size_sm)
+                            .font_weight(gpui::FontWeight::NORMAL)
+                            .text_color(colors.text_faint);
+                        if wraps {
+                            line.text_ellipsis()
+                                .line_clamp(self.description_lines)
+                                .child(description)
+                                .into_any_element()
+                        } else {
+                            line.truncate().child(description).into_any_element()
+                        }
                     })),
             )
             .children(self.trailing);
+        if self.disabled {
+            return row.opacity(0.45);
+        }
         if let Some(handler) = self.on_click {
             row = row.on_click(handler);
         }
@@ -421,7 +514,8 @@ impl Tabs {
         }
     }
 
-    /// Called with the index of the clicked tab.
+    /// Called with the index of the tab clicked or pressed with Enter or Space. Each tab is a
+    /// tab stop.
     pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(std::rc::Rc::new(handler));
         self
@@ -429,13 +523,12 @@ impl Tabs {
 }
 
 impl RenderOnce for Tabs {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let id = self.id.clone();
         let height = theme.density.control_md;
-        div()
-            .id(self.id)
+        selector(div().id(self.id), &id)
             .flex()
             .flex_none()
             .items_center()
@@ -444,26 +537,30 @@ impl RenderOnce for Tabs {
             .children(self.labels.into_iter().enumerate().map(|(index, label)| {
                 let selected = index == self.selected;
                 let hover = colors.hover;
-                let mut tab = div()
-                    .id(ElementId::NamedChild(
-                        Box::new(id.clone()),
-                        index.to_string().into(),
-                    ))
-                    .flex()
-                    .items_center()
-                    .h(height)
-                    .px(theme.spacing.md)
-                    .rounded(theme.control_radius(height))
-                    .text_size(theme.typography.size_md)
-                    .font_weight(theme.typography.label_weight)
-                    .text_color(if selected {
-                        colors.text
-                    } else {
-                        colors.text_muted
-                    })
-                    .when(selected, |tab| tab.bg(colors.selected))
-                    .when(!selected, |tab| tab.hover(move |style| style.bg(hover)))
-                    .child(label);
+                let tab_id = ElementId::NamedChild(Box::new(id.clone()), index.to_string().into());
+                let mut tab = focusable(
+                    div().id(tab_id.clone()),
+                    &tab_id,
+                    false,
+                    theme.control_radius(height),
+                    window,
+                    cx,
+                )
+                .flex()
+                .items_center()
+                .h(height)
+                .px(theme.spacing.md)
+                .rounded(theme.control_radius(height))
+                .text_size(theme.typography.size_md)
+                .font_weight(theme.typography.label_weight)
+                .text_color(if selected {
+                    colors.text
+                } else {
+                    colors.text_muted
+                })
+                .when(selected, |tab| tab.bg(colors.selected))
+                .when(!selected, |tab| tab.hover(move |style| style.bg(hover)))
+                .child(label);
                 if let Some(handler) = self.on_select.clone() {
                     tab = tab.on_click(move |_, window, cx| handler(&index, window, cx));
                 }
@@ -500,7 +597,7 @@ impl Disclosure {
         self
     }
 
-    /// Called on click; flip `open` there.
+    /// Called on click, Enter or Space; flip `open` there.
     pub fn on_toggle(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -523,20 +620,26 @@ impl RenderOnce for Disclosure {
         );
         let theme = cx.theme();
         let hover = theme.colors.hover;
-        let mut row = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.xs)
-            .h(theme.density.control_sm)
-            .px(theme.spacing.xs)
-            .rounded(theme.shape.radius_sm)
-            .text_size(theme.typography.size_sm)
-            .text_color(theme.colors.text_muted)
-            .hover(move |style| style.bg(hover))
-            .child(chevron)
-            .child(div().flex_1().min_w_0().truncate().child(self.label))
-            .children(self.trailing);
+        let mut row = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            false,
+            theme.shape.radius_sm,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.xs)
+        .h(theme.density.control_sm)
+        .px(theme.spacing.xs)
+        .rounded(theme.shape.radius_sm)
+        .text_size(theme.typography.size_sm)
+        .text_color(theme.colors.text_muted)
+        .hover(move |style| style.bg(hover))
+        .child(chevron)
+        .child(div().flex_1().min_w_0().truncate().child(self.label))
+        .children(self.trailing);
         if let Some(handler) = self.on_toggle {
             row = row.on_click(handler);
         }
@@ -547,7 +650,7 @@ impl RenderOnce for Disclosure {
 /// What a region shows when it has nothing yet, and what to do about it.
 #[derive(IntoElement)]
 pub struct EmptyState {
-    icon: IconName,
+    icon: IconSource,
     title: SharedString,
     description: Option<SharedString>,
     action: Option<AnyElement>,
@@ -555,9 +658,9 @@ pub struct EmptyState {
 
 impl EmptyState {
     /// An empty state.
-    pub fn new(icon: IconName, title: impl Into<SharedString>) -> Self {
+    pub fn new(icon: impl Into<IconSource>, title: impl Into<SharedString>) -> Self {
         Self {
-            icon,
+            icon: icon.into(),
             title: title.into(),
             description: None,
             action: None,
@@ -609,7 +712,7 @@ impl RenderOnce for EmptyState {
 #[derive(IntoElement)]
 pub struct OptionCard {
     id: ElementId,
-    icon: IconName,
+    icon: IconSource,
     title: SharedString,
     description: Option<SharedString>,
     selected: bool,
@@ -619,10 +722,14 @@ pub struct OptionCard {
 
 impl OptionCard {
     /// A tile.
-    pub fn new(id: impl Into<ElementId>, icon: IconName, title: impl Into<SharedString>) -> Self {
+    pub fn new(
+        id: impl Into<ElementId>,
+        icon: impl Into<IconSource>,
+        title: impl Into<SharedString>,
+    ) -> Self {
         Self {
             id: id.into(),
-            icon,
+            icon: icon.into(),
             title: title.into(),
             description: None,
             selected: false,
@@ -649,7 +756,7 @@ impl OptionCard {
         self
     }
 
-    /// Called on click.
+    /// Called on click, Enter or Space.
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -660,7 +767,7 @@ impl OptionCard {
 }
 
 impl RenderOnce for OptionCard {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let (icon_color, icon_wash) = if self.agent {
@@ -670,62 +777,69 @@ impl RenderOnce for OptionCard {
         };
         let tile = px(56.);
         let hover = colors.hover;
-        let mut card = div()
-            .id(self.id)
-            .flex()
-            .flex_col()
-            .gap(theme.spacing.md)
-            .p(theme.spacing.lg)
-            .rounded(theme.shape.radius_lg)
-            .bg(colors.elevated)
-            .border_1()
-            .border_color(if self.selected {
-                colors.accent
-            } else {
-                colors.border
-            })
-            // The selected tile carries a ring as well as the border colour, so it does not rely on
-            // a hue difference alone.
-            .when(self.selected, |card| {
-                card.shadow(vec![gpui::BoxShadow {
-                    color: colors.focus_ring.opacity(0.35),
-                    offset: gpui::point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(3.),
-                }])
-            })
-            .when(!self.selected, |card| {
-                card.hover(move |style| style.bg(hover))
-            })
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(tile)
-                    .rounded(
-                        Theme::concentric(theme.shape.radius_lg, theme.spacing.lg)
-                            .max(theme.shape.radius_md),
-                    )
-                    .bg(icon_wash)
-                    .child(Icon::new(self.icon).size(px(28.)).color(icon_color)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(theme.spacing.xs)
-                    .child(
-                        Label::new(self.title)
-                            .size(TextSize::Large)
-                            .heading_weight(),
-                    )
-                    .children(self.description.map(|description| {
-                        Label::new(description)
-                            .size(TextSize::Small)
-                            .color(TextColor::Muted)
-                    })),
-            );
+        let mut card = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            false,
+            theme.shape.radius_lg,
+            window,
+            cx,
+        )
+        .flex()
+        .flex_col()
+        .gap(theme.spacing.md)
+        .p(theme.spacing.lg)
+        .rounded(theme.shape.radius_lg)
+        .bg(colors.elevated)
+        .border_1()
+        .border_color(if self.selected {
+            colors.accent
+        } else {
+            colors.border
+        })
+        // The selected tile carries a ring as well as the border colour, so it does not rely on
+        // a hue difference alone.
+        .when(self.selected, |card| {
+            card.shadow(vec![gpui::BoxShadow {
+                color: colors.focus_ring.opacity(0.35),
+                offset: gpui::point(px(0.), px(0.)),
+                // A shadow with no blur is not drawn.
+                blur_radius: px(1.),
+                spread_radius: px(3.),
+            }])
+        })
+        .when(!self.selected, |card| {
+            card.hover(move |style| style.bg(hover))
+        })
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(tile)
+                .rounded(
+                    Theme::concentric(theme.shape.radius_lg, theme.spacing.lg)
+                        .max(theme.shape.radius_md),
+                )
+                .bg(icon_wash)
+                .child(Icon::new(self.icon).size(px(28.)).color(icon_color)),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing.xs)
+                .child(
+                    Label::new(self.title)
+                        .size(TextSize::Large)
+                        .heading_weight(),
+                )
+                .children(self.description.map(|description| {
+                    Label::new(description)
+                        .size(TextSize::Small)
+                        .color(TextColor::Muted)
+                })),
+        );
         if let Some(handler) = self.on_click {
             card = card.on_click(handler);
         }

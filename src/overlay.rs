@@ -4,11 +4,13 @@
 //! `deferred`, because where a menu opens depends on what opened it.
 
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Context, ElementId, InteractiveElement, IntoElement,
-    ParentElement, Render, RenderOnce, SharedString, StyleRefinement, Styled, Window, div, px,
+    AnyElement, AnyView, App, AppContext, ClickEvent, Context, ElementId, InteractiveElement,
+    IntoElement, ParentElement, Render, RenderOnce, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, div, px,
 };
 
-use crate::icon::{Icon, IconName};
+use crate::focus::focusable;
+use crate::icon::{Icon, IconName, IconSource};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
 
@@ -130,16 +132,19 @@ impl RenderOnce for Popover {
     }
 }
 
-/// One row of a menu.
+type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+
+/// One row of a menu. A row with [`MenuItem::on_click`] is a tab stop.
 #[derive(IntoElement)]
 pub struct MenuItem {
     id: ElementId,
     label: SharedString,
-    icon: Option<IconName>,
+    icon: Option<IconSource>,
     shortcut: Option<SharedString>,
     checked: bool,
     danger: bool,
     disabled: bool,
+    on_click: Option<ClickHandler>,
 }
 
 impl MenuItem {
@@ -153,12 +158,13 @@ impl MenuItem {
             checked: false,
             danger: false,
             disabled: false,
+            on_click: None,
         }
     }
 
     /// Leading icon.
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
@@ -180,15 +186,24 @@ impl MenuItem {
         self
     }
 
-    /// Greyed out.
+    /// Greyed out, unclickable, and out of the Tab order.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Called on click, Enter or Space. Close the menu there.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
         self
     }
 }
 
 impl RenderOnce for MenuItem {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let text = if self.disabled {
@@ -198,31 +213,37 @@ impl RenderOnce for MenuItem {
         } else {
             colors.text
         };
-        let row = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .h(theme.density.row - px(2.))
-            .px(px(8.))
-            .rounded(theme.shape.radius_sm)
-            .text_size(theme.typography.size_md)
-            .text_color(text)
-            .child(div().w(px(14.)).flex_none().children(self.checked.then(|| {
-                Icon::new(IconName::Check)
-                    .size(px(13.))
-                    .color(colors.accent_text)
-            })))
-            .children(
-                self.icon
-                    .map(|icon| Icon::new(icon).size(px(15.)).color(text.opacity(0.8))),
-            )
-            .child(div().flex_1().min_w_0().truncate().child(self.label))
-            .children(self.shortcut.map(|shortcut| {
-                Label::new(shortcut)
-                    .size(TextSize::Small)
-                    .color(TextColor::Faint)
-            }));
+        let row = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.disabled || self.on_click.is_none(),
+            theme.shape.radius_sm,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(theme.density.row - px(2.))
+        .px(px(8.))
+        .rounded(theme.shape.radius_sm)
+        .text_size(theme.typography.size_md)
+        .text_color(text)
+        .child(div().w(px(14.)).flex_none().children(self.checked.then(|| {
+            Icon::new(IconName::Check)
+                .size(px(13.))
+                .color(colors.accent_text)
+        })))
+        .children(
+            self.icon
+                .map(|icon| Icon::new(icon).size(px(15.)).color(text.opacity(0.8))),
+        )
+        .child(div().flex_1().min_w_0().truncate().child(self.label))
+        .children(self.shortcut.map(|shortcut| {
+            Label::new(shortcut)
+                .size(TextSize::Small)
+                .color(TextColor::Faint)
+        }));
         if self.disabled {
             return row;
         }
@@ -231,7 +252,11 @@ impl RenderOnce for MenuItem {
         } else {
             colors.hover
         };
-        row.hover(move |style| style.bg(hover))
+        let row = row.hover(move |style| style.bg(hover));
+        match self.on_click {
+            Some(handler) => row.on_click(handler),
+            None => row,
+        }
     }
 }
 

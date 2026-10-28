@@ -500,7 +500,6 @@ impl Render for InstrumentLab {
             .child(
                 TitleBar::new()
                     .title("Cello")
-                    .subtitle("Physical instrument · Strings track")
                     .child(
                         Button::icon_only("play", IconName::Play)
                             .selected(true)

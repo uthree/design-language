@@ -63,11 +63,38 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   do not.
 - Secondary commands go in a visible menu or a context menu, not in hover-only icon strips.
 - Loading indicators only while something really waits.
+- **Everything the pointer can press, the keyboard can reach.** Use Atelier's components (they
+  are tab stops, press on Enter/Space and leave the order when disabled) rather than a `div` with
+  `on_click`; a custom control takes `.tab_index(0)` and its id as `debug_selector`. The focus
+  outline is Atelier's and shows only after keyboard navigation.
+- When Atelier lacks something you need — an icon, a slot, a hook — use the open door
+  (`IconSource`, `.control(..)`, `.window_controls(..)`, a container's `.id(..)`) and, if there
+  is none, add it to Atelier rather than copying a component's sizes and colours into the app.
+
+## Forms and preferences
+
+- One preferences window: pages in a leading `Sidebar` (with search when there are more than a
+  handful of settings), one page at a time, each opening with a `SectionHeader` and its
+  description. The column is at most `density.form_width` wide; the rest of the page stays
+  empty rather than stretching the fields.
+- Labels go **above** anything typed into or chosen from (`FormField`, the default), so long and
+  translated labels never squeeze the control; **beside** a switch or checkbox
+  (`FormField::beside`), so the label reads as the question and the control as the answer.
+- A `Switch` applies at once and is never followed by Save. Settings that take effect together
+  (a backend and its address) are committed by the page's primary, Save, at the trailing end of
+  the page's foot; it is disabled until something changed, and Revert sits beside it.
+  "Reset to defaults" is a ghost at the leading end, away from Save.
+- Group related fields under a `FormGroup` title; one group needs no title.
+- Each field's description says what changes, not what the control is. An error sits under its
+  field with a mark and says how to fix it.
+- A `StatusBar` along the window's bottom edge reports what the last action did ("Saved",
+  "Downloaded 2 models"); it never asks a question and never holds the only copy of an error the
+  person must act on.
 
 ## Creator-tool specifics
 
 - The window has one bar: `TitleBar` is both chrome and main toolbar. Keep it slim and on one
-  line: the document title centred, a short subtitle beside it rather than under it, frequent
+  line: only the document title, centred, with no subtitle beside or under it; frequent
   commands at the edges, and empty space around the title so the bar can be dragged.
 - Canvas first: the timeline/editor gets `flex_1` and `min_w_0`/`min_h_0`; inspectors and the
   agent panel are fixed-width, dismissible regions on the trailing edge.
@@ -111,3 +138,5 @@ states. Errors say what happened and how to recover. No terminal period on label
 6. Does it read under Studio, Glass and Mono, light and dark?
 7. Are empty, loading, error, awaiting-approval and disabled states designed?
 8. Is every icon-only control named (tooltip) and every state shown by more than colour?
+9. Can every control be reached with Tab and pressed with Enter or Space, in reading order, with
+   disabled ones skipped?

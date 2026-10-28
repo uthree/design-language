@@ -27,7 +27,9 @@
 //! ripples through a sky or a stack of silk would break the stillness they are there for.
 //!
 //! Put the screen's words on a card above the backdrop, never on it. When
-//! [`crate::Motion::enabled`] is off it stands still and answers nothing.
+//! [`crate::Motion::enabled`] is off it stands still and answers nothing. While its window is
+//! not the active one it holds still where it was, and drifts on from there when the window
+//! comes back.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -42,8 +44,7 @@ mod cpu;
 mod gpu;
 mod sim;
 
-use crate::backdrop::BackdropPalette;
-use crate::motion::looping;
+use crate::backdrop::{BackdropPalette, Clock};
 use crate::theme::{ActiveTheme, Appearance, Direction, Theme};
 
 /// The frame drawn when motion is off.
@@ -158,6 +159,7 @@ struct Cache {
     key: Option<Key>,
     image: Option<Arc<RenderImage>>,
     sim: sim::Sim,
+    clock: Option<Clock>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -181,21 +183,28 @@ impl RenderOnce for AmbientBackdrop {
         // Without a GPU the scene is a still image: shading it on the CPU every frame would cost
         // far more than an ambient backdrop is worth.
         let still = self.phase.is_some() || !gpu::available();
-        let scene = Scene {
+        let drifting = !still && cx.theme().motion.enabled;
+        // In an inactive window it holds still where it was.
+        let running = drifting && window.is_window_active();
+        let clock = cache.update(cx, |cache, _| {
+            Clock::advance(&mut cache.clock, running, REST, period)
+        });
+        let phase = match self.phase {
+            Some(phase) => phase,
+            None if drifting => clock.phase(period),
+            None => REST,
+        };
+        if running {
+            window.request_animation_frame();
+        }
+        Scene {
             ambience: self.ambience,
             palette: self.palette,
-            phase: self.phase.unwrap_or(REST),
-            frames,
-            interactive: !still && cx.theme().motion.enabled,
-            cache,
-        };
-        if still {
-            return scene.into_any_element();
-        }
-        looping(scene, self.id, period, REST, cx, |scene, phase| Scene {
             phase,
-            ..scene
-        })
+            frames,
+            interactive: running,
+            cache,
+        }
     }
 }
 

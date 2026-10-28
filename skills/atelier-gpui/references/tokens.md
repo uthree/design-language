@@ -42,7 +42,9 @@ that genuinely draws differently; application code should read the resolved toke
 
 Surfaces: `background`, `chrome`, `surface`, `elevated`, `overlay`, `sunken`.
 Washes over any surface: `hover`, `pressed`, `selected`.
-Lines: `border`, `border_strong`, `separator`, `highlight` (bezel), `focus_ring`.
+Lines: `border`, `border_strong`, `separator`, `highlight` (bezel), `focus_ring` (the keyboard
+focus outline every control draws, 2px, a pixel clear of its edge; `theme.focus_ring()` is the
+halo a focused text field wears instead).
 Text: `text`, `text_muted` (≥4.5:1 everywhere), `text_faint`, `text_disabled`.
 Accent: `accent`, `accent_hover`, `accent_text` (readable), `accent_wash`, `on_accent`,
 `solid`, `on_solid`.
@@ -65,7 +67,9 @@ Helpers: `mix`, `lighten`, `contrast`, `ensure_contrast`.
 ## Sizes
 
 - `theme.density`: `control_sm/md/lg`, `row`, `control_padding`, `panel_padding`,
-  `toolbar`, `title_bar` (the window's title bar, slimmer than a toolbar).
+  `toolbar`, `title_bar` (the window's title bar, slimmer than a toolbar), `status_bar` (the
+  report line along a window's bottom edge), `form_width` (widest a form or preferences column
+  grows: 640 Studio, 720 Glass, 680 Mono).
   `ControlSize::height(theme)` maps a component size to these.
 - `theme.spacing`: `xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32` (see rules.md).
 - `theme.shape`: `radius_xs/sm/md/lg/xl`, `capsule_controls`; use `theme.control_radius(h)`

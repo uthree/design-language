@@ -170,7 +170,6 @@ impl Showcase {
         TitleBar::new()
             .leading(Button::icon_only("sidebar", IconName::SidebarLeft).tooltip("Hide sidebar"))
             .title("Midnight Drive")
-            .subtitle("Edited 2 min ago")
             .child(div().w(theme.spacing.lg))
             .child(transport(fit, cx))
             .trailing(

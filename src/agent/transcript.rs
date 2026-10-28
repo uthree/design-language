@@ -10,6 +10,7 @@ use gpui::{
 
 use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Avatar, Spinner};
+use crate::focus::focusable;
 use crate::icon::{Icon, IconName};
 use crate::motion::{appear, chevron, lerp, looping, reveal, transition};
 use crate::text::{Label, TextColor, TextSize};
@@ -106,6 +107,7 @@ pub struct AssistantMessage {
     body: Option<AnyElement>,
     name: SharedString,
     meta: Option<SharedString>,
+    anonymous: bool,
     streaming: bool,
     actions: Vec<AnyElement>,
 }
@@ -119,6 +121,7 @@ impl AssistantMessage {
             body: None,
             name: "Assistant".into(),
             meta: None,
+            anonymous: false,
             streaming: false,
             actions: Vec::new(),
         }
@@ -145,6 +148,14 @@ impl AssistantMessage {
     /// Muted metadata after the name: the model, the time taken.
     pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
         self.meta = Some(meta.into());
+        self
+    }
+
+    /// Leave out the identity line: no avatar, no name. Use it wherever only two voices speak —
+    /// the person in their bubbles and one agent in open prose — since the form already says
+    /// who is talking. Metadata, if any, moves to the footer.
+    pub fn anonymous(mut self) -> Self {
+        self.anonymous = true;
         self
     }
 
@@ -247,27 +258,37 @@ impl RenderOnce for AssistantMessage {
                 |caret, delta| caret.opacity(gpui::pulsating_between(0.2, 1.)(delta)),
             )
         });
+        let (identity, footer_meta) = if self.anonymous {
+            (None, self.meta)
+        } else {
+            let identity = div()
+                .flex()
+                .items_center()
+                .gap(theme.spacing.sm)
+                .child(Avatar::agent().size(px(20.)))
+                .child(
+                    Label::new(self.name)
+                        .size(TextSize::Small)
+                        .weight(theme.typography.label_weight),
+                )
+                .children(self.meta.map(|meta| {
+                    Label::new(meta)
+                        .size(TextSize::XSmall)
+                        .color(TextColor::Faint)
+                }));
+            (Some(identity), None)
+        };
+        let footer_meta = footer_meta.filter(|_| !self.streaming).map(|meta| {
+            Label::new(meta)
+                .size(TextSize::XSmall)
+                .color(TextColor::Faint)
+        });
+        let has_actions = !self.actions.is_empty();
         let message = div()
             .flex()
             .flex_col()
             .gap(theme.spacing.sm)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(theme.spacing.sm)
-                    .child(Avatar::agent().size(px(20.)))
-                    .child(
-                        Label::new(self.name)
-                            .size(TextSize::Small)
-                            .weight(theme.typography.label_weight),
-                    )
-                    .children(self.meta.map(|meta| {
-                        Label::new(meta)
-                            .size(TextSize::XSmall)
-                            .color(TextColor::Faint)
-                    })),
-            )
+            .children(identity)
             .child(
                 div()
                     .flex()
@@ -278,9 +299,23 @@ impl RenderOnce for AssistantMessage {
                     .children(body)
                     .children(caret),
             )
-            .when(!self.streaming && !self.actions.is_empty(), |column| {
-                column.child(div().flex().gap(theme.spacing.xxs).children(self.actions))
-            });
+            .when(
+                !self.streaming && (!self.actions.is_empty() || footer_meta.is_some()),
+                |column| {
+                    column.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(theme.spacing.xxs)
+                            .children(self.actions)
+                            .children(footer_meta.map(|meta| {
+                                div()
+                                    .when(has_actions, |slot| slot.ml(theme.spacing.xs))
+                                    .child(meta)
+                            })),
+                    )
+                },
+            );
         arrive(message, self.id, cx)
     }
 }
@@ -342,20 +377,26 @@ impl RenderOnce for ReasoningBlock {
         let theme = cx.theme();
         let colors = &theme.colors;
         let hover = colors.hover;
-        let mut header = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.xs)
-            .h(theme.density.control_sm)
-            .px(theme.spacing.xs)
-            .rounded(theme.shape.radius_sm)
-            .text_size(theme.typography.size_sm)
-            .text_color(colors.text_muted)
-            .hover(move |style| style.bg(hover))
-            .child(Icon::new(IconName::Brain).size(px(13.)))
-            .child(self.summary)
-            .child(chevron);
+        let mut header = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.on_toggle.is_none(),
+            theme.shape.radius_sm,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.xs)
+        .h(theme.density.control_sm)
+        .px(theme.spacing.xs)
+        .rounded(theme.shape.radius_sm)
+        .text_size(theme.typography.size_sm)
+        .text_color(colors.text_muted)
+        .hover(move |style| style.bg(hover))
+        .child(Icon::new(IconName::Brain).size(px(13.)))
+        .child(self.summary)
+        .child(chevron);
         if let Some(handler) = self.on_toggle {
             header = header.on_click(handler);
         }
@@ -479,41 +520,47 @@ impl RenderOnce for ToolCall {
                 .into_any_element(),
         };
         let hover = colors.hover;
-        let mut row = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .h(theme.density.row)
-            .px(theme.spacing.sm)
-            .rounded(theme.shape.radius_sm)
-            .text_size(theme.typography.size_sm)
-            .hover(move |style| style.bg(hover))
-            .child(Icon::new(self.icon).size(px(13.)).color(colors.text_faint))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_color(colors.text)
-                    .child(self.summary),
-            )
-            .child(
-                Label::new(self.name)
-                    .size(TextSize::XSmall)
-                    .mono()
-                    .color(TextColor::Faint),
-            )
-            // A finished call's mark settles in as the spinner gives way to it.
-            .child(transition(
-                div().flex().w(px(14.)).justify_center().child(state_mark),
-                (id.clone(), "state"),
-                &self.state,
-                theme.motion.normal,
-                window,
-                cx,
-                |mark, delta| mark.opacity(delta),
-            ));
+        let mut row = focusable(
+            div().id(self.id.clone()),
+            &self.id,
+            self.on_toggle.is_none(),
+            theme.shape.radius_sm,
+            window,
+            cx,
+        )
+        .flex()
+        .items_center()
+        .gap(theme.spacing.sm)
+        .h(theme.density.row)
+        .px(theme.spacing.sm)
+        .rounded(theme.shape.radius_sm)
+        .text_size(theme.typography.size_sm)
+        .hover(move |style| style.bg(hover))
+        .child(Icon::new(self.icon).size(px(13.)).color(colors.text_faint))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(colors.text)
+                .child(self.summary),
+        )
+        .child(
+            Label::new(self.name)
+                .size(TextSize::XSmall)
+                .mono()
+                .color(TextColor::Faint),
+        )
+        // A finished call's mark settles in as the spinner gives way to it.
+        .child(transition(
+            div().flex().w(px(14.)).justify_center().child(state_mark),
+            (id.clone(), "state"),
+            &self.state,
+            theme.motion.normal,
+            window,
+            cx,
+            |mark, delta| mark.opacity(delta),
+        ));
         let reveal_id = (id, "detail");
         if let Some(handler) = self.on_toggle {
             row = row.on_click(handler);

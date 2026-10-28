@@ -512,7 +512,6 @@ impl Render for Visualizer {
             .child(
                 TitleBar::new()
                     .title("Analyzer")
-                    .subtitle("Master bus · 48 kHz")
                     .child(
                         SegmentedControl::new(
                             "tap",

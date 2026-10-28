@@ -37,6 +37,28 @@ WindowFrame::new().font(theme.typography.ui.clone()).text_color(theme.colors.tex
 
 Persist the choice with `Direction::id()` / `Direction::from_id()` and `Appearance`.
 
+`atelier::init` also binds Tab and Shift-Tab for keyboard navigation, and `WindowFrame` handles
+them; an app whose window root is not a `WindowFrame` wraps its root in
+`atelier::tab_navigation(..)` and focuses it once (see [components.md](components.md),
+"Keyboard"). If the app binds Tab itself in a context (a code editor inserting a tab), its
+binding wins there.
+
+## Testing
+
+Components use their id as gpui's `debug_selector`, so with gpui's `test-support` feature on in
+the test build (`[dev-dependencies] gpui = { version = "=0.2.2", features = ["test-support"] }`)
+a `VisualTestContext` finds them directly:
+
+```rust
+let bounds = cx.debug_bounds("save").unwrap();
+cx.simulate_click(bounds.center(), Modifiers::default());
+// Keyboard: gpui presses a focused control on the key's release.
+cx.simulate_keystrokes("tab");
+cx.simulate_event(KeyUpEvent { keystroke: Keystroke::parse("enter").unwrap() });
+```
+
+Do not wrap Atelier components in `div().debug_selector(..)` to find them.
+
 ## Migrating an existing gpui UI (Auris Studio)
 
 Auris already has its own `Theme`, `Scheme`, `Metrics` and `ui::widgets`. Migrate in layers, not
@@ -56,7 +78,24 @@ in one rewrite:
    `AgentPanelStatus` maps one-to-one onto `AgentStatus`; the chrome switch becomes
    `AgentToggle`. Keep Auris's own `TextField` as the composer's `.input(...)`.
 4. **Then layout**: toolbar, sidebars, inspector using `Toolbar`, `Sidebar`, `SectionHeader`,
-   `ListItem`.
+   `ListItem`; the settings window on `FormField`, `FormGroup` and `StatusBar`
+   (`examples/preferences.rs`).
+
+Where Auris copied an Atelier component's sizes to get something it lacked, replace the copy
+with the component and the hook it now has:
+
+| Auris workaround | Atelier now |
+| --- | --- |
+| `nav_item` (a `ListItem` copy with `tab_index` and a focus ring) | `ListItem` — a tab stop with the ring; `.description_lines(2)` for long Japanese descriptions |
+| own `button` for keyboard reach and `debug_selector` | `Button` — tab stop, Enter/Space, id as selector |
+| fields copying `TextField`'s colours around an editable `div` | `TextField::new().id(..).track_focus(..).on_mouse_down(..).empty(..).child(input)` |
+| `agent_components::assistant_message` without the name line | `AssistantMessage::anonymous()` |
+| `auris-redo.svg`, `auris-bolt.svg`, `Code` for the keyboard page | `IconName::Redo`, `Bolt`, `Keyboard`; own SVGs and logos via `IconSource::svg/image` |
+| `div().debug_selector(..)` wrappers | the component's id |
+| `titlebar::composed` | `TitleBar::window_controls(width, buttons).window_drag(false)` |
+| hand-made panel-to-screen transition | `Morph` + `Measure` ([motion.md](motion.md)) |
+| pointer blocking on panels over the metal, stilling it when inactive | `.occlude()` (still needed); stilling is built in |
+| a row of composer controls copied beside the composer | `Composer::control(..)`, `.empty(..)` |
 
 Check each step under all three directions in both appearances, and keep Auris's existing visual
 tests passing.

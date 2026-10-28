@@ -34,7 +34,7 @@ raw-window-handle = "0.6"
 # only the Command Line Tools installed. Feature unification applies it to the library as well
 # whenever the examples are built.
 [dev-dependencies]
-gpui = { version = "=0.2.2", features = ["runtime_shaders"] }
+gpui = { version = "=0.2.2", features = ["runtime_shaders", "test-support"] }
 # Checks the ambient backdrops' shaders without a GPU; the naga wgpu 25 uses.
 naga = { version = "25", features = ["wgsl-in"] }
 

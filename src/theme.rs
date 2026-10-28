@@ -255,6 +255,11 @@ pub struct Density {
     pub toolbar: Pixels,
     /// Height of the window's title bar: slimmer than a toolbar, one row of small controls.
     pub title_bar: Pixels,
+    /// Height of the status bar along a window's bottom edge: one line of small text.
+    pub status_bar: Pixels,
+    /// Widest a form or a preferences page's column grows, so labels stay near their fields
+    /// and lines stay readable.
+    pub form_width: Pixels,
 }
 
 /// Typefaces and the type scale.
@@ -441,6 +446,8 @@ impl Theme {
             &mut density.panel_padding,
             &mut density.toolbar,
             &mut density.title_bar,
+            &mut density.status_bar,
+            &mut density.form_width,
         ] {
             *size *= factor;
         }
@@ -857,6 +864,8 @@ fn density(direction: Direction) -> Density {
             panel_padding: px(10.),
             toolbar: px(40.),
             title_bar: px(32.),
+            status_bar: px(24.),
+            form_width: px(640.),
         },
         Direction::Glass => Density {
             control_sm: px(24.),
@@ -867,6 +876,8 @@ fn density(direction: Direction) -> Density {
             panel_padding: px(16.),
             toolbar: px(52.),
             title_bar: px(40.),
+            status_bar: px(28.),
+            form_width: px(720.),
         },
         Direction::Mono => Density {
             control_sm: px(22.),
@@ -877,6 +888,8 @@ fn density(direction: Direction) -> Density {
             panel_padding: px(14.),
             toolbar: px(44.),
             title_bar: px(36.),
+            status_bar: px(26.),
+            form_width: px(680.),
         },
     }
 }

@@ -6,7 +6,8 @@ use gpui::{
     linear_gradient, px,
 };
 
-use crate::icon::{Icon, IconName};
+use crate::focus::focusable;
+use crate::icon::{Icon, IconSource};
 use crate::overlay::Tooltip;
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 
@@ -64,8 +65,8 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 pub struct Button {
     id: ElementId,
     label: Option<SharedString>,
-    icon: Option<IconName>,
-    icon_after: Option<IconName>,
+    icon: Option<IconSource>,
+    icon_after: Option<IconSource>,
     variant: ButtonVariant,
     size: ControlSize,
     selected: bool,
@@ -73,6 +74,7 @@ pub struct Button {
     disabled: bool,
     full_width: bool,
     square: bool,
+    radius: Option<gpui::Pixels>,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
@@ -87,9 +89,9 @@ impl Button {
     }
 
     /// An icon-only button. Give it a [`Button::tooltip`]: an icon alone does not say what it does.
-    pub fn icon_only(id: impl Into<ElementId>, icon: IconName) -> Self {
+    pub fn icon_only(id: impl Into<ElementId>, icon: impl Into<IconSource>) -> Self {
         Self {
-            icon: Some(icon),
+            icon: Some(icon.into()),
             square: true,
             variant: ButtonVariant::Ghost,
             ..Self::bare(id)
@@ -109,6 +111,7 @@ impl Button {
             disabled: false,
             full_width: false,
             square: false,
+            radius: None,
             tooltip: None,
             on_click: None,
         }
@@ -137,14 +140,14 @@ impl Button {
     }
 
     /// Leading icon.
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
     /// Trailing icon, usually a chevron on a menu button.
-    pub fn icon_after(mut self, icon: IconName) -> Self {
-        self.icon_after = Some(icon);
+    pub fn icon_after(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon_after = Some(icon.into());
         self
     }
 
@@ -160,7 +163,15 @@ impl Button {
         self
     }
 
-    /// Greyed out and unclickable.
+    /// Corner radius, in place of the theme's control radius. Use it when the button sits in a
+    /// corner of a surface and must follow that corner: pass
+    /// `Theme::concentric(surface_radius, inset)`, as the composer's Send button does.
+    pub fn radius(mut self, radius: gpui::Pixels) -> Self {
+        self.radius = Some(radius);
+        self
+    }
+
+    /// Greyed out, unclickable, and out of the Tab order.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -255,31 +266,38 @@ fn paint(theme: &Theme, variant: ButtonVariant, selected: bool, tint: Option<Hsl
 }
 
 impl RenderOnce for Button {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let height = self.size.height(theme);
+        let id = self.id;
         let paint = paint(theme, self.variant, self.selected, self.tint);
         let raised = matches!(self.variant, ButtonVariant::Secondary) && !self.selected;
 
-        let mut button = div()
-            .id(self.id)
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .gap(match self.size {
-                ControlSize::Small => theme.spacing.xs,
-                _ => theme.spacing.sm - theme.spacing.xxs,
-            })
-            .h(height)
-            .rounded(theme.control_radius(height))
-            .text_size(match self.size {
-                ControlSize::Small => theme.typography.size_sm,
-                _ => theme.typography.size_md,
-            })
-            .font_weight(theme.typography.label_weight)
-            .text_color(paint.text)
-            .whitespace_nowrap();
+        let mut button = focusable(
+            div().id(id.clone()),
+            &id,
+            self.disabled,
+            self.radius.unwrap_or(theme.control_radius(height)),
+            window,
+            cx,
+        )
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .gap(match self.size {
+            ControlSize::Small => theme.spacing.xs,
+            _ => theme.spacing.sm - theme.spacing.xxs,
+        })
+        .h(height)
+        .rounded(self.radius.unwrap_or(theme.control_radius(height)))
+        .text_size(match self.size {
+            ControlSize::Small => theme.typography.size_sm,
+            _ => theme.typography.size_md,
+        })
+        .font_weight(theme.typography.label_weight)
+        .text_color(paint.text)
+        .whitespace_nowrap();
 
         button = if self.square {
             button.w(height)
