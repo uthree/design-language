@@ -96,6 +96,7 @@ with the component and the hook it now has:
 | hand-made panel-to-screen transition | `Morph` + `Measure` ([motion.md](motion.md)) |
 | pointer blocking on panels over the metal, stilling it when inactive | `.occlude()` (still needed); stilling is built in |
 | a row of composer controls copied beside the composer | `Composer::control(..)`, `.empty(..)` |
+| an opaque title bar on Windows so DWM's caption buttons do not show through | built into `TitleBar` under the acrylic backdrop |
 
 Check each step under all three directions in both appearances, and keep Auris's existing visual
 tests passing.

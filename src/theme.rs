@@ -515,7 +515,7 @@ impl Theme {
 
     /// Whether this theme's window shows a blurred desktop: a translucent material on a system
     /// that blurs.
-    fn blurs_window(&self) -> bool {
+    pub(crate) fn blurs_window(&self) -> bool {
         self.material == Material::Translucent && crate::window::blur_supported()
     }
 

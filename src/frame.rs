@@ -454,7 +454,7 @@ impl RenderOnce for TitleBar {
             .items_center()
             .w_full()
             .h(height)
-            .bg(theme.colors.chrome)
+            .bg(title_bar_fill(theme))
             .when_some(radius, |bar, radius| {
                 bar.rounded_tl(radius).rounded_tr(radius)
             })
@@ -507,6 +507,23 @@ impl RenderOnce for TitleBar {
                     .child(CaptionButtons { radius }),
                 None => bar.child(div().flex_none().w(trailing_edge)),
             })
+    }
+}
+
+/// The title bar's fill: the chrome tint, or on Windows under the acrylic system backdrop the
+/// same tint composited over the background and made opaque, so the caption buttons DWM draws
+/// in the extended frame do not show through (see `native_caption_shows_through`).
+fn title_bar_fill(theme: &Theme) -> gpui::Hsla {
+    let chrome = theme.colors.chrome;
+    if crate::window::native_caption_shows_through(theme) {
+        let opaque = |color: gpui::Hsla| gpui::Hsla { a: 1., ..color };
+        opaque(crate::theme::mix(
+            opaque(theme.colors.background),
+            opaque(chrome),
+            chrome.a,
+        ))
+    } else {
+        chrome
     }
 }
 

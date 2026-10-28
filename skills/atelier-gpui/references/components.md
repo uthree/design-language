@@ -136,7 +136,10 @@ clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
   maximise through its own `WM_NCHITTEST`) keeps that and still uses `TitleBar` for the layout:
   `.window_controls(width, its_buttons)` puts its own minimise/maximise/close in place of the
   title bar's (the title stays centred against `width`), and `.window_drag(false)` leaves the
-  drag region to it. Do not re-implement the bar's centring: the sides carry no padding, because
+  drag region to it. On Windows 11 22H2 and later under Glass, the acrylic backdrop makes DWM
+  draw its own caption buttons under the window; the title bar paints its chrome opaque there so
+  they never show through its own (doubled glyphs when maximised). Do not paint it yourself.
+  Do not re-implement the bar's centring: the sides carry no padding, because
   a flex basis smaller than a side's padding is raised to it and the title drifts.
 - `WindowFrame::new()` — the window root. Paints `theme.window_fill()`; on Linux, where the
   window draws its own decorations, it adds the resize edges, the shadow and the rounded top
