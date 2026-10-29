@@ -998,15 +998,23 @@ fn elevation(direction: Direction, appearance: Appearance) -> Elevation {
     }
 }
 
-/// The platform's interface font, with fallbacks for Japanese, Korean and Chinese.
+/// The platform's interface font, with fallbacks for Japanese, Korean and Chinese, and for
+/// colour emoji.
 ///
 /// Only families that exist on the current platform are listed: DirectWrite logs an error for
-/// every missing family it is asked to map.
+/// every missing family it is asked to map. Linux lists no emoji font: gpui ignores these
+/// fallbacks there and cosmic-text finds Noto Color Emoji on its own, and asking for that family
+/// by name would make gpui drop it, as it has no letters.
 pub fn ui_font(family: Option<&str>) -> Font {
     let (base, fallbacks): (&str, &[&str]) = if cfg!(target_os = "macos") {
         (
             ".SystemUIFont",
-            &["Hiragino Sans", "Apple SD Gothic Neo", "PingFang SC"],
+            &[
+                "Hiragino Sans",
+                "Apple SD Gothic Neo",
+                "PingFang SC",
+                "Apple Color Emoji",
+            ],
         )
     } else if cfg!(target_os = "windows") {
         (
@@ -1016,6 +1024,7 @@ pub fn ui_font(family: Option<&str>) -> Font {
                 "Meiryo",
                 "Malgun Gothic",
                 "Microsoft YaHei UI",
+                "Segoe UI Emoji",
             ],
         )
     } else {
@@ -1035,9 +1044,12 @@ pub fn ui_font(family: Option<&str>) -> Font {
 /// The platform's monospaced font.
 pub fn mono_font() -> Font {
     let (base, fallbacks): (&str, &[&str]) = if cfg!(target_os = "macos") {
-        ("Menlo", &["Hiragino Sans"])
+        ("Menlo", &["Hiragino Sans", "Apple Color Emoji"])
     } else if cfg!(target_os = "windows") {
-        ("Cascadia Mono", &["Consolas", "Yu Gothic UI"])
+        (
+            "Cascadia Mono",
+            &["Consolas", "Yu Gothic UI", "Segoe UI Emoji"],
+        )
     } else {
         ("DejaVu Sans Mono", &["Noto Sans CJK JP"])
     };

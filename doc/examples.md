@@ -25,6 +25,9 @@ cargo run --example agent_desktop
 
 Sessions with live status on the left, the conversation in the middle (reasoning, grouped tool
 calls, command output, a diff, the task plan, an approval), and the changes it made on the right.
+The composer takes typing (a stand-in for the application's own input: no selection or input
+method): `:thi` opens emoji suggestions, Up and Down move through them, Tab or Enter puts 🤔 in,
+and Enter sends the message into the transcript. `--draft "いい感じ :thi"` starts with text typed.
 
 ![Agent desktop](images/agent-desktop.png)
 

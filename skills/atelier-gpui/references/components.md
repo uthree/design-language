@@ -286,4 +286,6 @@ There is no node-graph component: compose one from the pieces above on a `canvas
 in the input, which moves `selected` with Up/Down, accepts with Tab and closes with Escape. The
 list keeps the selected row in view, shows `.rows(6)` before scrolling and can say
 `.empty("No match")`. In the agent's composer pass it to `Composer::completions(..)`, which
-floats it above (see [agent.md](agent.md)).
+floats it above (see [agent.md](agent.md)). `Completion::glyph("🤔")` leads a row with an emoji
+or symbol instead of an icon; `emoji::completions(id, &matches)` builds the `:shortcode:` list
+(see "Emoji in messages" in [agent.md](agent.md)).
