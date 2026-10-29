@@ -1,5 +1,6 @@
 //! A welcome screen over a backdrop: liquid metal, or an ambient scene — aurora, silk dunes,
-//! clouds of colour, caustics, a low sun, a galaxy, jellyfish or a shoal of fish — drifting
+//! clouds of colour, caustics, a low sun, a galaxy, jellyfish, a shoal of fish, a turning figure
+//! of light points or a growing garden — drifting
 //! slowly behind a card that holds the words and the two ways to start. A bar below the card
 //! picks the backdrop and its palette.
 //!
@@ -11,7 +12,7 @@
 //!
 //! ```text
 //! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics|solar|galaxy|
-//!     jellyfish|shoal]
+//!     jellyfish|shoal|formation|garden]
 //!     [--palette theme|dusk|ocean|ember|meadow|graphite]
 //!     [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
@@ -38,7 +39,7 @@ enum Backdrop {
 
 impl Backdrop {
     /// Every backdrop, in the order the picker offers them.
-    const ALL: [Backdrop; 9] = [
+    const ALL: [Backdrop; 11] = [
         Backdrop::Metal,
         Backdrop::Ambient(Ambience::Aurora),
         Backdrop::Ambient(Ambience::Dunes),
@@ -48,6 +49,8 @@ impl Backdrop {
         Backdrop::Ambient(Ambience::Galaxy),
         Backdrop::Ambient(Ambience::Jellyfish),
         Backdrop::Ambient(Ambience::Shoal),
+        Backdrop::Ambient(Ambience::Formation),
+        Backdrop::Ambient(Ambience::Garden),
     ];
 
     fn label(self) -> &'static str {

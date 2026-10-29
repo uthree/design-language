@@ -9,6 +9,8 @@
 //! - [`Ambience::Galaxy`]: a spiral galaxy turning slowly in deep space.
 //! - [`Ambience::Jellyfish`]: jellyfish drifting up through deep water, lit from within.
 //! - [`Ambience::Shoal`]: schools of small fish wheeling through sunlit shallows.
+//! - [`Ambience::Formation`]: points of light gathering into one turning figure after another.
+//! - [`Ambience::Garden`]: a row of plants growing, blooming and fading over the cycle.
 //!
 //! Every one is drawn from the theme: its background, the agent gradient and the accent, so it
 //! sits with the rest of the screen in each direction and appearance. A [`BackdropPalette`]
@@ -26,8 +28,9 @@
 //!
 //! On the GPU each answers the window (see `sim.rs`): moving or resizing it leaves the scene
 //! behind for a moment and it swings back, nearer layers further, so the window has depth. Most
-//! also answer the pointer, each in its own way (see [`Ambience`]); Bloom, Caustics, Galaxy and
-//! Jellyfish leave ripples as it travels. Aurora's curtains leave it alone, but its brighter stars
+//! also answer the pointer, each in its own way (see [`Ambience`]); Bloom, Caustics, Galaxy,
+//! Jellyfish, Formation and Garden leave ripples as it travels. Formation's points and Garden's
+//! plants are laid out on the CPU each frame and handed to their shaders (see `figures.rs`). Aurora's curtains leave it alone, but its brighter stars
 //! wake as the pointer passes and join into constellations, and lines can be drawn between them
 //! (see `stars.rs`). Dunes leaves it alone, since ripples through a stack of silk would break the
 //! stillness it is there for. Anything laid over a backdrop that takes clicks should `occlude()`,
@@ -49,6 +52,7 @@ use gpui::{
 use image::{Frame as ImageFrame, ImageBuffer};
 
 mod cpu;
+mod figures;
 mod gpu;
 mod sim;
 mod stars;
@@ -100,11 +104,19 @@ pub enum Ambience {
     /// Two schools of small fish wheeling through sunlit shallows. Fish near the pointer dart away
     /// from it, and the school closes up behind; the window leaves the schools behind.
     Shoal,
+    /// Points of light gathering into one figure after another (a cube, a rippling sheet, a knot,
+    /// a double helix), turning slowly over a floor of faint lines. The pointer scatters the
+    /// points near it; the window swings the figure.
+    Formation,
+    /// A row of plants that grow, leaf and bloom over the cycle, then let their petals go and
+    /// fade, swaying over a dusk of soft lights. They lean away from the pointer; the window leaves
+    /// them behind.
+    Garden,
 }
 
 impl Ambience {
     /// Every scene, in the order a picker should offer them.
-    pub const ALL: [Ambience; 8] = [
+    pub const ALL: [Ambience; 10] = [
         Ambience::Aurora,
         Ambience::Dunes,
         Ambience::Bloom,
@@ -113,6 +125,8 @@ impl Ambience {
         Ambience::Galaxy,
         Ambience::Jellyfish,
         Ambience::Shoal,
+        Ambience::Formation,
+        Ambience::Garden,
     ];
 
     /// The scene's name.
@@ -126,6 +140,8 @@ impl Ambience {
             Ambience::Galaxy => "Galaxy",
             Ambience::Jellyfish => "Jellyfish",
             Ambience::Shoal => "Shoal",
+            Ambience::Formation => "Formation",
+            Ambience::Garden => "Garden",
         }
     }
 
@@ -150,6 +166,8 @@ impl Ambience {
             Ambience::Galaxy => 90,
             Ambience::Jellyfish => 48,
             Ambience::Shoal => 40,
+            Ambience::Formation => 64,
+            Ambience::Garden => 60,
         })
     }
 }
@@ -363,11 +381,13 @@ fn paint(
             } else {
                 Default::default()
             };
+            let time = phase * std::f32::consts::TAU;
             let frame = Frame {
                 width,
                 height,
-                time: phase * std::f32::consts::TAU,
+                time,
                 palette,
+                figures: figures::figures(scene.ambience, time, size, &response),
                 response,
                 sky,
             };
@@ -455,7 +475,8 @@ fn listen(
 }
 
 /// One frame to shade: its size in pixels, the moment in the cycle (in radians), the colours,
-/// the response to the pointer and the window, and Aurora's stars.
+/// the response to the pointer and the window, Aurora's stars, and Formation's and Garden's
+/// pieces.
 struct Frame {
     width: u32,
     height: u32,
@@ -463,19 +484,24 @@ struct Frame {
     palette: Palette,
     response: sim::Response,
     sky: stars::Marks,
+    figures: figures::Figures,
 }
 
 impl Frame {
-    /// A still frame at `phase` of the cycle, answering nothing.
+    /// A still frame of `ambience` at `phase` of the cycle, answering nothing.
     #[cfg(test)]
-    fn still(width: u32, height: u32, phase: f32, theme: &Theme) -> Self {
+    fn still(ambience: Ambience, width: u32, height: u32, phase: f32, theme: &Theme) -> Self {
+        let size = [width as f32, height as f32];
+        let time = phase * std::f32::consts::TAU;
+        let response = sim::Response::default();
         Self {
             width,
             height,
-            time: phase * std::f32::consts::TAU,
+            time,
             palette: Palette::new(theme, BackdropPalette::Theme),
-            response: Default::default(),
-            sky: stars::Sky::default().marks([width as f32, height as f32]),
+            figures: figures::figures(ambience, time, size, &response),
+            response,
+            sky: stars::Sky::default().marks(size),
         }
     }
 }
@@ -622,12 +648,15 @@ mod tests {
                     sim.response(size).sway,
                 );
                 let phase = REST + t / ambience.period().as_secs_f32();
+                let time = phase * std::f32::consts::TAU;
+                let response = sim.response(size);
                 let frame = Frame {
                     width,
                     height,
-                    time: phase * std::f32::consts::TAU,
+                    time,
                     palette: Palette::new(&theme, BackdropPalette::Theme),
-                    response: sim.response(size),
+                    figures: figures::figures(ambience, time, size, &response),
+                    response,
                     sky: sky.marks(size),
                 };
                 let mut pixels = gpu::render(ambience, &frame).expect("a GPU");

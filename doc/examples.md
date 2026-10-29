@@ -99,10 +99,10 @@ These two screenshots were captured on Linux under Xvfb.
 ## ambient — a welcome screen over liquid metal or an ambient scene
 
 ```bash
-cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|caustics|solar|galaxy|jellyfish|shoal
+cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|caustics|solar|galaxy|jellyfish|shoal|formation|garden
 ```
 
-A welcome card over a backdrop: liquid metal or one of eight ambient scenes. A bar below the
+A welcome card over a backdrop: liquid metal or one of ten ambient scenes. A bar below the
 card picks the backdrop and its palette (`--palette
 theme|dusk|ocean|ember|meadow|graphite`): the theme's own colours or a preset, through
 `.palette(BackdropPalette::…)` on either backdrop.
@@ -132,7 +132,7 @@ kept to the welcome screen: on controls it made sizes uneven and said too much. 
 
 ### Ambient scenes
 
-`AmbientBackdrop` behind the same card: eight slow scenes in the manner of a desktop
+`AmbientBackdrop` behind the same card: ten slow scenes in the manner of a desktop
 wallpaper. **Aurora** hangs curtains of light in leaning rays
 over a night sky with stars, mirrored in still water below. **Dunes** lays sheets of silk one in
 front of another, each lit from above with a sheen on its slopes and a soft shadow on the one
@@ -145,8 +145,14 @@ over a field of stars: a warm core, arms of young stars with lanes of dust and k
 gas, and now and then a shooting star. **Jellyfish** sends jellyfish drifting up through deep
 water, their bells pulsing, lit from within, tentacles trailing, among sinking marine snow.
 **Shoal** wheels two schools of small fish through sunlit shallows, each fish flicking its tail
-and catching the light. Solar and Galaxy are rich takes on the pixel sunset and galaxy behind
-the boards of [bevytris](https://github.com/uthree/bevytris). Every scene takes its
+and catching the light. **Formation** gathers points of light into one figure after another,
+the edges of a cube, a rippling sheet, a knot and a double helix, turning in space over a floor
+of faint lines, each point streaking a little along its path. **Garden** grows a row of plants
+over the cycle: stems wander up and branch, leaves unfold and every tip blooms, then the petals
+let go and drift down and the garden fades and grows again, swaying over a dusk of soft lights.
+Solar, Galaxy, Formation and Garden are rich takes on the pixel scenes behind the boards of
+[bevytris](https://github.com/uthree/bevytris); Formation's points and Garden's plants are laid
+out on the CPU each frame and handed to their shaders, as Aurora's stars are. Every scene takes its
 colours from the theme — background, agent gradient and accent — or from the palette picked
 below the card, as light over the dark in a dark appearance and as washes of colour in a light
 one.
@@ -156,8 +162,9 @@ Each answers the window: moving or resizing it leaves the scene behind for a mom
 layers further, and it swings back. All but Dunes answer the pointer too. Bloom stirs the colour
 round itself, Caustics gathers the light like a lens, Solar gathers ghosts of the sun along the
 line to it, and Galaxy bends the light round itself like a great mass; these leave ripples as it
-travels. Jellyfish glow brighter and shy away from it, and fish dart away from it while the
-school closes up behind. Aurora's curtains stay still, but its brighter stars wake as the
+travels. Jellyfish glow brighter and shy away from it, fish dart away from it while the
+school closes up behind, Formation's points scatter round it, and Garden's plants lean away
+from it. Aurora's curtains stay still, but its brighter stars wake as the
 pointer passes and join into a constellation round it that fades behind it; press on a star
 and let go over another to draw a line between them that stays (draw it again to take it
 away), press on the open sky to send a shooting star, and double-click to wipe the lines away.
@@ -181,6 +188,10 @@ no response. Captured on Linux under Weston.
 ![Jellyfish, Glass dark](images/ambient-jellyfish-glass-dark.png)
 
 ![Shoal, Studio light](images/ambient-shoal-studio-light.png)
+
+![Formation, Glass dark](images/ambient-formation-glass-dark.png)
+
+![Garden, Studio light](images/ambient-garden-studio-light.png)
 
 ## auris_screens — two Auris Studio windows redrawn
 

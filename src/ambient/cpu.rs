@@ -22,6 +22,8 @@ pub(super) fn render(ambience: Ambience, frame: &Frame) -> Vec<u8> {
         Ambience::Galaxy => Shader::galaxy,
         Ambience::Jellyfish => Shader::jellyfish,
         Ambience::Shoal => Shader::shoal,
+        Ambience::Formation => Shader::formation,
+        Ambience::Garden => Shader::garden,
     };
     let mut pixels = vec![0u8; width * height * 4];
     let threads = std::thread::available_parallelism()
@@ -71,6 +73,8 @@ struct Shader {
     stars: [[f32; 4]; STARS],
     lines: Vec<([f32; 4], f32)>,
     meteors: Vec<[f32; 4]>,
+    /// Formation's and Garden's pieces, each kind on its own.
+    figures: [Vec<[[f32; 4]; 2]>; 4],
 }
 
 /// A ripple's wavelength and the width of its band, as in `common.wgsl`.
@@ -102,6 +106,14 @@ impl Shader {
                 .zip(frame.sky.strengths)
                 .collect(),
             meteors: frame.sky.meteors[..frame.sky.meteor_count].to_vec(),
+            figures: {
+                let mut rest = &frame.figures.items[..];
+                frame.figures.counts.map(|count| {
+                    let (kind, after) = rest.split_at((count as usize).min(rest.len()));
+                    rest = after;
+                    kind.to_vec()
+                })
+            },
         }
     }
 
@@ -771,6 +783,210 @@ impl Shader {
     }
 }
 
+impl Shader {
+    // formation.wgsl
+
+    fn formation(&self, p: V2) -> V3 {
+        let t = self.time;
+        let px = 1. / self.unit;
+        let centre = v2(0.25 * self.size.x / self.unit, -0.02);
+        let white = v3(1., 1., 1.);
+        let mut color = self.deep.mix(self.base, ease(-0.6, 0.6, p.y) * 0.6);
+        let behind = p - centre + self.sway * 0.15;
+        color = self.light(
+            color,
+            self.hues[3],
+            (-behind.dot(behind) / 0.2).exp() * 0.25,
+        );
+        let glint = behind - v2(0.1, 0.08);
+        color = self.light(color, self.hues[1], (-glint.dot(glint) / 0.08).exp() * 0.12);
+
+        let below = p.y - FORMATION_HORIZON;
+        if below > 0. {
+            let x = (p.x - centre.x + self.sway.x * 0.6) / below * 2.;
+            let z = 1.2 / below;
+            let across = (fract(x) - 0.5).abs();
+            let along = (fract(z - t / TAU * 8.) - 0.5).abs();
+            let wide_x = px / below * 2.;
+            let wide_z = px * 1.2 / (below * below);
+            let lines =
+                ease(wide_x * 1.5, 0., 0.5 - across).max(ease(wide_z * 1.5, 0., 0.5 - along));
+            let fade = ease(0., 0.15, below) * ease(0.6, 0.1, wide_z);
+            color = self.light(
+                color,
+                self.hues[3].mix(self.hues[2], 0.5),
+                lines * fade * 0.3,
+            );
+        }
+
+        for &[path, point] in &self.figures[0] {
+            let radius = point[0];
+            let reach = radius * 6. + px;
+            let (head_at, tail_at) = (v2(path[0], path[1]), v2(path[2], path[3]));
+            if p.x < head_at.x.min(tail_at.x) - reach
+                || p.y < head_at.y.min(tail_at.y) - reach
+                || p.x > head_at.x.max(tail_at.x) + reach
+                || p.y > head_at.y.max(tail_at.y) + reach
+            {
+                continue;
+            }
+            let d = segment(p, head_at, tail_at);
+            let tail = head_at - tail_at;
+            let head = ((p - tail_at).dot(tail) / tail.dot(tail).max(1e-8)).clamp(0., 1.);
+            let core = ease(radius + px, radius * 0.3, d) * (0.35 + 0.65 * head);
+            let halo = (-d / (radius * 2.5)).exp() * 0.35;
+            let hue = self.hues[point[2] as usize % 4];
+            let ink = hue
+                .mix(self.deep * 0.5, 0.35)
+                .mix(hue.mix(white, core * 0.6), self.dark);
+            color = self.light(color, ink, (core + halo) * point[1] * 0.8);
+        }
+        self.light(color, white, self.ripples(p).0.max(0.) * 0.08)
+    }
+
+    // garden.wgsl
+
+    fn garden(&self, p: V2) -> V3 {
+        let t = self.time;
+        let phase = fract(t / TAU);
+        let px = 1. / self.unit;
+        let height = self.size.y / self.unit;
+        let white = v3(1., 1., 1.);
+
+        let mut color = self.deep.mix(self.base, ease(-0.6, 0.45, p.y));
+        let low = p.y - 0.4 * height;
+        color = self.light(color, self.hues[0], (-low * low / 0.05).exp() * 0.22);
+        let drift = p * 5. + self.sway * 0.5 + self.orbit(1., 0.) * 0.4;
+        let cell = v2(drift.x.floor(), drift.y.floor());
+        let seed = hash(cell + v2(7.7, 7.7));
+        let spot = v2(fract(drift.x), fract(drift.y))
+            - v2(0.5, 0.5)
+            - (v2(hash(cell + v2(1.9, 1.9)), hash(cell + v2(4.3, 4.3))) - v2(0.5, 0.5)) * 0.4;
+        let size = 0.18 + 0.14 * hash(cell + v2(9.1, 9.1));
+        let bokeh = step(0.6, seed)
+            * ease(size, size - 0.05, spot.length())
+            * (0.6 + 0.4 * ease(size - 0.08, size, spot.length()));
+        color = self.light(
+            color,
+            self.hues[(seed * 40.) as usize % 4],
+            bokeh * lerp(0.12, 0.1, self.dark),
+        );
+
+        let ground =
+            0.5 * height - 0.02 + 0.006 * (p.x * 9.).sin() + 0.004 * (p.x * 23. + 1.).sin();
+        let soil = (self.base.mix(self.hues[3], 0.35) * 0.9)
+            .mix(self.deep.mix(self.hues[3], 0.15) * 0.6, self.dark);
+        color = color.mix(soil, ease(-px, px, p.y - ground + self.sway.y * 0.1));
+
+        let stem_ink = (self.deep.mix(self.hues[3], 0.4) * 0.55)
+            .mix(self.hues[3].mix(self.hues[2], 0.5), self.dark);
+        for &[line, shape] in &self.figures[0] {
+            let reach = shape[0] * 4. + px;
+            let (a, b) = (v2(line[0], line[1]), v2(line[2], line[3]));
+            if p.x < a.x.min(b.x) - reach
+                || p.y < a.y.min(b.y) - reach
+                || p.x > a.x.max(b.x) + reach
+                || p.y > a.y.max(b.y) + reach
+            {
+                continue;
+            }
+            let ab = b - a;
+            let s = ((p - a).dot(ab) / ab.dot(ab).max(1e-8)).clamp(0., 1.);
+            let d = (p - a - ab * s).length();
+            let w = lerp(shape[0], shape[1], s);
+            let cover = ease(w + px * 0.75, w - px * 0.75, d);
+            let stem = stem_ink.mix(self.hues[shape[2] as usize % 4], 0.2);
+            color = color.mix(stem, cover * shape[3]);
+            color = self.light(
+                color,
+                stem,
+                (-d / (w * 3.)).exp() * 0.12 * self.dark * shape[3],
+            );
+        }
+        for &[leaf, shape] in &self.figures[1] {
+            let l = p - v2(leaf[0], leaf[1]);
+            if l.dot(l) > leaf[3] * leaf[3] * 1.2 {
+                continue;
+            }
+            let along = v2(leaf[2].cos(), leaf[2].sin());
+            let u = l.dot(along);
+            let v = l.dot(v2(-along.y, along.x));
+            let half = shape[0] * (PI * (u / leaf[3].max(1e-4)).clamp(0., 1.)).sin();
+            let sdf = if u < 0. || u > leaf[3] {
+                1.
+            } else {
+                v.abs() - half
+            };
+            let cover = ease(px, -px, sdf);
+            let green = stem_ink.mix(self.hues[shape[1] as usize % 4], 0.3);
+            let rib = ease(px, 0., v.abs()) * 0.35;
+            color = color.mix(green.mix(white, rib * self.dark), cover * shape[2]);
+        }
+        for &[bloom, shape] in &self.figures[2] {
+            let l = p - v2(bloom[0], bloom[1]);
+            let r = l.length();
+            let size = bloom[2];
+            if r > size * 2. + px {
+                continue;
+            }
+            let open = bloom[3];
+            let angle = l.y.atan2(l.x) + shape[1] * 0.1;
+            let edge =
+                size * (0.5 + 0.5 * (angle * 2.5).cos().abs().powf(0.6)) * (0.4 + 0.6 * open);
+            let cover = ease(edge + px, edge - px, r);
+            let hue = self.hues[shape[0] as usize % 4];
+            let petal = hue.mix(self.deep * 0.5, 0.15).mix(hue, self.dark);
+            let heart = ease(size * 0.22 + px, size * 0.22 - px, r);
+            let mut flower = petal.mix(self.hues[0].mix(white, 0.5), heart);
+            flower = flower.mix(white, ease(edge * 0.4, edge, r) * 0.25 * self.dark);
+            color = color.mix(flower, cover * shape[2]);
+            color = self.light(
+                color,
+                hue,
+                (-r / size).exp() * 0.3 * open * self.dark * shape[2],
+            );
+        }
+
+        let falling = ease(0.74, 0.84, phase) * (1. - ease(0.93, 0.99, phase));
+        if falling > 0. {
+            let at = (p + v2(0.05 * (t * 6. + p.y * 8.).sin(), -phase * 1.2)) * 9.;
+            let cell = v2(at.x.floor(), at.y.floor());
+            let seed = hash(cell + v2(3.3, 3.3));
+            let spin = seed * TAU + t * 5.;
+            let offset =
+                (v2(hash(cell + v2(2.1, 2.1)), hash(cell + v2(6.2, 6.2))) - v2(0.5, 0.5)) * 0.5;
+            let local = rotate(
+                v2(fract(at.x), fract(at.y)) - v2(0.5, 0.5) - offset,
+                v2(spin.cos(), spin.sin()),
+            );
+            let petal = ease(0.12, 0.08, v2(local.x, local.y * 2.2).length());
+            color = color.mix(
+                self.hues[(seed * 40.) as usize % 4],
+                step(0.7, seed) * petal * falling * 0.8,
+            );
+        }
+        let rise = p * 14. + v2(0., t / TAU * 28.);
+        let mote_cell = wrap(v2(rise.x.floor(), rise.y.floor()), 28.);
+        let mote = v2(fract(rise.x), fract(rise.y))
+            - v2(0.5, 0.5)
+            - (v2(
+                hash(mote_cell + v2(5.5, 5.5)),
+                hash(mote_cell + v2(8.8, 8.8)),
+            ) - v2(0.5, 0.5))
+                * 0.6;
+        let flicker = 0.5 + 0.5 * (t * 9. + hash(mote_cell) * 60.).sin();
+        let motes = step(0.93, hash(mote_cell))
+            * ease(0.09, 0., mote.length())
+            * flicker
+            * lerp(0.25, 0.7, self.dark);
+        color = self.light(color, self.hues[0].mix(white, 0.4), motes);
+        self.light(color, white, self.ripples(p).0.max(0.) * 0.08)
+    }
+}
+
+/// As `HORIZON` in `formation.wgsl`.
+const FORMATION_HORIZON: f32 = 0.3;
+
 const SOLAR_RIDGES: usize = 3;
 
 /// As `GHOSTS` in `solar.wgsl`.
@@ -975,16 +1191,16 @@ mod tests {
     use super::*;
     use crate::theme::{Appearance, Direction, Theme};
 
-    fn frame(phase: f32) -> Frame {
+    fn frame(ambience: Ambience, phase: f32) -> Frame {
         let theme = Theme::new(Direction::Glass, Appearance::Dark);
-        Frame::still(64, 40, phase, &theme)
+        Frame::still(ambience, 64, 40, phase, &theme)
     }
 
     #[test]
     fn every_scene_renders_and_loops() {
         for ambience in Ambience::ALL {
-            let first = render(ambience, &frame(0.));
-            let last = render(ambience, &frame(1.));
+            let first = render(ambience, &frame(ambience, 0.));
+            let last = render(ambience, &frame(ambience, 1.));
             assert_eq!(first.len(), 64 * 40 * 4);
             let differing = first
                 .iter()
@@ -995,7 +1211,7 @@ mod tests {
                 differing < first.len() / 100,
                 "{ambience:?} loops seamlessly"
             );
-            let middle = render(ambience, &frame(0.4));
+            let middle = render(ambience, &frame(ambience, 0.4));
             let moved = first
                 .iter()
                 .zip(&middle)
@@ -1008,13 +1224,19 @@ mod tests {
     #[test]
     fn every_scene_answers_the_pointer_only_if_it_says_so() {
         for ambience in Ambience::ALL {
-            let still = render(ambience, &frame(0.2));
-            let mut touched = frame(0.2);
+            let still = render(ambience, &frame(ambience, 0.2));
+            let mut touched = frame(ambience, 0.2);
             touched.response.presence = 1.;
             touched.response.pointer = [0.1, 0.05];
             touched.response.velocity = [0.6, 0.];
             touched.response.waves[0] = [0.1, 0.05, 0.08, 1.];
             touched.response.wave_count = 1;
+            touched.figures = super::super::figures::figures(
+                ambience,
+                touched.time,
+                [64., 40.],
+                &touched.response,
+            );
             // Aurora answers through its stars alone: one awake, joined to the next.
             if ambience == Ambience::Aurora {
                 assert_eq!(
@@ -1049,7 +1271,7 @@ mod tests {
             for n in 0..10 {
                 render(
                     ambience,
-                    &Frame::still(width, height, n as f32 / 10., &theme),
+                    &Frame::still(ambience, width, height, n as f32 / 10., &theme),
                 );
             }
             println!("{ambience:?}: {:?} per frame", start.elapsed() / 10);
