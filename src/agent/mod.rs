@@ -17,12 +17,14 @@
 
 mod code;
 mod composer;
+mod effort;
 mod label;
 mod panel;
 mod transcript;
 
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
+pub use effort::{EffortButton, EffortPicker};
 pub use label::AgentLabel;
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use transcript::{

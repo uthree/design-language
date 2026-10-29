@@ -220,11 +220,14 @@ tempo and key, a waveform player rather than a bare slider, "この曲で続け�
 time left instead of an empty player. Stopping generation moved into the composer (Send becomes
 Stop), so the footer keeps only navigation, the preference switch and the editor hand-off,
 which explains why it is disabled. Only two voices speak, so the assistant's answer has no name
-line (`AssistantMessage::anonymous()`); the model picker, the reasoning effort and fast mode sit
-in the composer's own control row. Both messages carry a Copy button (`CopyButton`) and the
-person's text can be selected; each take's name was written by the assistant, so it wears the
-agent's sparkle (`AgentLabel`) and its own Copy button, and its player seeks, sets the volume
-and mutes, with the keyboard too. `--slash` opens the composer's `Completions` on `/mo`.
+line (`AssistantMessage::anonymous()`); the model picker and the effort sit in the composer's
+own control row. The effort button opens one card for the reasoning effort and fast mode
+(`EffortPicker`, `--effort`): the bolt toggles fast mode, the level reads in the accent over
+the model's name, and a wide stepped slider sparkles where it is filled. Both messages carry a
+Copy button (`CopyButton`) and the person's text can be selected; each take's name was written
+by the assistant, so it wears the agent's sparkle (`AgentLabel`) and its own Copy button, and
+its player seeks, sets the volume and mutes, with the keyboard too. `--slash` opens the
+composer's `Completions` on `/mo`.
 
 ![AI compose](images/auris-compose.png)
 

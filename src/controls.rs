@@ -22,7 +22,7 @@ use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// The fill of an "on" control: the accent, or the foreground in solid-primary directions.
-fn on_fill(theme: &Theme) -> Hsla {
+pub(crate) fn on_fill(theme: &Theme) -> Hsla {
     match theme.primary_style {
         PrimaryStyle::Accent => theme.colors.accent,
         PrimaryStyle::Solid => theme.colors.solid,
