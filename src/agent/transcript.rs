@@ -11,29 +11,59 @@ use gpui::{
 use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Avatar, Spinner};
 use crate::focus::focusable;
-use crate::icon::{Icon, IconName};
-use crate::motion::{appear, chevron, lerp, looping, reveal, transition};
+use crate::icon::{Icon, IconName, IconSource};
+use crate::motion::{appear, chevron, looping, reveal, transition};
+use crate::selectable::SelectableText;
+use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Rise a new transcript row into place, if it has an id to remember that it already arrived.
+/// The hover group of a message, whose footer actions show while the pointer is over it.
+const MESSAGE_GROUP: &str = "atelier-message";
+
+/// A message's footer actions: drawn only while the pointer is over the message, while the
+/// person moves through the window with the keyboard, or always when `pinned`. The row keeps
+/// its height while hidden, so showing it never moves the transcript.
+fn hover_actions(actions: Vec<AnyElement>, pinned: bool, cx: &App) -> gpui::Div {
+    let theme = cx.theme();
+    div()
+        .flex()
+        .items_center()
+        .gap(theme.spacing.xxs)
+        .when(!pinned && !crate::focus::focus_visible(cx), |row| {
+            row.opacity(0.)
+                .group_hover(MESSAGE_GROUP, |style| style.opacity(1.))
+        })
+        .children(actions)
+}
+
+/// Fade a new transcript row in, if it has an id to remember that it already arrived.
+///
+/// Only its opacity moves, never its margin or height: a transcript grows from the bottom and
+/// stays scrolled there, so a row that changed height while it arrived would jolt everything
+/// above it and shift any selection the person is making.
 fn arrive(row: gpui::Div, id: Option<ElementId>, cx: &App) -> AnyElement {
+    let row = row.group(MESSAGE_GROUP);
     match id {
-        Some(id) => appear(row, id, cx, |row, delta| {
-            row.opacity(delta).mt(px(lerp(8., 0., delta)))
-        }),
+        Some(id) => appear(row, id, cx, |row, delta| row.opacity(delta)),
         None => row.into_any_element(),
     }
 }
 
-/// What the person said: a bubble on the trailing edge, with any attached context above it.
+/// What the person said: a bubble on the trailing edge, with any attached context above it
+/// and any actions below.
+///
+/// Given an id, its text can be selected and copied ([`SelectableText`]), exactly as typed.
 #[derive(IntoElement)]
 pub struct UserMessage {
     id: Option<ElementId>,
     text: SharedString,
+    body: Option<AnyElement>,
     attachments: Vec<AnyElement>,
+    actions: Vec<AnyElement>,
+    pinned: bool,
 }
 
 impl UserMessage {
@@ -42,14 +72,24 @@ impl UserMessage {
         Self {
             id: None,
             text: text.into(),
+            body: None,
             attachments: Vec::new(),
+            actions: Vec::new(),
+            pinned: false,
         }
     }
 
-    /// A stable id for the message. With one, the message rises into place when it first
-    /// appears; without, it is simply drawn.
+    /// A stable id for the message. With one, the message fades in when it first appears and
+    /// its text can be selected; without, it is simply drawn.
     pub fn id(mut self, id: impl Into<ElementId>) -> Self {
         self.id = Some(id.into());
+        self
+    }
+
+    /// Replace the text inside the bubble, as [`AssistantMessage::body`] does: an
+    /// application's own Markdown or rich-text view. The bubble keeps its fill and shape.
+    pub fn body(mut self, body: impl IntoElement) -> Self {
+        self.body = Some(body.into_any_element());
         self
     }
 
@@ -58,12 +98,33 @@ impl UserMessage {
         self.attachments.push(attachment.into_any_element());
         self
     }
+
+    /// A small action under the bubble, such as an icon-only [`crate::CopyButton`] or Edit.
+    /// Like [`AssistantMessage::action`], it shows while the pointer is over the message or the
+    /// person is moving with the keyboard.
+    pub fn action(mut self, action: impl IntoElement) -> Self {
+        self.actions.push(action.into_any_element());
+        self
+    }
+
+    /// Keep the actions drawn even without the pointer over the message.
+    pub fn pin_actions(mut self) -> Self {
+        self.pinned = true;
+        self
+    }
 }
 
 impl RenderOnce for UserMessage {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
+        let body = match (self.body, &self.id) {
+            (Some(body), _) => body,
+            (None, Some(id)) => SelectableText::new((id.clone(), "text"), self.text)
+                .on_fill(colors.on_user_bubble)
+                .into_any_element(),
+            (None, None) => self.text.into_any_element(),
+        };
         let message = div()
             .flex()
             .flex_col()
@@ -89,8 +150,11 @@ impl RenderOnce for UserMessage {
                     .bg(colors.user_bubble)
                     .text_color(colors.on_user_bubble)
                     .text_size(theme.typography.size_md)
-                    .child(self.text),
-            );
+                    .child(body),
+            )
+            .when(!self.actions.is_empty(), |column| {
+                column.child(hover_actions(self.actions, self.pinned, cx))
+            });
         arrive(message, self.id, cx)
     }
 }
@@ -105,11 +169,13 @@ pub struct AssistantMessage {
     id: Option<ElementId>,
     text: SharedString,
     body: Option<AnyElement>,
-    name: SharedString,
+    name: Option<SharedString>,
     meta: Option<SharedString>,
+    logo: Option<IconSource>,
     anonymous: bool,
     streaming: bool,
     actions: Vec<AnyElement>,
+    pinned: bool,
 }
 
 impl AssistantMessage {
@@ -119,15 +185,18 @@ impl AssistantMessage {
             id: None,
             text: text.into(),
             body: None,
-            name: "Assistant".into(),
+            name: None,
             meta: None,
+            logo: None,
             anonymous: false,
             streaming: false,
             actions: Vec::new(),
+            pinned: false,
         }
     }
 
-    /// A stable id for the message, so it rises into place when it first appears.
+    /// A stable id for the message. With one, it fades in when it first appears and the text
+    /// of the built-in rendering can be selected and copied, block by block.
     pub fn id(mut self, id: impl Into<ElementId>) -> Self {
         self.id = Some(id.into());
         self
@@ -139,15 +208,22 @@ impl AssistantMessage {
         self
     }
 
-    /// The agent's name in the identity line.
+    /// The agent's name in the identity line; [`crate::Strings::assistant`] by default.
     pub fn name(mut self, name: impl Into<SharedString>) -> Self {
-        self.name = name.into();
+        self.name = Some(name.into());
         self
     }
 
     /// Muted metadata after the name: the model, the time taken.
     pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
         self.meta = Some(meta.into());
+        self
+    }
+
+    /// Draw the identity line's avatar as the provider's mark — a [`crate::ProviderLogo`] —
+    /// instead of the agent's gradient, so the person sees whose model answered.
+    pub fn logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.logo = Some(logo.into());
         self
     }
 
@@ -165,27 +241,57 @@ impl AssistantMessage {
         self
     }
 
-    /// A footer action such as Copy or Retry. Keep them visible, not hover-only.
+    /// A small footer action such as an icon-only [`crate::CopyButton`] or Retry. Actions show
+    /// while the pointer is over the message and whenever the person moves with the keyboard,
+    /// so they stay out of the reading but Tab still finds them. Metadata stays visible.
     pub fn action(mut self, action: impl IntoElement) -> Self {
         self.actions.push(action.into_any_element());
         self
     }
+
+    /// Keep the actions drawn even without the pointer over the message, for example on the
+    /// answer the person is most likely to act on next.
+    pub fn pin_actions(mut self) -> Self {
+        self.pinned = true;
+        self
+    }
 }
 
-fn prose(text: &str, theme: &Theme) -> Vec<AnyElement> {
+fn prose(text: &str, id: Option<&ElementId>, theme: &Theme) -> Vec<AnyElement> {
     let colors = &theme.colors;
     let mut blocks = Vec::new();
+    // With an id, each block is its own selectable text, keyed by its place in the message.
+    let mut count = 0;
+    let mut text_block = |text: String, mono: bool| -> AnyElement {
+        count += 1;
+        match id {
+            Some(id) => {
+                let id =
+                    ElementId::NamedChild(Box::new(id.clone()), format!("block-{count}").into());
+                SelectableText::new(id, text)
+                    .when(mono, |text| text.mono().size(TextSize::Small))
+                    .into_any_element()
+            }
+            None => text.into_any_element(),
+        }
+    };
     let mut lines = text.lines().peekable();
     let mut paragraph = String::new();
-    let flush = |paragraph: &mut String, blocks: &mut Vec<AnyElement>| {
+    let flush = |paragraph: &mut String,
+                 blocks: &mut Vec<AnyElement>,
+                 text_block: &mut dyn FnMut(String, bool) -> AnyElement| {
         if !paragraph.is_empty() {
-            blocks.push(div().child(std::mem::take(paragraph)).into_any_element());
+            blocks.push(
+                div()
+                    .child(text_block(std::mem::take(paragraph), false))
+                    .into_any_element(),
+            );
         }
     };
     while let Some(line) = lines.next() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") {
-            flush(&mut paragraph, &mut blocks);
+            flush(&mut paragraph, &mut blocks, &mut text_block);
             let mut code = Vec::new();
             for line in lines.by_ref() {
                 if line.trim_start().starts_with("```") {
@@ -203,28 +309,33 @@ fn prose(text: &str, theme: &Theme) -> Vec<AnyElement> {
                     .border_color(colors.border)
                     .font(theme.typography.mono.clone())
                     .text_size(theme.typography.size_sm)
-                    .child(code.join("\n"))
+                    .child(text_block(code.join("\n"), true))
                     .into_any_element(),
             );
         } else if let Some(item) = trimmed.strip_prefix("- ") {
-            flush(&mut paragraph, &mut blocks);
+            flush(&mut paragraph, &mut blocks, &mut text_block);
             blocks.push(
                 div()
                     .flex()
                     .gap(theme.spacing.sm)
                     .child(div().text_color(colors.text_faint).child("•"))
-                    .child(div().flex_1().min_w_0().child(item.to_owned()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(text_block(item.to_owned(), false)),
+                    )
                     .into_any_element(),
             );
         } else if let Some(heading) = trimmed.strip_prefix("# ") {
-            flush(&mut paragraph, &mut blocks);
+            flush(&mut paragraph, &mut blocks, &mut text_block);
             blocks.push(
                 Label::new(heading.to_owned())
                     .heading_weight()
                     .into_any_element(),
             );
         } else if trimmed.is_empty() {
-            flush(&mut paragraph, &mut blocks);
+            flush(&mut paragraph, &mut blocks, &mut text_block);
         } else {
             if !paragraph.is_empty() {
                 paragraph.push(' ');
@@ -232,7 +343,7 @@ fn prose(text: &str, theme: &Theme) -> Vec<AnyElement> {
             paragraph.push_str(trimmed);
         }
     }
-    flush(&mut paragraph, &mut blocks);
+    flush(&mut paragraph, &mut blocks, &mut text_block);
     blocks
 }
 
@@ -242,7 +353,7 @@ impl RenderOnce for AssistantMessage {
         let colors = &theme.colors;
         let body = match self.body {
             Some(body) => vec![body],
-            None => prose(&self.text, theme),
+            None => prose(&self.text, self.id.as_ref(), theme),
         };
         let caret = self.streaming.then(|| {
             looping(
@@ -265,9 +376,9 @@ impl RenderOnce for AssistantMessage {
                 .flex()
                 .items_center()
                 .gap(theme.spacing.sm)
-                .child(Avatar::agent().size(px(20.)))
+                .child(agent_avatar(self.logo).size(px(20.)))
                 .child(
-                    Label::new(self.name)
+                    Label::new(self.name.unwrap_or_else(|| cx.strings().assistant.clone()))
                         .size(TextSize::Small)
                         .weight(theme.typography.label_weight),
                 )
@@ -307,7 +418,9 @@ impl RenderOnce for AssistantMessage {
                             .flex()
                             .items_center()
                             .gap(theme.spacing.xxs)
-                            .children(self.actions)
+                            .when(has_actions, |footer| {
+                                footer.child(hover_actions(self.actions, self.pinned, cx))
+                            })
                             .children(footer_meta.map(|meta| {
                                 div()
                                     .when(has_actions, |slot| slot.ml(theme.spacing.xs))
@@ -648,7 +761,7 @@ pub struct ApprovalCard {
     id: ElementId,
     title: SharedString,
     body: Option<SharedString>,
-    allow_label: SharedString,
+    allow_label: Option<SharedString>,
     destructive: bool,
     on_allow: Option<DecisionHandler>,
     on_deny: Option<DecisionHandler>,
@@ -662,7 +775,7 @@ impl ApprovalCard {
             id: id.into(),
             title: title.into(),
             body: None,
-            allow_label: "Allow".into(),
+            allow_label: None,
             destructive: false,
             on_allow: None,
             on_deny: None,
@@ -678,7 +791,7 @@ impl ApprovalCard {
 
     /// The verb of the allowing button, for example "Replace".
     pub fn allow_label(mut self, label: impl Into<SharedString>) -> Self {
-        self.allow_label = label.into();
+        self.allow_label = Some(label.into());
         self
     }
 
@@ -720,25 +833,33 @@ impl RenderOnce for ApprovalCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        let mut allow = Button::new((self.id.clone(), "allow"), self.allow_label)
-            .size(ControlSize::Small)
-            .variant(if self.destructive {
-                ButtonVariant::Danger
-            } else {
-                ButtonVariant::Primary
-            });
+        let mut allow = Button::new(
+            (self.id.clone(), "allow"),
+            self.allow_label
+                .unwrap_or_else(|| cx.strings().allow.clone()),
+        )
+        .size(ControlSize::Small)
+        .variant(if self.destructive {
+            ButtonVariant::Danger
+        } else {
+            ButtonVariant::Primary
+        });
         if let Some(handler) = self.on_allow {
             allow = allow.on_click(handler);
         }
-        let mut deny = Button::new((self.id.clone(), "deny"), "Deny").size(ControlSize::Small);
+        let mut deny = Button::new((self.id.clone(), "deny"), cx.strings().deny.clone())
+            .size(ControlSize::Small);
         if let Some(handler) = self.on_deny {
             deny = deny.on_click(handler);
         }
         let always = self.on_always.map(|handler| {
-            Button::new((self.id.clone(), "always"), "Always allow")
-                .size(ControlSize::Small)
-                .ghost()
-                .on_click(handler)
+            Button::new(
+                (self.id.clone(), "always"),
+                cx.strings().always_allow.clone(),
+            )
+            .size(ControlSize::Small)
+            .ghost()
+            .on_click(handler)
         });
         let card = div()
             .flex()
@@ -869,6 +990,7 @@ impl RenderOnce for ChatNotice {
 #[derive(IntoElement)]
 pub struct ThinkingIndicator {
     label: SharedString,
+    logo: Option<IconSource>,
 }
 
 impl ThinkingIndicator {
@@ -876,7 +998,14 @@ impl ThinkingIndicator {
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
             label: label.into(),
+            logo: None,
         }
+    }
+
+    /// The provider's mark in place of the agent's gradient, as on [`AssistantMessage::logo`].
+    pub fn logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.logo = Some(logo.into());
+        self
     }
 }
 
@@ -888,7 +1017,7 @@ impl RenderOnce for ThinkingIndicator {
             .flex()
             .items_center()
             .gap(theme.spacing.sm)
-            .child(Avatar::agent().size(px(20.)))
+            .child(agent_avatar(self.logo).size(px(20.)))
             .child(div().flex().gap(px(3.)).children((0..3usize).map(|index| {
                 looping(
                     div().size(px(5.)).rounded(px(2.5)).bg(color),
@@ -909,4 +1038,9 @@ impl RenderOnce for ThinkingIndicator {
                     .color(TextColor::Muted),
             )
     }
+}
+
+/// The agent's avatar: the provider's mark when the application gave one, else the gradient.
+pub(super) fn agent_avatar(logo: Option<IconSource>) -> Avatar {
+    logo.map_or_else(Avatar::agent, Avatar::logo)
 }

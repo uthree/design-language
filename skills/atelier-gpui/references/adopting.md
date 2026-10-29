@@ -37,17 +37,44 @@ WindowFrame::new().font(theme.typography.ui.clone()).text_color(theme.colors.tex
 
 Persist the choice with `Direction::id()` / `Direction::from_id()` and `Appearance`.
 
+Call `atelier::init` once at start-up (calling it again only installs the theme) and switch
+themes later with `Theme::install`.
+
 `atelier::init` also binds Tab and Shift-Tab for keyboard navigation, and `WindowFrame` handles
 them; an app whose window root is not a `WindowFrame` wraps its root in
 `atelier::tab_navigation(..)` and focuses it once (see [components.md](components.md),
 "Keyboard"). If the app binds Tab itself in a context (a code editor inserting a tab), its
 binding wins there.
 
+Application shortcuts on a single key need nothing more: every Atelier tab stop carries the key
+context `AtelierControl`, and Atelier takes Enter and Space there before any binding, so Space
+for play does not fire while a button holds focus. Bind letter keys and anything your own focusable views must not see with
+`Some("!AtelierControl")` (see [rules.md](rules.md), "Components and states").
+
+## Keep up with releases
+
+Applications pin a git revision. When you move it, read [CHANGELOG.md](../../../CHANGELOG.md)
+between the old and new revision — each release ends with **Workarounds you can delete** — and
+delete them. Then run the adoption check over your sources:
+
+```sh
+path/to/atelier-gpui/tools/check-adoption.sh src            # errors fail; --strict fails on warnings too
+```
+
+It finds Atelier components wrapped in `div().debug_selector(..)`, hand-made tab stops, copies of
+components (`nav_item`, `assistant_message`, `selectable_text`, a `*_copy_button`), keys claimed
+area by area, re-implemented `Plot3d` projections, hand-made category colours and colour
+literals, each with what replaces it. Add it to the application's CI next to `cargo clippy` so
+code written later — by people or agents copying nearby code — cannot bring a workaround back.
+Mark a line you keep on purpose with `// atelier: allow`.
+
 ## Testing
 
 Components use their id as gpui's `debug_selector`, so with gpui's `test-support` feature on in
 the test build (`[dev-dependencies] gpui = { version = "=0.2.2", features = ["test-support"] }`)
 a `VisualTestContext` finds them directly:
+
+Loop a screen test over every theme with `for theme in Theme::all() { ... }`.
 
 ```rust
 let bounds = cx.debug_bounds("save").unwrap();
@@ -57,7 +84,17 @@ cx.simulate_keystrokes("tab");
 cx.simulate_event(KeyUpEvent { keystroke: Keystroke::parse("enter").unwrap() });
 ```
 
-Do not wrap Atelier components in `div().debug_selector(..)` to find them.
+A selector is the component's `ElementId` as `to_string()` writes it: `"save"` is `save`,
+`("song-adopt", 3)` is `song-adopt-3`, and a child id adds its name (`ElementId::NamedChild`,
+as `reply-block-2` for the second block of the answer with id `reply`). For two numbers, build
+the name yourself: `ElementId::Name(format!("cell-{row}-{column}").into())`. The title bar's
+title is `atelier-title`.
+
+Turn animation off in tests that press or drag things that would still be moving in:
+`atelier::motion::reduce_motion(cx)` after `atelier::init`.
+
+Do not wrap Atelier components in `div().debug_selector(..)` to find them; the adoption check
+reports a wrapper whose next lines hold a `Button`, `ListItem`, `Switch` or another control.
 
 ## Migrating an existing gpui UI (Auris Studio)
 
@@ -97,6 +134,24 @@ with the component and the hook it now has:
 | pointer blocking on panels over the metal, stilling it when inactive | `.occlude()` (still needed); stilling is built in |
 | a row of composer controls copied beside the composer | `Composer::control(..)`, `.empty(..)` |
 | an opaque title bar on Windows so DWM's caption buttons do not show through | built into `TitleBar` under the acrylic backdrop |
+| `ClaimVisualizationActivation` bound to Enter/Space per area | nothing: controls claim the keys (`AtelierControl`) |
+| `agent_components::selectable_text` and a redrawn user bubble | `UserMessage::new(text).id(..)`; `SelectableText` elsewhere |
+| copy buttons swapping their own label (`workshop_copy_button`) | `CopyButton::new(id, text).label(..).copied_label(..)` |
+| `audio_player.rs` for seek, volume, mute, loading | `AudioPlayer::on_seek/on_volume/on_mute/loading` |
+| `composer_frame` (a warning-coloured frame, a notice row, attach greyed) | `Composer::tone(..)`, `.notice(..)`, `.attach_disabled(..)` |
+| an own drag region beside `window_drag(false)` | `TitleBar::drag_region(el)` |
+| a wrapper `div` fading the `Morph` into a veil | `Morph::fill_to(..)` and `.border(..)` |
+| `.empty(false)` plus a placeholder of its own in `TextField` | `.placeholder(..).empty(..)`: it lies under your input |
+| `div().flex_1()` around each control in a `FormField` | nothing: the first control fills the width |
+| `cx.global_mut::<Theme>().motion.enabled = false` in tests | `atelier::motion::reduce_motion(cx)` |
+| `punch.svg`, `notes.svg` | `IconName::Punch`, `IconName::Notes` |
+| tooltips and labels translated one by one (`.tooltip("コピー")`) | `Strings::japanese().install(cx)` |
+| a labelled copy button under each message | the message's selectable text, and an icon-only `CopyButton` shown on hover |
+| `TimbreCamera`, `scatter_batches`, own `pick` | `scatter` per colour; `Plot3d::id(..).on_pick(..).on_orbit(..)`, `ViewPreset` |
+| `group_color` (golden-ratio hues) | `theme.categorical(index)` |
+| `has_global::<Theme>()` to choose `init` or `install` | `init` once, `Theme::install` to switch |
+| the `/model` completion list in gpui-component spacing | `Completions` / `Composer::completions` |
+| a hand-made attachment preview panel | `Card` + `SelectableText` / `AudioPlayer`, closed with a ghost `Button::icon_only(.., IconName::Close)` |
 
 Check each step under all three directions in both appearances, and keep Auris's existing visual
 tests passing.

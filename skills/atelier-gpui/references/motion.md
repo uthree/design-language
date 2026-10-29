@@ -38,7 +38,7 @@ instantly; looping indicators stand still in a readable pose.
 - Segmented control: the selected fill cross-fades between segments.
 - Disclosure, reasoning, tool calls: chevron turns; revealed content fades and settles.
 - Tool calls, tasks, plan steps: the state mark fades in when the state changes.
-- `UserMessage` / `AssistantMessage` with `.id(..)`, `ApprovalCard`: rise into place on arrival.
+- `UserMessage` / `AssistantMessage` with `.id(..)`: fade in on arrival, without moving. `ApprovalCard`: rises into place.
 - `Popover` with `.id(..)`: fades in on open.
 - Agent panel while running: a light passes along the gradient edge.
 - Streaming caret, thinking dots, spinners, skeleton shimmer, indeterminate bars: loop.
@@ -54,13 +54,16 @@ else:
 2. On the action, store `measure.bounds()` and switch screens in the same update.
 3. In the window's root (`relative()`), draw `Morph::new(("handoff", n), from)` first — it grows
    from the card to the root's bounds over `motion.normal`, from the card's radius to square,
-   in the card's fill (`.fill(colors.elevated)`) — and then the arriving screen wrapped in
+   in the card's fill (`.fill(colors.elevated)`; `.fill_to(..)` when it should end in another
+   colour or opacity, such as a translucent veil over a backdrop, and `.border(from, to)` for the
+   card's hairline) — and then the arriving screen wrapped in
    `appear(.., |screen, delta| screen.opacity(delta))` so it fades in over the shape.
 
 **Only the shape moves.** The arriving screen is laid out at its final size from its first frame
 and only fades; never scale it, slide it or re-lay it out while the shape grows, and never move
 the old screen's content along with the shape. Number each hand-off (`("handoff", n)`), since a
-`Morph` plays once per id. With motion off the shape is at its end at once. `auris_screens`
+`Morph` plays once per id. With motion off the shape is at its end at once; tests turn motion off with
+`atelier::motion::reduce_motion(cx)`. `auris_screens`
 does this from "AIで曲を作る…" to the compose window.
 
 ## Rules
@@ -74,6 +77,10 @@ does this from "AIで曲を作る…" to the compose window.
 - Small state changes use `fast`; content appearing uses `normal`. Nothing user-triggered should
   take longer than `normal`.
 - Do not animate large layout changes (panel widths, list reflow); fade or reveal instead.
+- **In a list that grows from the bottom** — a conversation, a log — a new row only fades in.
+  Never move it with margin, padding or height: the list is pinned to its end, so a row that
+  changes size as it arrives jolts everything above it and shifts the person's selection.
+  Atelier's transcript rows do this already.
 - One looping element per region at most. A screen full of spinners says nothing.
 
 ## Progress and loading — choose by what is known

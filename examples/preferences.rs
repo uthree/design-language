@@ -13,8 +13,8 @@ mod common;
 
 use atelier::{
     ActiveTheme, Appearance, Button, Checkbox, ControlSize, Direction, Divider, Edge, FormField,
-    FormGroup, IconName, Kbd, ListItem, SectionHeader, Segment, SegmentedControl, Sidebar,
-    StatusBar, Switch, TextField, TitleBar, Tone, WindowFrame,
+    FormGroup, IconName, Kbd, ListItem, ProviderLogo, SectionHeader, Segment, SegmentedControl,
+    Sidebar, StatusBar, Switch, TextField, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -137,12 +137,15 @@ impl Preferences {
                     FormField::new("自動保存")
                         .description("作業中のプロジェクトを1分ごとに保存します。")
                         .beside()
-                        .child(Switch::new("autosave", self.autosave).on_click(cx.listener(
-                            |this, _, _, cx| {
-                                this.autosave = !this.autosave;
-                                cx.notify();
-                            },
-                        ))),
+                        .note("保存は数秒おきに行われます")
+                        .child(
+                            Switch::new("autosave", self.autosave).on_change(cx.listener(
+                                |this, on: &bool, _, cx| {
+                                    this.autosave = *on;
+                                    cx.notify();
+                                },
+                            )),
+                        ),
                 )
                 .child(
                     FormField::new("起動時に最後のプロジェクトを開く")
@@ -227,9 +230,13 @@ impl Preferences {
     fn assistant(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![
             FormGroup::untitled()
-                .child(FormField::new("モデル").child(
-                    Button::new("model", "GPT-6-Sol (Codex)").icon_after(IconName::ChevronDown),
-                ))
+                .child(
+                    FormField::new("モデル").child(
+                        Button::new("model", "GPT-6-Sol (Codex)")
+                            .icon(ProviderLogo::OpenAi)
+                            .icon_after(IconName::ChevronDown),
+                    ),
+                )
                 .child(
                     FormField::new("高速モード")
                         .description("案を早く出すかわりに、作り込みを浅くします。")

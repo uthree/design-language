@@ -61,12 +61,33 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   signal colours: `colors.info` mute, `colors.warning` solo/cycle, `colors.record` arm.
 - A button that opens a dialog or needs more input ends in `…` ("Export…"). Immediate commands
   do not.
-- Secondary commands go in a visible menu or a context menu, not in hover-only icon strips.
+- Secondary commands go in a visible menu or a context menu, not in hover-only icon strips. The
+  one exception is a transcript's message actions (Copy, Retry), which show on hover and while
+  the keyboard moves, so the conversation reads as text.
 - Loading indicators only while something really waits.
 - **Everything the pointer can press, the keyboard can reach.** Use Atelier's components (they
   are tab stops, press on Enter/Space and leave the order when disabled) rather than a `div` with
-  `on_click`; a custom control takes `.tab_index(0)` and its id as `debug_selector`. The focus
-  outline is Atelier's and shows only after keyboard navigation.
+  `on_click`; a custom control takes `.tab_index(0)` and its id as `debug_selector`, with
+  `// atelier: allow` on that line so the adoption check knows it is one. The focus outline is
+  Atelier's and shows only after keyboard navigation.
+- **Single-key shortcuts yield to a focused control.** Space, Enter and letter keys bound
+  across the window (Space for play) must not fire while a control holds focus: there the key
+  belongs to the control. Atelier does this for Enter and Space by itself — every tab stop has
+  the key context `AtelierControl`, and Atelier takes the two keys there before any binding.
+  Bind letter keys, and any single key your own focusable views must not see, with the
+  context `!AtelierControl`:
+  `KeyBinding::new("space", TogglePlay, Some("!AtelierControl"))`. Never claim the keys area by
+  area with a no-op action.
+- **Arrows belong to what has focus.** On a track (the `AudioPlayer` scrubber, its volume) they
+  step the value; on a canvas — a timeline, a piano roll — they move the playhead or the
+  selection and show no focus ring. The ring appears for arrows only when a control already
+  holds focus. A track steps by a twentieth of its range, or by five seconds of audio.
+- **Text people may want to keep is selectable.** Messages, attached text, logs and error
+  details use `SelectableText` (or `UserMessage` with an id); labels on controls do not.
+  Selected text is drawn on `colors.selection`, in Atelier and in the application's own
+  inputs.
+- **Copy says it copied.** Every copy action is a `CopyButton`, so all of them answer the same
+  way.
 - When Atelier lacks something you need — an icon, a slot, a hook — use the open door
   (`IconSource`, `.control(..)`, `.window_controls(..)`, a container's `.id(..)`) and, if there
   is none, add it to Atelier rather than copying a component's sizes and colours into the app.
@@ -113,6 +134,15 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   - Any `flex_1` element holding text in a row also gets `min_w_0`, or its text will not wrap
     or truncate and pushes past its neighbours. CJK text counts as one long word.
   - Rows of cards, chips or fields that can outgrow their container use `flex_wrap`.
+- Two panes that share a region (an editor and its inspector, a model view and its controls)
+  sit side by side from `density.split_width` and stack below it, controls under the view.
+  Fold the navigation sidebar away below `density.sidebar_width` of window. Measure the region
+  for the first and the window for the second; never pick your own breakpoint.
+- **One thing, one colour, everywhere.** When colour stands for a category — a cluster of
+  sounds, a tag, a group — take it from `theme.categorical(index)` and give each thing one
+  index for good, so the map, the list and the tree all point at it with the same colour. Past
+  a handful of categories, and always under Mono, add a label or a mark: colour alone does not
+  tell ten things apart.
 - Values are monospaced (`Label::mono`) and right-aligned where they are compared: timecode,
   dB, BPM, knob readouts.
 - Document colours (track, clip, palette) are data and may be literal; draw clip bodies with the
@@ -139,4 +169,6 @@ states. Errors say what happened and how to recover. No terminal period on label
 7. Are empty, loading, error, awaiting-approval and disabled states designed?
 8. Is every icon-only control named (tooltip) and every state shown by more than colour?
 9. Can every control be reached with Tab and pressed with Enter or Space, in reading order, with
-   disabled ones skipped?
+   disabled ones skipped — and does no single-key shortcut fire while one holds focus?
+10. Does `tools/check-adoption.sh` pass: no wrapped components, no copied sizes, no workaround
+    an Atelier release has since replaced?

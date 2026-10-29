@@ -288,6 +288,8 @@ pub struct Morph {
     from_radius: Option<Pixels>,
     to_radius: Pixels,
     fill: Option<Hsla>,
+    fill_to: Option<Hsla>,
+    border: Option<(Hsla, Option<Hsla>)>,
     duration: Option<Duration>,
 }
 
@@ -303,6 +305,8 @@ impl Morph {
             from_radius: None,
             to_radius: px(0.),
             fill: None,
+            fill_to: None,
+            border: None,
             duration: None,
         }
     }
@@ -324,6 +328,21 @@ impl Morph {
     /// from.
     pub fn fill(mut self, fill: Hsla) -> Self {
         self.fill = Some(fill);
+        self
+    }
+
+    /// The colour it ends in, when the arriving screen is not the panel's colour: an opaque
+    /// panel that becomes a translucent veil over a backdrop. It blends from [`Morph::fill`]
+    /// on the same clock and easing as the shape, alpha included.
+    pub fn fill_to(mut self, fill: Hsla) -> Self {
+        self.fill_to = Some(fill);
+        self
+    }
+
+    /// A one-pixel border, as the panel it grows from has, fading to `to` (pass
+    /// `transparent_black()` to let it go) or kept to the end with `None`.
+    pub fn border(mut self, from: Hsla, to: Option<Hsla>) -> Self {
+        self.border = Some((from, to));
         self
     }
 
@@ -360,6 +379,14 @@ impl RenderOnce for Morph {
         }
         let delta = ease_out(delta);
         let (from, to) = (self.from, self.to);
+        let fill_color = match self.fill_to {
+            Some(end) => mix_alpha(fill_color, end, delta),
+            None => fill_color,
+        };
+        let border = self.border.map(|(start, end)| match end {
+            Some(end) => mix_alpha(start, end, delta),
+            None => start,
+        });
         canvas(
             |_, _, _| {},
             move |own, _, window, _| {
@@ -375,14 +402,35 @@ impl RenderOnce for Morph {
                         at(from.size.height, to.size.height),
                     ),
                 );
-                window
-                    .paint_quad(fill(bounds, fill_color).corner_radii(at(from_radius, to_radius)));
+                let mut quad = fill(bounds, fill_color).corner_radii(at(from_radius, to_radius));
+                if let Some(border) = border {
+                    quad = quad.border_widths(px(1.)).border_color(border);
+                }
+                window.paint_quad(quad);
             },
         )
         .absolute()
         .top_0()
         .left_0()
         .size_full()
+    }
+}
+
+/// `a` to `b` by `amount`, the colour in RGB and the opacity alongside, so a solid panel can
+/// thin to a veil of another colour.
+fn mix_alpha(a: Hsla, b: Hsla, amount: f32) -> Hsla {
+    let alpha = lerp(a.a, b.a, amount);
+    let color = crate::theme::mix(Hsla { a: 1., ..a }, Hsla { a: 1., ..b }, amount);
+    Hsla { a: alpha, ..color }
+}
+
+/// Turn animation off, for tests that press and drag over things that would otherwise still be
+/// moving into place. The same switch a reduced-motion setting turns.
+pub fn reduce_motion(cx: &mut App) {
+    if let Some(theme) = cx.try_global::<crate::theme::Theme>() {
+        let mut theme = theme.clone();
+        theme.motion.enabled = false;
+        cx.set_global(theme);
     }
 }
 

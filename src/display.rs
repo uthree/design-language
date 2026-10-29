@@ -8,7 +8,7 @@ use gpui::{
     percentage, point, prelude::FluentBuilder, px, size, svg,
 };
 
-use crate::icon::{Icon, IconName};
+use crate::icon::{Icon, IconName, IconSource};
 use crate::motion::looping;
 use crate::theme::{ActiveTheme, Theme};
 
@@ -156,6 +156,10 @@ pub enum AvatarKind {
     Person(SharedString),
     /// The AI agent, shown on its gradient.
     Agent,
+    /// The AI agent, shown by the mark of the provider whose model is answering — usually a
+    /// [`crate::ProviderLogo`]. Prefer it to [`AvatarKind::Agent`] wherever the model is known:
+    /// the mark says whose model is talking, which the gradient cannot.
+    Logo(IconSource),
 }
 
 /// A round identity mark.
@@ -178,6 +182,14 @@ impl Avatar {
     pub fn agent() -> Self {
         Self {
             kind: AvatarKind::Agent,
+            size: px(24.),
+        }
+    }
+
+    /// The agent shown by its provider's mark, drawn bare in the text colour.
+    pub fn logo(logo: impl Into<IconSource>) -> Self {
+        Self {
+            kind: AvatarKind::Logo(logo.into()),
             size: px(24.),
         }
     }
@@ -221,6 +233,13 @@ impl RenderOnce for Avatar {
                         .color(gpui::white()),
                 )
             }
+            // No disc: a provider's mark is its own shape, and a ring around it reads as a
+            // second logo.
+            AvatarKind::Logo(logo) => base.child(
+                Icon::new(logo)
+                    .size(self.size * 0.86)
+                    .color(theme.colors.text),
+            ),
         }
     }
 }

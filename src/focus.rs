@@ -13,7 +13,16 @@
 //!
 //! A component given an id also uses it as its `debug_selector`, so a test can find it with
 //! `VisualTestContext::debug_bounds` (enable gpui's `test-support` feature in the test build).
-
+//!
+//! Every tab stop carries the key context [`CONTROL_CONTEXT`] (`AtelierControl`). While one
+//! holds focus, Atelier takes Enter and Space before any key binding sees them, so a
+//! single-key shortcut such as Space for play never fires there: the key presses the control
+//! (gpui presses it on the key's release). A track — [`crate::AudioPlayer`]'s scrubber and
+//! volume — also carries [`TRACK_CONTEXT`] and takes the arrows, Home and End the same way.
+//! An application can also keep a binding off controls outright with
+//! `Some("!AtelierControl")`. Arrow keys show the ring only while a control already holds
+//! focus, so arrows that move a playhead or a note leave no ring behind.
+//!
 use gpui::{
     App, BoxShadow, Div, ElementId, FocusHandle, Global, InteractiveElement, KeyBinding,
     ParentElement, Pixels, Stateful, Styled, Window, actions, div, point, px,
@@ -27,9 +36,26 @@ actions!(
         /// Move keyboard focus to the next tab stop.
         FocusNext,
         /// Move keyboard focus to the previous tab stop.
-        FocusPrevious
+        FocusPrevious,
+        /// An arrow key on a focused track, such as [`crate::AudioPlayer`]'s scrubber: one step
+        /// back.
+        StepBackward,
+        /// One step forward.
+        StepForward,
+        /// Home on a focused track: to the start.
+        StepToStart,
+        /// End on a focused track: to the end.
+        StepToEnd
     ]
 );
+
+/// The key context of every Atelier tab stop. While the focused element carries it, Enter and
+/// Space go to the control and no binding sees them. Scope a binding away from controls
+/// altogether with `KeyBinding::new("x", Mute, Some("!AtelierControl"))`.
+pub const CONTROL_CONTEXT: &str = "AtelierControl";
+
+/// The key context of a focused track that arrow keys move, inside [`CONTROL_CONTEXT`].
+pub const TRACK_CONTEXT: &str = "AtelierTrack";
 
 /// Whether the keyboard moved focus last, which is when the ring shows.
 #[derive(Default)]
@@ -37,20 +63,61 @@ struct FocusVisible(bool);
 
 impl Global for FocusVisible {}
 
-/// Bind Tab and Shift-Tab, and watch for the keyboard taking over from the pointer.
+/// Bind Tab, Shift-Tab and the control keys, and watch for the keyboard taking over from the
+/// pointer. Binds only once however often it is called.
 pub(crate) fn init(cx: &mut App) {
+    if cx.has_global::<FocusVisible>() {
+        return;
+    }
     cx.set_global(FocusVisible::default());
     cx.bind_keys([
         KeyBinding::new("tab", FocusNext, None),
         KeyBinding::new("shift-tab", FocusPrevious, None),
     ]);
-    cx.intercept_keystrokes(|event, _, cx| {
-        let key = event.keystroke.key.as_str();
-        if matches!(key, "tab" | "up" | "down" | "left" | "right") {
+    cx.bind_keys(crate::selectable::bindings());
+    // Interceptors run before any binding is matched, so the keys a focused control owns never
+    // reach an application's shortcut of the same key, however it is bound.
+    cx.intercept_keystrokes(|event, window, cx| {
+        let keystroke = &event.keystroke;
+        let key = keystroke.key.as_str();
+        let arrow = matches!(key, "up" | "down" | "left" | "right");
+        // The context of the focused element itself, not of one it sits inside.
+        let focused = event.context_stack.last();
+        let on = |context: &str| focused.is_some_and(|focused| focused.contains(context));
+        // An arrow shows the ring only when it acts on a control: in a timeline it moves the
+        // playhead, and no ring should appear there.
+        if key == "tab" || arrow && on_control(window) {
             set_focus_visible(true, cx);
+        }
+        if keystroke.modifiers.modified() {
+            return;
+        }
+        if matches!(key, "enter" | "space") && on(CONTROL_CONTEXT) {
+            // Left for the control, which gpui presses on the key's release.
+            cx.stop_propagation();
+        } else if on(TRACK_CONTEXT) {
+            let step: Option<Box<dyn gpui::Action>> = match key {
+                "left" | "down" => Some(Box::new(StepBackward)),
+                "right" | "up" => Some(Box::new(StepForward)),
+                "home" => Some(Box::new(StepToStart)),
+                "end" => Some(Box::new(StepToEnd)),
+                _ => None,
+            };
+            if let Some(step) = step {
+                window.dispatch_action(step, cx);
+                cx.stop_propagation();
+            }
         }
     })
     .detach();
+}
+
+/// Whether an Atelier control holds focus in `window`.
+fn on_control(window: &Window) -> bool {
+    window
+        .context_stack()
+        .iter()
+        .any(|context| context.contains(CONTROL_CONTEXT))
 }
 
 /// Whether focus rings show: true once the keyboard has moved focus, false again after a click.
@@ -130,7 +197,10 @@ pub(crate) fn focusable(
         },
     );
     let ring = handle.is_focused(window) && focus_visible(cx);
-    let element = element.track_focus(&handle).relative();
+    let element = element
+        .track_focus(&handle)
+        .key_context(CONTROL_CONTEXT)
+        .relative();
     if !ring {
         return element;
     }

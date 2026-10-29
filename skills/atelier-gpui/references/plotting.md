@@ -24,7 +24,7 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `Colorbar::new(min, max)` | `colorbar` | — | `.signed()`, `.label()`; give it a 64 px wide column beside the plot it explains |
 | `Plot3d::new().surface(cols, rows, z, x, y)` | `surf`, `mesh` | heights, row-major, first row at y minimum | `.shading(Faceted \| Smooth \| Mesh)` |
 | `Plot3d::new().curve(points, color)` | `plot3` | `[x, y, z]` | no colour: the heat ramp runs along the curve, so direction shows |
-| `Plot3d::new().scatter(points, color)` | `scatter3` | `[x, y, z]` | one call per class, in series colours |
+| `Plot3d::new().scatter(points, color)` | `scatter3` | `[x, y, z]` | one call per class, in `series` or `theme.categorical(i)` colours; every scatter in a view is drawn in one depth order |
 | `Plot3d::new().particles(points, color)` | — | `[x, y, z]` | a glowing swarm or flow, thousands of points; the colour's opacity sets the brightness |
 | `nice_ticks`, `format_tick` | — | — | the tick rule, for custom painting |
 
@@ -32,6 +32,15 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 −37.5°, 30°; top is `(0, 90)`; `.azimuth()` turns it alone), `.labels(x, y, z)` and `.x_range()`, `.y_range()`,
 `.z_range()`; a fixed z range also fixes a surface's colour scale. It is orthographic, draws
 its back walls with the grid, and labels the two front floor edges and the leftmost upright.
+
+With an `.id(..)` it answers the pointer. `.on_pick(|hit: &Option<PlotPoint>, window, cx| ..)` gets
+the nearest point under a click, `Some(PlotPoint { series, index })` — `series` counts every `curve`,
+`scatter` and `particles` call from 0 — or `None` on a miss. `.on_orbit(|&(azimuth, elevation),
+window, cx| ..)` reports the angles a drag asks for (half a degree a pixel); store them and pass
+them back to `.view(..)`. A press that moves less than 4 px is a click. `Plot3d::pick(bounds,
+position)` and `Plot3d::project(bounds, [x, y, z])` give the same answers from outside, from the
+projection the view draws with, so never re-implement it. Offer `ViewPreset::ALL` (3-D, Front,
+Top, Side; `.angles()`, `.label()`) as a small segmented control beside the view.
 
 Where there is a GPU, `Plot3d` shades its surface, curves and points off screen with wgpu at
 the display's resolution, four samples a pixel and a depth buffer, and gpui draws the result as

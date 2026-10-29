@@ -135,6 +135,8 @@ pub struct Colors {
     pub highlight: Hsla,
     /// Keyboard focus ring.
     pub focus_ring: Hsla,
+    /// Behind selected text, in [`crate::TextField`] and [`crate::SelectableText`].
+    pub selection: Hsla,
 
     /// Primary text.
     pub text: Hsla,
@@ -260,6 +262,13 @@ pub struct Density {
     /// Widest a form or a preferences page's column grows, so labels stay near their fields
     /// and lines stay readable.
     pub form_width: Pixels,
+    /// The width of a region at which two panes sit side by side — an editor and its
+    /// inspector, a view and its controls. Narrower, they stack, the controls below. Measure the
+    /// region the panes share, not the window.
+    pub split_width: Pixels,
+    /// The window width under which a sidebar folds away behind a toggle, so the content keeps
+    /// room to work in.
+    pub sidebar_width: Pixels,
 }
 
 /// Typefaces and the type scale.
@@ -448,6 +457,8 @@ impl Theme {
             &mut density.title_bar,
             &mut density.status_bar,
             &mut density.form_width,
+            &mut density.split_width,
+            &mut density.sidebar_width,
         ] {
             *size *= factor;
         }
@@ -535,6 +546,49 @@ impl Theme {
         } else {
             hsla(0., 0., 0.08, 1.)
         }
+    }
+
+    /// Every theme: the three directions, each light then dark. Run a screen test over all of
+    /// them so a change is seen everywhere at once.
+    pub fn all() -> impl Iterator<Item = Theme> {
+        Direction::ALL.into_iter().flat_map(|direction| {
+            Appearance::ALL
+                .into_iter()
+                .map(move |appearance| Theme::new(direction, appearance))
+        })
+    }
+
+    /// The colour of category `index` in a set of any size: clusters of sounds, tags, groups.
+    ///
+    /// Hues step round the circle by the golden angle, so neighbours differ the most and any
+    /// first few are well apart; past every eighth the lightness shifts, so far ones differ
+    /// too. The agent's hue is left out, so no category reads as the AI's work. Every colour
+    /// clears 3:1 against the surfaces, as a mark must. Mono keeps them muted: there, pair the
+    /// colour with a mark or a label, which every direction should do past a handful anyway.
+    ///
+    /// The same index gives the same colour on every screen, so let one thing keep one index
+    /// wherever it appears: the map and the list then point at it with one colour.
+    pub fn categorical(&self, index: usize) -> Hsla {
+        const GOLDEN: f32 = 0.618_034;
+        // A band either side of the agent's hue that no category takes.
+        const GAP: f32 = 0.08;
+        let colors = &self.colors;
+        let agent = colors.agent.h;
+        let start = colors.accent.h;
+        // Walk a circle shortened by the gap, then open the gap behind the agent's hue.
+        let step = ((start - agent - GAP / 2.).rem_euclid(1.) / (1. - GAP) + index as f32 * GOLDEN)
+            .rem_euclid(1.);
+        let hue = (agent + GAP / 2. + step * (1. - GAP)).rem_euclid(1.);
+        let dark = self.appearance.is_dark();
+        let tier: f32 = [0., 0.1, -0.1][(index / 8) % 3];
+        let (saturation, lightness) = match self.direction {
+            Direction::Mono => (0.32, if dark { 0.66 } else { 0.42 }),
+            Direction::Studio | Direction::Glass => (0.68, if dark { 0.62 } else { 0.44 }),
+        };
+        let color = hsla(hue, saturation, (lightness + tier).clamp(0.2, 0.85), 1.);
+        [colors.background, colors.surface, colors.elevated]
+            .iter()
+            .fold(color, |color, &fill| ensure_contrast(color, fill, 3.0))
     }
 
     /// Display name, for example "Studio Dark".
@@ -733,6 +787,7 @@ fn colors(
             Direction::Mono => gpui::transparent_white(),
         },
         focus_ring: accent.opacity(0.55),
+        selection: accent.opacity(if dark { 0.38 } else { 0.24 }),
         text,
         text_muted: muted,
         text_faint: mix(muted, surface, 0.28),
@@ -866,6 +921,8 @@ fn density(direction: Direction) -> Density {
             title_bar: px(32.),
             status_bar: px(24.),
             form_width: px(640.),
+            split_width: px(768.),
+            sidebar_width: px(720.),
         },
         Direction::Glass => Density {
             control_sm: px(24.),
@@ -878,6 +935,8 @@ fn density(direction: Direction) -> Density {
             title_bar: px(40.),
             status_bar: px(28.),
             form_width: px(720.),
+            split_width: px(768.),
+            sidebar_width: px(720.),
         },
         Direction::Mono => Density {
             control_sm: px(22.),
@@ -890,6 +949,8 @@ fn density(direction: Direction) -> Density {
             title_bar: px(36.),
             status_bar: px(26.),
             form_width: px(680.),
+            split_width: px(768.),
+            sidebar_width: px(720.),
         },
     }
 }
@@ -1059,11 +1120,29 @@ mod tests {
     use super::*;
 
     fn every_theme() -> impl Iterator<Item = Theme> {
-        Direction::ALL.into_iter().flat_map(|direction| {
-            Appearance::ALL
-                .into_iter()
-                .map(move |appearance| Theme::new(direction, appearance))
-        })
+        Theme::all()
+    }
+
+    #[test]
+    fn categories_are_marks_apart_from_the_agent() {
+        for theme in every_theme() {
+            let colors = &theme.colors;
+            let hues: Vec<f32> = (0..24).map(|index| theme.categorical(index).h).collect();
+            for index in 0..24 {
+                let color = theme.categorical(index);
+                assert!(contrast(color, colors.surface) >= 3.0, "{}", theme.name());
+                let apart = (color.h - colors.agent.h).rem_euclid(1.);
+                assert!(apart.min(1. - apart) >= 0.03, "{}: {index}", theme.name());
+                assert_eq!(color, theme.categorical(index), "stable");
+            }
+            // The first eight are told apart by hue alone.
+            for a in 0..8 {
+                for b in a + 1..8 {
+                    let apart = (hues[a] - hues[b]).rem_euclid(1.);
+                    assert!(apart.min(1. - apart) >= 0.05, "{}: {a} {b}", theme.name());
+                }
+            }
+        }
     }
 
     #[test]

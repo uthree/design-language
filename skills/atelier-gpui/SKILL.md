@@ -5,6 +5,12 @@ description: Design language and component kit for gpui (Rust) creator tools wit
 
 # Atelier for gpui
 
+> **Do not copy workarounds.** If existing code wraps an Atelier component (a `div` with a
+> `debug_selector`, a hand-made tab stop) or copies a component's sizes and colours, do not
+> imitate it, even when it is right next to what you are writing: it predates a feature.
+> Use the component and its hook, and check with `tools/check-adoption.sh` (see
+> [references/adopting.md](references/adopting.md)).
+
 Atelier is a Rust crate (`atelier`, gpui `=0.2.2`) that supplies one design language in three
 candidate **directions** and the components that draw it. **Glass is the adopted direction** and
 the default; Studio and Mono remain as alternatives, so never assume one look — read the tokens.
@@ -50,7 +56,8 @@ Do not invent a builder method because its name seems plausible: check the sourc
 - **Desktop, not web.** Arrow cursor on controls; visible menus for secondary commands;
   every icon-only button has a `.tooltip(...)` when its meaning is not obvious.
 - **Keyboard reach.** Every control is reachable with Tab and pressed with Enter/Space; build
-  on Atelier's components (they do it) and never on a bare `div` with `on_click`.
+  on Atelier's components (they do it) and never on a bare `div` with `on_click`. A
+  single-key shortcut never fires on a focused control (key context `AtelierControl`).
 - **Extend, don't copy.** If Atelier lacks an icon, slot or hook, use its open doors
   (`IconSource`, `.control(..)`, a container's `.id(..)`, `TitleBar::window_controls`) or add
   it here; never re-implement a component by copying its sizes and colours.

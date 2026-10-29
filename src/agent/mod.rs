@@ -6,6 +6,9 @@
 //!
 //! * **The AI has one colour.** [`crate::Colors::agent`] marks what the agent did or is doing —
 //!   its avatar, running work, its edits. Nothing else uses it, so it keeps meaning something.
+//! * **A model is shown with its provider's mark.** Where the model is known, the picker, the
+//!   current model and the assistant's avatar carry its [`crate::ProviderLogo`], in the text
+//!   colour, so the person can tell whose model is answering before reading the name.
 //! * **Every state has a shape as well as a colour.** [`AgentStatus::mark`] pairs with each one.
 //! * **The person's words and the agent's words differ in form, not only colour.** The person
 //!   speaks in a bubble on the trailing edge; the agent writes full-width prose.
@@ -15,12 +18,14 @@
 mod code;
 mod composer;
 mod effort;
+mod label;
 mod panel;
 mod transcript;
 
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
 pub use effort::{EffortButton, EffortPicker};
+pub use label::AgentLabel;
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
@@ -30,6 +35,7 @@ pub use transcript::{
 use gpui::{App, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div};
 
 use crate::display::{Spinner, StatusDot};
+use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, Theme};
 
 /// What the agent is doing, as the window chrome and the panel header report it.
@@ -131,7 +137,7 @@ impl RenderOnce for AgentStatusLabel {
                 div()
                     .flex_none()
                     .text_color(color)
-                    .child(self.status.label()),
+                    .child(cx.strings().agent_states[self.status as usize].clone()),
             )
             // The detail gives way first when the label runs out of room.
             .children(
