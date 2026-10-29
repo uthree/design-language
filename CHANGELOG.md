@@ -96,6 +96,13 @@ Also in 0.2.0, on top of the second round below.
 - `agent::AgentLabel`: short text the agent wrote (a cluster's name, a title), marked with the
   agent's sparkle until the person edits it.
 - `atelier::init` may be called more than once: it binds keys only the first time.
+- `atelier::emoji`: emoji typed as shortcodes. `shortcode_at` finds the `:thin` before the
+  caret, `search` ranks the emoji it could mean, `emoji::completions` draws them as a
+  `Completions` list and `ShortcodeQuery::accept` puts 🤔 in its place; `replace_shortcodes`
+  turns a finished or pasted `:tada:` into 🎉. `Completion::glyph(..)` gives a row a leading
+  emoji or symbol in place of an icon.
+- `ui_font` and `mono_font` fall back to Apple Color Emoji on macOS and Segoe UI Emoji on
+  Windows, so emoji draw in colour in every Atelier text.
 
 ### Changed
 

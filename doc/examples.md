@@ -27,6 +27,9 @@ Sessions with live status on the left, the conversation in the middle (reasoning
 calls, command output, a diff, the task plan, an approval), and the changes it made on the right.
 The model picker under the composer groups the models by provider, each led by its provider's
 mark; the picked model's mark also stands on the picker and as the avatar of its answers.
+The composer takes typing (a stand-in for the application's own input: no selection or input
+method): `:thi` opens emoji suggestions, Up and Down move through them, Tab or Enter puts 🤔 in,
+and Enter sends the message into the transcript. `--draft "いい感じ :thi"` starts with text typed.
 Captured on Linux under Weston, with the picker open.
 
 ![Agent desktop](images/agent-desktop.png)

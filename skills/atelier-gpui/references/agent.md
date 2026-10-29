@@ -175,6 +175,37 @@ closes the list and leaves the text. Show it as soon as the trigger (`/`, `@`) i
 fuzzily as the person types, and draw the matched letters with `.matched(..)`. Say so when
 nothing matches (`.empty("No matching command")`) rather than hiding the list mid-word.
 
+## Emoji in messages
+
+Type emoji as shortcodes, as in Slack and GitHub: `:thi` opens a list of matching emoji over
+the composer, and accepting one puts 🤔 where `:thi` was. `atelier::emoji` does everything but
+the editing:
+
+```rust
+let query = emoji::shortcode_at(&text, caret); // the `:thin` before the caret, if any
+let matches = query.as_ref().map(|q| emoji::search(&q.query, 8)).unwrap_or_default();
+Composer::new("composer").input(input).when(!matches.is_empty(), |composer| {
+    composer.completions(
+        emoji::completions("emoji", &matches)
+            .selected(Some(self.emoji))
+            .on_select(cx.listener(|this, index, window, cx| this.accept_emoji(*index, window, cx))),
+    )
+})
+// accepting: let (text, caret) = query.accept(&text, matches[index].emoji);
+```
+
+The keys are those of any completion list. A shortcode needs two letters after the colon and
+does not open after a Latin letter or digit, so `10:30` and `https://` stay quiet, while
+`いいね:+1` opens one. When the person types a closing colon, or before sending, run
+`emoji::replace_shortcodes` so a shortcode finished by hand becomes its emoji too.
+
+Emoji draw in colour from the platform's emoji font, which `ui_font` lists. On Linux, gpui 0.2
+picks fallback fonts through cosmic-text, which tries DejaVu Sans, FreeFont and Noto Sans
+Symbols before Noto Color Emoji: emoji those fonts also cover (many smileys, ❤️, ✅, ⚡) draw in
+one colour there. Requesting Noto Color Emoji by name does not help: gpui drops a family with
+no letter `m` from its font database. `emoji::color_font_available(cx)` says whether Noto
+Color Emoji is installed at all.
+
 ## Code
 
 - `CodeBlock::new(id, code).title("cargo test").copyable().line_numbers(1)` for command output

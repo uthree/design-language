@@ -16,6 +16,7 @@ mod backdrop;
 mod button;
 mod controls;
 mod display;
+pub mod emoji;
 mod focus;
 mod form;
 mod frame;
