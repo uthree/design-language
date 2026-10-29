@@ -14,11 +14,13 @@
 
 use std::f32::consts::PI;
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    App, Bounds, ContentMask, Font, Hsla, IntoElement, PathBuilder, Pixels, Point, RenderImage,
-    RenderOnce, Rgba, SharedString, Styled, TextRun, Window, canvas, fill, point, px, size,
+    App, Bounds, ContentMask, Font, Hsla, InteractiveElement, IntoElement, ParentElement,
+    PathBuilder, Pixels, Point, RenderImage, RenderOnce, Rgba, SharedString, Styled, TextRun,
+    Window, canvas, div, fill, point, prelude::FluentBuilder, px, size,
 };
 use image::ImageBuffer;
 
@@ -1253,8 +1255,16 @@ const Z_ASPECT: f32 = 0.75;
 /// A 3-D view on a box with gridded back walls: a surface over an x–y grid (`surf`, `mesh`),
 /// curves (`plot3`), point clouds (`scatter3`) and glowing particles, seen from a chosen
 /// azimuth and elevation.
+///
+/// Every [`Plot3d::scatter`] in one view is drawn together, farthest point first, so points of
+/// different colours overlap in true depth order: call `scatter` once per colour or cluster.
+/// Give it an [`Plot3d::id`] and it can answer the pointer: [`Plot3d::on_pick`] reports the
+/// nearest point under a click and [`Plot3d::on_orbit`] turns the view as the pointer drags.
+/// [`Plot3d::pick`] asks the same question from outside, through the same projection the view
+/// is drawn with, so what is hit is always what is seen.
 #[derive(IntoElement)]
 pub struct Plot3d {
+    id: Option<gpui::ElementId>,
     surface: Option<Surface>,
     curves: Vec<Curve>,
     azimuth: f32,
@@ -1262,12 +1272,76 @@ pub struct Plot3d {
     shading: Shading,
     fixed: [Option<(f32, f32)>; 3],
     labels: [Option<SharedString>; 3],
+    on_pick: Option<PickHandler>,
+    on_orbit: Option<OrbitHandler>,
 }
+
+/// A point of a [`Plot3d`] under the pointer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlotPoint {
+    /// Which series, counting every [`Plot3d::curve`], [`Plot3d::scatter`] and
+    /// [`Plot3d::particles`] call in order from 0.
+    pub series: usize,
+    /// The point's index in that series.
+    pub index: usize,
+}
+
+/// Standard angles for a [`Plot3d`], for a row of view buttons beside it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ViewPreset {
+    /// MATLAB's default three-quarter view, azimuth −37.5° and elevation 30°.
+    #[default]
+    Oblique,
+    /// Square on to the x–z plane, from the −y side.
+    Front,
+    /// Straight down on the x–y plane.
+    Top,
+    /// Square on to the y–z plane, from the +x side.
+    Side,
+}
+
+impl ViewPreset {
+    /// Every preset, in the order a row of buttons offers them.
+    pub const ALL: [Self; 4] = [Self::Oblique, Self::Front, Self::Top, Self::Side];
+
+    /// Azimuth and elevation in degrees, for [`Plot3d::view`].
+    pub fn angles(self) -> (f32, f32) {
+        match self {
+            Self::Oblique => (-37.5, 30.),
+            Self::Front => (0., 0.),
+            Self::Top => (0., 90.),
+            Self::Side => (90., 0.),
+        }
+    }
+
+    /// Name shown on its button.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Oblique => "3-D",
+            Self::Front => "Front",
+            Self::Top => "Top",
+            Self::Side => "Side",
+        }
+    }
+}
+
+type PickHandler = Rc<dyn Fn(Option<PlotPoint>, &mut Window, &mut App) + 'static>;
+type OrbitHandler = Rc<dyn Fn(f32, f32, &mut Window, &mut App) + 'static>;
+
+/// How far a pointer may land from a point and still pick it, beyond the point's own radius.
+const PICK_SLOP: f32 = 4.;
+/// How far the pointer moves before a press becomes a drag, in pixels.
+const DRAG_THRESHOLD: f32 = 4.;
+/// Degrees the view turns per pixel of drag.
+const ORBIT_RATE: f32 = 0.5;
+/// The margin between the box and the edge of the view.
+const BOX_MARGIN: f32 = 44.;
 
 impl Plot3d {
     /// An empty view from MATLAB's default angle, azimuth −37.5° and elevation 30°.
     pub fn new() -> Self {
         Self {
+            id: None,
             surface: None,
             curves: Vec::new(),
             azimuth: -37.5,
@@ -1275,7 +1349,86 @@ impl Plot3d {
             shading: Shading::Faceted,
             fixed: [None, None, None],
             labels: [None, None, None],
+            on_pick: None,
+            on_orbit: None,
         }
+    }
+
+    /// An id, which keeps a press and a drag from frame to frame. Needed for
+    /// [`Plot3d::on_pick`] and [`Plot3d::on_orbit`], and also the test selector.
+    pub fn id(mut self, id: impl Into<gpui::ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Called on a click: with the nearest point under the pointer, of a scatter or a particle
+    /// cloud, or with `None` when the click missed every point. Needs [`Plot3d::id`].
+    pub fn on_pick(
+        mut self,
+        handler: impl Fn(Option<PlotPoint>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_pick = Some(Rc::new(handler));
+        self
+    }
+
+    /// Called while the pointer drags across the view, with the azimuth and elevation it asks
+    /// for: half a degree a pixel, sideways for azimuth and up and down for elevation. Store
+    /// them and pass them back to [`Plot3d::view`]. Needs [`Plot3d::id`].
+    pub fn on_orbit(mut self, handler: impl Fn(f32, f32, &mut Window, &mut App) + 'static) -> Self {
+        self.on_orbit = Some(Rc::new(handler));
+        self
+    }
+
+    /// The nearest point under `position` when the view is drawn in `bounds`, as
+    /// [`Plot3d::on_pick`] reports it.
+    pub fn pick(&self, bounds: Bounds<Pixels>, position: Point<Pixels>) -> Option<PlotPoint> {
+        let camera = self.camera(bounds);
+        pick_in(&self.curves, &camera, position)
+    }
+
+    /// Where a data point lands on screen when the view is drawn in `bounds`, and its depth
+    /// (larger is farther). For drawing an application's own marks over the view.
+    pub fn project(&self, bounds: Bounds<Pixels>, at: [f32; 3]) -> (Point<Pixels>, f32) {
+        let camera = self.camera(bounds);
+        camera.screen(camera.normalize(at))
+    }
+
+    /// The data ranges the box spans: the data rounded out, or the fixed ranges.
+    fn ranges(&self) -> [(f32, f32); 3] {
+        let (surface, curves) = (&self.surface, &self.curves);
+        let curve_points = || curves.iter().flat_map(|curve| curve.points.iter());
+        let mut ranges = [
+            extent(curve_points().map(|at| at[0])),
+            extent(curve_points().map(|at| at[1])),
+            extent(curve_points().map(|at| at[2])),
+        ];
+        if let Some(surface) = surface {
+            let heights = extent(surface.values.iter().copied());
+            if curves.is_empty() {
+                ranges = [surface.x, surface.y, heights];
+            } else {
+                ranges[0] = (ranges[0].0.min(surface.x.0), ranges[0].1.max(surface.x.1));
+                ranges[1] = (ranges[1].0.min(surface.y.0), ranges[1].1.max(surface.y.1));
+                ranges[2] = (ranges[2].0.min(heights.0), ranges[2].1.max(heights.1));
+            }
+        }
+        if surface.is_none() {
+            ranges[0] = round_out(ranges[0]);
+            ranges[1] = round_out(ranges[1]);
+        }
+        ranges[2] = round_out(ranges[2]);
+        for (range, fixed) in ranges.iter_mut().zip(self.fixed) {
+            if let Some(fixed) = fixed {
+                *range = fixed;
+            }
+        }
+        ranges
+    }
+
+    fn camera(&self, bounds: Bounds<Pixels>) -> Camera {
+        let mut camera = Camera::new(self.ranges(), self.azimuth, self.elevation);
+        camera.fit(bounds, px(BOX_MARGIN));
+        camera
     }
 
     /// A surface of height `values`, row-major with the first row at `y` minimum, over the
@@ -1651,6 +1804,7 @@ fn gpu_frame(
     let mut segments = Vec::new();
     let mut points = Vec::new();
     let mut draws = Vec::new();
+    let mut markers: Vec<(f32, [f32; 3], Hsla)> = Vec::new();
     for curve in curves {
         let count = curve.points.len();
         let at: Vec<[f32; 3]> = curve
@@ -1680,35 +1834,40 @@ fn gpu_frame(
                     start..(segments.len() / gpu::SEGMENT) as u32,
                 ));
             }
-            Mark::Markers | Mark::Particles => {
-                let (radius, opacity) = match curve.mark {
-                    Mark::Markers => (MARKER_RADIUS, 0.85),
-                    _ => (PARTICLE_RADIUS, 0.3),
-                };
-                // Farthest first, so the nearer ones blend over them.
-                let mut order: Vec<usize> = (0..count).collect();
-                if curve.mark == Mark::Markers {
-                    order.sort_by(|a, b| camera.depth(at[*b]).total_cmp(&camera.depth(at[*a])));
+            Mark::Markers => {
+                // Gathered across every scatter and drawn together below.
+                for (index, at) in at.iter().enumerate() {
+                    let color = point_color(theme, curve, index, count);
+                    markers.push((camera.depth(*at), *at, color.opacity(color.a * 0.85)));
                 }
+            }
+            Mark::Particles => {
                 let start = (points.len() / gpu::POINT) as u32;
-                for index in order {
-                    let color = curve.color.unwrap_or_else(|| {
-                        heat_color(
-                            theme,
-                            0.25 + 0.75 * index as f32 / (count.max(2) - 1) as f32,
-                        )
-                    });
-                    points.extend(at[index]);
-                    points.push(radius);
-                    points.extend(rgba(color.opacity(color.a * opacity)));
+                for (index, at) in at.iter().enumerate() {
+                    let color = point_color(theme, curve, index, count);
+                    points.extend(*at);
+                    points.push(PARTICLE_RADIUS);
+                    points.extend(rgba(color.opacity(color.a * 0.3)));
                 }
-                let range = start..(points.len() / gpu::POINT) as u32;
-                draws.push(match curve.mark {
-                    Mark::Markers => gpu::Draw::Markers(range),
-                    _ => gpu::Draw::Particles(range),
-                });
+                draws.push(gpu::Draw::Particles(
+                    start..(points.len() / gpu::POINT) as u32,
+                ));
             }
         }
+    }
+    // Every scatter at once, farthest first, so the nearer points blend over the farther
+    // whichever series they belong to.
+    if !markers.is_empty() {
+        markers.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let start = (points.len() / gpu::POINT) as u32;
+        for (_, at, color) in markers {
+            points.extend(at);
+            points.push(MARKER_RADIUS);
+            points.extend(rgba(color));
+        }
+        draws.push(gpu::Draw::Markers(
+            start..(points.len() / gpu::POINT) as u32,
+        ));
     }
     gpu::Frame {
         width,
@@ -1720,6 +1879,16 @@ fn gpu_frame(
         draws,
         additive: theme.appearance.is_dark(),
     }
+}
+
+/// The colour of point `index` of `count` in `curve`: its own, or along the heat ramp.
+fn point_color(theme: &Theme, curve: &Curve, index: usize, count: usize) -> Hsla {
+    curve.color.unwrap_or_else(|| {
+        heat_color(
+            theme,
+            0.25 + 0.75 * index as f32 / (count.max(2) - 1) as f32,
+        )
+    })
 }
 
 fn difference(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -1735,8 +1904,11 @@ fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
 }
 
 impl RenderOnce for Plot3d {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme().clone();
+        let ranges = self.ranges();
+        let id = self.id.clone().unwrap_or_else(|| "plot3d".into());
+        let interactive = self.on_pick.is_some() || self.on_orbit.is_some();
         let Self {
             surface,
             curves,
@@ -1745,44 +1917,35 @@ impl RenderOnce for Plot3d {
             shading,
             fixed,
             labels,
+            on_pick,
+            on_orbit,
+            ..
         } = self;
-        canvas(
+        // Where the view was last drawn and what a press is doing, for the pointer.
+        let pointer = interactive.then(|| {
+            window.use_keyed_state(
+                gpui::ElementId::NamedChild(Box::new(id.clone()), "pointer".into()),
+                cx,
+                |_, _| Pointer::default(),
+            )
+        });
+        let painted = pointer.clone();
+        let view = canvas(
             |_, _, _| {},
             move |bounds: Bounds<Pixels>, _, window, cx| {
                 let colors = &theme.colors;
-                let curve_points = || curves.iter().flat_map(|curve| curve.points.iter());
-                let mut ranges = [
-                    extent(curve_points().map(|at| at[0])),
-                    extent(curve_points().map(|at| at[1])),
-                    extent(curve_points().map(|at| at[2])),
-                ];
-                if let Some(surface) = &surface {
-                    let heights = extent(surface.values.iter().copied());
-                    if curves.is_empty() {
-                        ranges = [surface.x, surface.y, heights];
-                    } else {
-                        ranges[0] = (ranges[0].0.min(surface.x.0), ranges[0].1.max(surface.x.1));
-                        ranges[1] = (ranges[1].0.min(surface.y.0), ranges[1].1.max(surface.y.1));
-                        ranges[2] = (ranges[2].0.min(heights.0), ranges[2].1.max(heights.1));
-                    }
-                }
-                if surface.is_none() {
-                    ranges[0] = round_out(ranges[0]);
-                    ranges[1] = round_out(ranges[1]);
-                }
-                ranges[2] = round_out(ranges[2]);
-                for (range, fixed) in ranges.iter_mut().zip(fixed) {
-                    if let Some(fixed) = fixed {
-                        *range = fixed;
-                    }
-                }
                 let heights = fixed[2].unwrap_or_else(|| {
                     surface
                         .as_ref()
                         .map_or(ranges[2], |surface| extent(surface.values.iter().copied()))
                 });
                 let mut camera = Camera::new(ranges, azimuth, elevation);
-                camera.fit(bounds, px(44.));
+                camera.fit(bounds, px(BOX_MARGIN));
+                if let Some(pointer) = &painted {
+                    // The points a click can hit, in screen space, so a press needs no redraw.
+                    let targets = targets(&curves, &camera);
+                    pointer.update(cx, |pointer, _| pointer.targets = targets);
+                }
 
                 // The back walls: of each pair of opposite faces, the one farther away.
                 // Seen square-on, a pair of walls is level in depth: then the upper wall, or
@@ -1983,6 +2146,8 @@ impl RenderOnce for Plot3d {
                         }
                     }
 
+                    // Every point cloud at once, farthest first, after the lines.
+                    let mut dots: Vec<(f32, Point<Pixels>, Pixels, Hsla)> = Vec::new();
                     for curve in &curves {
                         let points: Vec<_> = curve
                             .points
@@ -1995,21 +2160,9 @@ impl RenderOnce for Plot3d {
                                 Mark::Particles => (px(1.5), 0.55),
                                 _ => (px(MARKER_RADIUS), 0.85),
                             };
-                            let mut order: Vec<usize> = (0..points.len()).collect();
-                            order.sort_by(|a, b| points[*b].1.total_cmp(&points[*a].1));
-                            for index in order {
-                                let color = curve.color.unwrap_or_else(|| {
-                                    heat_color(
-                                        &theme,
-                                        0.25 + 0.75 * index as f32 / (count - 1) as f32,
-                                    )
-                                });
-                                paint_marker(
-                                    window,
-                                    points[index].0,
-                                    radius,
-                                    color.opacity(color.a * opacity),
-                                );
+                            for (index, (at, depth)) in points.iter().enumerate() {
+                                let color = point_color(&theme, curve, index, count);
+                                dots.push((*depth, *at, radius, color.opacity(color.a * opacity)));
                             }
                         } else if let Some(color) = curve.color {
                             let at: Vec<_> = points.iter().map(|(at, _)| *at).collect();
@@ -2035,6 +2188,10 @@ impl RenderOnce for Plot3d {
                                 }
                             }
                         }
+                    }
+                    dots.sort_by(|a, b| b.0.total_cmp(&a.0));
+                    for (_, at, radius, color) in dots {
+                        paint_marker(window, at, radius, color);
                     }
                 }
 
@@ -2114,8 +2271,154 @@ impl RenderOnce for Plot3d {
                 }
             },
         )
-        .size_full()
+        .size_full();
+        let Some(pointer) = pointer else {
+            return div().size_full().child(view).into_any_element();
+        };
+        let pressed = pointer.read(cx).press.is_some();
+        div()
+            .id(id.clone())
+            .debug_selector(move || id.to_string())
+            .size_full()
+            .relative()
+            .on_mouse_down(gpui::MouseButton::Left, {
+                let pointer = pointer.clone();
+                move |event: &gpui::MouseDownEvent, _, cx| {
+                    pointer.update(cx, |pointer, cx| {
+                        pointer.press = Some(Press {
+                            from: event.position,
+                            angles: (azimuth, elevation),
+                            dragged: false,
+                        });
+                        cx.notify();
+                    });
+                }
+            })
+            .child(view)
+            // While pressed, follow the pointer anywhere in the window until the button comes up.
+            .when(pressed, |element| {
+                element.child(
+                    canvas(
+                        |_, _, _| {},
+                        move |_, _, window, _| {
+                            window.on_mouse_event({
+                                let (pointer, on_orbit) = (pointer.clone(), on_orbit.clone());
+                                move |event: &gpui::MouseMoveEvent, phase, window, cx| {
+                                    if !phase.bubble() {
+                                        return;
+                                    }
+                                    let Some(press) = pointer.read(cx).press else {
+                                        return;
+                                    };
+                                    let delta = event.position - press.from;
+                                    let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
+                                    if !press.dragged && dx.hypot(dy) < DRAG_THRESHOLD {
+                                        return;
+                                    }
+                                    pointer.update(cx, |pointer, _| {
+                                        if let Some(press) = &mut pointer.press {
+                                            press.dragged = true;
+                                        }
+                                    });
+                                    if let Some(on_orbit) = &on_orbit {
+                                        let azimuth = press.angles.0 - dx * ORBIT_RATE;
+                                        let elevation =
+                                            (press.angles.1 + dy * ORBIT_RATE).clamp(-90., 90.);
+                                        on_orbit(azimuth, elevation, window, cx);
+                                    }
+                                }
+                            });
+                            window.on_mouse_event(
+                                move |event: &gpui::MouseUpEvent, phase, window, cx| {
+                                    if !phase.bubble() {
+                                        return;
+                                    }
+                                    let press = pointer.update(cx, |pointer, cx| {
+                                        cx.notify();
+                                        pointer.press.take()
+                                    });
+                                    if let (Some(press), Some(on_pick)) = (press, &on_pick)
+                                        && !press.dragged
+                                    {
+                                        let hit =
+                                            nearest(&pointer.read(cx).targets, event.position);
+                                        on_pick(hit, window, cx);
+                                    }
+                                },
+                            );
+                        },
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0(),
+                )
+            })
+            .into_any_element()
     }
+}
+
+/// What a [`Plot3d`] with handlers remembers between frames.
+#[derive(Default)]
+struct Pointer {
+    /// Every point a click can hit, on screen, with its depth.
+    targets: Vec<Target>,
+    press: Option<Press>,
+}
+
+#[derive(Clone, Copy)]
+struct Press {
+    from: Point<Pixels>,
+    /// The view's angles when the press began.
+    angles: (f32, f32),
+    dragged: bool,
+}
+
+#[derive(Clone, Copy)]
+struct Target {
+    at: Point<Pixels>,
+    depth: f32,
+    radius: f32,
+    point: PlotPoint,
+}
+
+/// The points of every scatter and particle cloud on screen.
+fn targets(curves: &[Curve], camera: &Camera) -> Vec<Target> {
+    curves
+        .iter()
+        .enumerate()
+        .filter(|(_, curve)| curve.mark != Mark::Line)
+        .flat_map(|(series, curve)| {
+            let radius = match curve.mark {
+                Mark::Particles => PARTICLE_RADIUS,
+                _ => MARKER_RADIUS,
+            };
+            curve.points.iter().enumerate().map(move |(index, at)| {
+                let (at, depth) = camera.screen(camera.normalize(*at));
+                Target {
+                    at,
+                    depth,
+                    radius,
+                    point: PlotPoint { series, index },
+                }
+            })
+        })
+        .collect()
+}
+
+/// Of the targets under `position`, the nearest to the eye.
+fn nearest(targets: &[Target], position: Point<Pixels>) -> Option<PlotPoint> {
+    targets
+        .iter()
+        .filter(|target| {
+            let delta = target.at - position;
+            f32::from(delta.x).hypot(f32::from(delta.y)) <= target.radius + PICK_SLOP
+        })
+        .min_by(|a, b| a.depth.total_cmp(&b.depth))
+        .map(|target| target.point)
+}
+
+fn pick_in(curves: &[Curve], camera: &Camera, position: Point<Pixels>) -> Option<PlotPoint> {
+    nearest(&targets(curves, camera), position)
 }
 
 #[cfg(test)]
@@ -2142,6 +2445,37 @@ mod tests {
         // Only the top-right corner is above the level.
         let segments = contour_segments(2, 2, &[0., 0., 0., 1.], 0.5);
         assert_eq!(segments.len(), 1);
+    }
+
+    #[test]
+    fn a_pick_finds_the_nearest_point_under_the_pointer() {
+        let bounds = Bounds::new(point(px(0.), px(0.)), size(px(400.), px(300.)));
+        // Two series with a point at the same place on screen, seen from the front: the one
+        // nearer the eye (smaller y, towards the viewer) wins, whichever series came first.
+        let plot = Plot3d::new()
+            .view(0., 0.)
+            .scatter(vec![[0., 1., 0.], [1., 1., 1.]], None)
+            .scatter(vec![[0., -1., 0.]], None)
+            .x_range(-1., 1.)
+            .y_range(-1., 1.)
+            .z_range(-1., 1.);
+        let (at, _) = plot.project(bounds, [0., 0., 0.]);
+        assert_eq!(
+            plot.pick(bounds, at),
+            Some(PlotPoint {
+                series: 1,
+                index: 0
+            })
+        );
+        let (corner, _) = plot.project(bounds, [1., 1., 1.]);
+        assert_eq!(
+            plot.pick(bounds, corner),
+            Some(PlotPoint {
+                series: 0,
+                index: 1
+            })
+        );
+        assert_eq!(plot.pick(bounds, point(px(1.), px(1.))), None);
     }
 
     #[test]

@@ -25,7 +25,14 @@ order they are drawn, Enter and Space press the focused one (its `on_click`, `on
 `on_toggle` runs), and `.disabled(true)` takes it out of the order. A row or chip without a
 handler is not a stop. Nothing to wire up beyond:
 
-- `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`).
+- `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`). Every tab stop
+  carries the key context `AtelierControl` (`atelier::CONTROL_CONTEXT`); while one holds focus,
+  Atelier takes Enter and Space before any binding is matched, so an application's Space for
+  play does not fire there. Bind other keys with `Some("!AtelierControl")` to keep them off
+  controls. Tracks (the `AudioPlayer` scrubber and volume) add `AtelierTrack`, where the
+  arrows, Home and End step them (`StepBackward`, `StepForward`, `StepToStart`, `StepToEnd`)
+  ahead of the application's own arrow bindings. A focusable element of your own placed
+  inside an Atelier control gives itself a key context, so the keys stay its own. Arrow keys show the focus ring only while a control holds focus.
 - `WindowFrame` handles them and holds the window's root focus, so Tab works from the moment
   the window opens. A window whose root is your own element wraps it in
   `atelier::tab_navigation(root)`, puts the focus `handle` on an empty child
@@ -49,7 +56,19 @@ handler is not a stop. Nothing to wire up beyond:
 `.weight(..)`, `.heading_weight()`, `.mono()`, `.truncate()`.
 `Label::heading(t)` for section titles, `Label::caption(t)` for small uppercase region labels.
 
+`SelectableText::new(id, text)` for read-only text the person may want to copy: a message, an
+attached file (`.mono()`), a log, error details. Drag, Shift-click, double-click (word) and
+triple-click (line) select; ⌘C/Ctrl+C copies the exact characters — line breaks, indentation,
+`<`, `**` — and ⌘A/Ctrl+A selects all (key context `AtelierSelectableText`). It is no tab
+stop, and its selection shows in `colors.selection` while it holds focus. Takes `.size(..)`,
+`.color(..)`. Each needs its own id.
+
 ## Buttons
+
+`CopyButton::new(id, text)` copies `text` and answers: a check and "Copied" for a moment
+(`.copied_label("コピーしました")`). Icon-only by default with the tooltip "Copy"; with
+`.label("Copy title")` the label turns into "Copied" and moves to the tooltip meanwhile. Use it
+for every copy action.
 
 ```rust
 Button::new("export", "Export…").primary()
@@ -185,7 +204,13 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
 ## Media and choices
 
 - `AudioPlayer::new(id, position, "1:32", "2:00").peaks(peaks).playing(bool).volume(v)` — a
-  preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made.
+  preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made,
+  `.loading(true)` (a spinner for the play button) while it loads or decodes. `.on_seek(|to, w,
+  cx| ..)` makes the scrubber follow a click or a drag and, once focused, the arrows, Home and
+  End — one `.seek_step(5. / seconds)` a press; `.on_volume(..)` does the same for the volume,
+  and `.muted(bool).on_mute(..)` adds a mute button beside it. The player only reports what
+  the person asked for; the position stays the playback clock's, so seek and redraw from it.
+  The duration may change while it plays (a draft still being written).
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen. Moving
   from a card to the screen it starts uses the hand-off in [motion.md](motion.md).
@@ -255,3 +280,10 @@ There is no node-graph component: compose one from the pieces above on a `canvas
 `menu_separator(cx)`, `MenuItem::checked/danger/disabled/icon`. Position them with gpui's
 `anchored()` + `deferred()`. Tooltips: `Button::tooltip(..)`, or on any stateful div
 `.tooltip(|window, cx| Tooltip::new("Text").shortcut("⌘B").build(window, cx))`.
+
+`Completions::new(id).items([Completion::new("/model").description("Switch model").matched(hits)])
+.selected(Some(i)).on_select(..)` is the suggestion list under or over a text input; focus stays
+in the input, which moves `selected` with Up/Down, accepts with Tab and closes with Escape. The
+list keeps the selected row in view, shows `.rows(6)` before scrolling and can say
+`.empty("No match")`. In the agent's composer pass it to `Composer::completions(..)`, which
+floats it above (see [agent.md](agent.md)).

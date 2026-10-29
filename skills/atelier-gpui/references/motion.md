@@ -38,7 +38,7 @@ instantly; looping indicators stand still in a readable pose.
 - Segmented control: the selected fill cross-fades between segments.
 - Disclosure, reasoning, tool calls: chevron turns; revealed content fades and settles.
 - Tool calls, tasks, plan steps: the state mark fades in when the state changes.
-- `UserMessage` / `AssistantMessage` with `.id(..)`, `ApprovalCard`: rise into place on arrival.
+- `UserMessage` / `AssistantMessage` with `.id(..)`: fade in on arrival, without moving. `ApprovalCard`: rises into place.
 - `Popover` with `.id(..)`: fades in on open.
 - Agent panel while running: a light passes along the gradient edge.
 - Streaming caret, thinking dots, spinners, skeleton shimmer, indeterminate bars: loop.
@@ -74,6 +74,10 @@ does this from "AIで曲を作る…" to the compose window.
 - Small state changes use `fast`; content appearing uses `normal`. Nothing user-triggered should
   take longer than `normal`.
 - Do not animate large layout changes (panel widths, list reflow); fade or reveal instead.
+- **In a list that grows from the bottom** — a conversation, a log — a new row only fades in.
+  Never move it with margin, padding or height: the list is pinned to its end, so a row that
+  changes size as it arrives jolts everything above it and shifts the person's selection.
+  Atelier's transcript rows do this already.
 - One looping element per region at most. A screen full of spinners says nothing.
 
 ## Progress and loading — choose by what is known

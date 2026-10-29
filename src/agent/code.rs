@@ -5,7 +5,7 @@ use gpui::{
     Window, div, prelude::FluentBuilder, px,
 };
 
-use crate::button::{Button, ControlSize};
+use crate::button::CopyButton;
 use crate::icon::{Icon, IconName};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
@@ -83,7 +83,7 @@ impl CodeBlock {
         self
     }
 
-    /// Offer a Copy button in the title bar.
+    /// Offer a [`CopyButton`] in the title bar, which copies the code.
     pub fn copyable(mut self) -> Self {
         self.copy = true;
         self
@@ -95,10 +95,7 @@ impl RenderOnce for CodeBlock {
         let theme = cx.theme();
         let colors = &theme.colors;
         let copy = self.copy.then(|| {
-            Button::icon_only((self.id.clone(), "copy"), IconName::Copy)
-                .size(ControlSize::Small)
-                .tooltip("Copy")
-                .into_any_element()
+            CopyButton::new((self.id.clone(), "copy"), self.code.clone()).into_any_element()
         });
         let lines: Vec<AnyElement> = self
             .code

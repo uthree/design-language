@@ -3,16 +3,19 @@
 //! These draw the surface only. Positioning is the caller's, with gpui's `anchored` and
 //! `deferred`, because where a menu opens depends on what opened it.
 
+use std::rc::Rc;
+
 use gpui::{
-    AnyElement, AnyView, App, AppContext, ClickEvent, Context, ElementId, InteractiveElement,
-    IntoElement, ParentElement, Render, RenderOnce, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Window, div, px,
+    AnyElement, AnyView, App, AppContext, ClickEvent, Context, ElementId, HighlightStyle,
+    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, ScrollHandle, SharedString,
+    StatefulInteractiveElement, StyleRefinement, Styled, StyledText, Window, div,
+    prelude::FluentBuilder, px,
 };
 
 use crate::focus::focusable;
 use crate::icon::{Icon, IconName, IconSource};
 use crate::text::{Label, TextColor, TextSize};
-use crate::theme::ActiveTheme;
+use crate::theme::{ActiveTheme, Theme};
 
 /// A tooltip view, built by [`Tooltip::build`] from a `.tooltip(...)` callback.
 pub struct Tooltip {
@@ -267,4 +270,246 @@ pub fn menu_separator(cx: &App) -> impl IntoElement + use<> {
         .mx(px(6.))
         .h(px(1.))
         .bg(cx.theme().colors.separator)
+}
+
+/// One suggestion in [`Completions`]: what it inserts, and what it does.
+pub struct Completion {
+    label: SharedString,
+    description: Option<SharedString>,
+    icon: Option<IconSource>,
+    matched: Vec<usize>,
+}
+
+impl Completion {
+    /// A suggestion such as `/model` or `claude-opus`.
+    pub fn new(label: impl Into<SharedString>) -> Self {
+        Self {
+            label: label.into(),
+            description: None,
+            icon: None,
+            matched: Vec::new(),
+        }
+    }
+
+    /// What it does or what it is, set muted after the label.
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// A leading icon.
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    /// The byte offsets in the label that matched what was typed, drawn in the accent, as a
+    /// fuzzy matcher reports them.
+    pub fn matched(mut self, matched: Vec<usize>) -> Self {
+        self.matched = matched;
+        self
+    }
+}
+
+type SelectHandler = Rc<dyn Fn(usize, &mut Window, &mut App) + 'static>;
+
+/// What [`Completions`] remembers: its scroll, and which row it last scrolled to.
+#[derive(Default)]
+struct CompletionsScroll {
+    handle: ScrollHandle,
+    shown: Option<usize>,
+}
+
+/// The suggestions under or over a text input as the person types: slash commands, model
+/// names, mentions.
+///
+/// Focus stays in the input the whole time, so the rows are no tab stops: the application
+/// moves [`Completions::selected`] with Up and Down from the input, accepts it with Tab (and
+/// Enter, where Enter does not already send), and closes the list with Escape. The list
+/// scrolls the selected row into view, so the keyboard never leaves it hidden. A click picks a
+/// row through [`Completions::on_select`]. Each row sets its label on the leading side and its
+/// description on the trailing side, so a column of commands reads down one edge.
+///
+/// Draw it on its own or hand it to [`crate::agent::Composer::completions`], which floats it
+/// over the composer.
+#[derive(IntoElement)]
+pub struct Completions {
+    id: ElementId,
+    items: Vec<Completion>,
+    selected: Option<usize>,
+    rows: usize,
+    empty: Option<SharedString>,
+    on_select: Option<SelectHandler>,
+}
+
+impl Completions {
+    /// An empty list.
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            items: Vec::new(),
+            selected: None,
+            rows: 6,
+            empty: None,
+            on_select: None,
+        }
+    }
+
+    /// Add a suggestion.
+    pub fn item(mut self, item: Completion) -> Self {
+        self.items.push(item);
+        self
+    }
+
+    /// Add suggestions.
+    pub fn items(mut self, items: impl IntoIterator<Item = Completion>) -> Self {
+        self.items.extend(items);
+        self
+    }
+
+    /// The row the keyboard is on, which Tab would accept.
+    pub fn selected(mut self, selected: Option<usize>) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// How many rows show before the list scrolls; six by default.
+    pub fn rows(mut self, rows: usize) -> Self {
+        self.rows = rows.max(1);
+        self
+    }
+
+    /// What to say when nothing matches, instead of hiding the list.
+    pub fn empty(mut self, empty: impl Into<SharedString>) -> Self {
+        self.empty = Some(empty.into());
+        self
+    }
+
+    /// Called with the index of a clicked row.
+    pub fn on_select(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_select = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Completions {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let colors = &theme.colors;
+        let row = theme.density.row;
+        let inset = theme.spacing.xxs;
+        let scroll = window.use_keyed_state(
+            ElementId::NamedChild(Box::new(self.id.clone()), "scroll".into()),
+            cx,
+            |_, _| CompletionsScroll::default(),
+        );
+        let handle = scroll.update(cx, |scroll, _| {
+            // Scroll only when the selection moves, so a wheel scroll is left alone.
+            if scroll.shown != self.selected {
+                scroll.shown = self.selected;
+                if let Some(selected) = self.selected {
+                    scroll.handle.scroll_to_item(selected);
+                }
+            }
+            scroll.handle.clone()
+        });
+        let accent = HighlightStyle {
+            color: Some(colors.accent_text),
+            font_weight: Some(theme.typography.label_weight),
+            ..Default::default()
+        };
+        let rows = self.items.into_iter().enumerate().map(|(index, item)| {
+            let selected = self.selected == Some(index);
+            let label = item.label.clone();
+            let highlights = item
+                .matched
+                .iter()
+                .filter_map(|&at| {
+                    let length = label.get(at..)?.chars().next()?.len_utf8();
+                    Some((at..at + length, accent))
+                })
+                .collect::<Vec<_>>();
+            let mut entry = div()
+                .id(ElementId::NamedChild(
+                    Box::new(self.id.clone()),
+                    format!("item-{index}").into(),
+                ))
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(theme.spacing.sm)
+                .h(row - px(2.))
+                .px(theme.spacing.sm)
+                .rounded(Theme::concentric(theme.shape.radius_md, inset))
+                .text_size(theme.typography.size_md)
+                .text_color(colors.text)
+                .when(selected, |entry| entry.bg(colors.selected))
+                .when(!selected, |entry| {
+                    let hover = colors.hover;
+                    entry.hover(move |style| style.bg(hover))
+                })
+                .children(
+                    item.icon
+                        .map(|icon| Icon::new(icon).size(px(14.)).color(colors.text_muted)),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .child(StyledText::new(label).with_highlights(highlights)),
+                )
+                .child(div().flex_1().min_w(theme.spacing.lg))
+                .children(item.description.map(|description| {
+                    div().min_w_0().truncate().child(
+                        Label::new(description)
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted),
+                    )
+                }));
+            if let Some(handler) = self.on_select.clone() {
+                entry = entry.on_click(move |_, window, cx| handler(index, window, cx));
+            }
+            entry
+        });
+        let rows: Vec<_> = rows.collect();
+        let nothing = rows.is_empty();
+        div()
+            .id(self.id.clone())
+            .debug_selector({
+                let id = self.id.clone();
+                move || id.to_string()
+            })
+            .flex()
+            .flex_col()
+            .p(inset)
+            .rounded(theme.shape.radius_md)
+            .bg(colors.overlay)
+            .border_1()
+            .border_color(colors.border)
+            .shadow(theme.elevation.medium.clone())
+            .child(
+                div()
+                    .id(ElementId::NamedChild(Box::new(self.id), "rows".into()))
+                    .flex()
+                    .flex_col()
+                    .max_h((row - px(2.)) * self.rows as f32)
+                    .overflow_y_scroll()
+                    .track_scroll(&handle)
+                    .children(rows)
+                    .when(nothing, |list| {
+                        list.children(self.empty.map(|empty| {
+                            div()
+                                .flex()
+                                .items_center()
+                                .h(row - px(2.))
+                                .px(theme.spacing.sm)
+                                .child(
+                                    Label::new(empty)
+                                        .size(TextSize::Small)
+                                        .color(TextColor::Faint),
+                                )
+                        }))
+                    }),
+            )
+    }
 }

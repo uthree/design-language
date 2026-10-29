@@ -25,6 +25,20 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
+  adoption:
+    name: Adoption check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The examples model how applications use Atelier, so they must pass the check apps run.
+      - run: skills/atelier-gpui/tools/check-adoption.sh --strict examples
+      - name: The check catches a wrapped component
+        run: |
+          mkdir -p "$RUNNER_TEMP/app/src"
+          echo 'let x = div().debug_selector(|| "save".into()).child(Button::new("save", "Save"));' \
+            > "$RUNNER_TEMP/app/src/main.rs"
+          ! skills/atelier-gpui/tools/check-adoption.sh "$RUNNER_TEMP/app/src"
+
   check:
     name: Clippy, test, build (${{ matrix.os }})
     # The platforms Auris Studio ships on.

@@ -12,28 +12,36 @@ use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Avatar, Spinner};
 use crate::focus::focusable;
 use crate::icon::{Icon, IconName};
-use crate::motion::{appear, chevron, lerp, looping, reveal, transition};
+use crate::motion::{appear, chevron, looping, reveal, transition};
+use crate::selectable::SelectableText;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Rise a new transcript row into place, if it has an id to remember that it already arrived.
+/// Fade a new transcript row in, if it has an id to remember that it already arrived.
+///
+/// Only its opacity moves, never its margin or height: a transcript grows from the bottom and
+/// stays scrolled there, so a row that changed height while it arrived would jolt everything
+/// above it and shift any selection the person is making.
 fn arrive(row: gpui::Div, id: Option<ElementId>, cx: &App) -> AnyElement {
     match id {
-        Some(id) => appear(row, id, cx, |row, delta| {
-            row.opacity(delta).mt(px(lerp(8., 0., delta)))
-        }),
+        Some(id) => appear(row, id, cx, |row, delta| row.opacity(delta)),
         None => row.into_any_element(),
     }
 }
 
-/// What the person said: a bubble on the trailing edge, with any attached context above it.
+/// What the person said: a bubble on the trailing edge, with any attached context above it
+/// and any actions below.
+///
+/// Given an id, its text can be selected and copied ([`SelectableText`]), exactly as typed.
 #[derive(IntoElement)]
 pub struct UserMessage {
     id: Option<ElementId>,
     text: SharedString,
+    body: Option<AnyElement>,
     attachments: Vec<AnyElement>,
+    actions: Vec<AnyElement>,
 }
 
 impl UserMessage {
@@ -42,14 +50,23 @@ impl UserMessage {
         Self {
             id: None,
             text: text.into(),
+            body: None,
             attachments: Vec::new(),
+            actions: Vec::new(),
         }
     }
 
-    /// A stable id for the message. With one, the message rises into place when it first
-    /// appears; without, it is simply drawn.
+    /// A stable id for the message. With one, the message fades in when it first appears and
+    /// its text can be selected; without, it is simply drawn.
     pub fn id(mut self, id: impl Into<ElementId>) -> Self {
         self.id = Some(id.into());
+        self
+    }
+
+    /// Replace the text inside the bubble, as [`AssistantMessage::body`] does: an
+    /// application's own Markdown or rich-text view. The bubble keeps its fill and shape.
+    pub fn body(mut self, body: impl IntoElement) -> Self {
+        self.body = Some(body.into_any_element());
         self
     }
 
@@ -58,12 +75,26 @@ impl UserMessage {
         self.attachments.push(attachment.into_any_element());
         self
     }
+
+    /// An action under the bubble, such as a [`crate::CopyButton`] or Edit. Like
+    /// [`AssistantMessage::action`], they stay visible.
+    pub fn action(mut self, action: impl IntoElement) -> Self {
+        self.actions.push(action.into_any_element());
+        self
+    }
 }
 
 impl RenderOnce for UserMessage {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
+        let body = match (self.body, &self.id) {
+            (Some(body), _) => body,
+            (None, Some(id)) => SelectableText::new((id.clone(), "text"), self.text)
+                .on_fill(colors.on_user_bubble)
+                .into_any_element(),
+            (None, None) => self.text.into_any_element(),
+        };
         let message = div()
             .flex()
             .flex_col()
@@ -89,8 +120,17 @@ impl RenderOnce for UserMessage {
                     .bg(colors.user_bubble)
                     .text_color(colors.on_user_bubble)
                     .text_size(theme.typography.size_md)
-                    .child(self.text),
-            );
+                    .child(body),
+            )
+            .when(!self.actions.is_empty(), |column| {
+                column.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(theme.spacing.xxs)
+                        .children(self.actions),
+                )
+            });
         arrive(message, self.id, cx)
     }
 }
@@ -127,7 +167,7 @@ impl AssistantMessage {
         }
     }
 
-    /// A stable id for the message, so it rises into place when it first appears.
+    /// A stable id for the message, so it fades in when it first appears.
     pub fn id(mut self, id: impl Into<ElementId>) -> Self {
         self.id = Some(id.into());
         self
@@ -165,7 +205,8 @@ impl AssistantMessage {
         self
     }
 
-    /// A footer action such as Copy or Retry. Keep them visible, not hover-only.
+    /// A footer action such as a [`crate::CopyButton`] or Retry. Keep them visible, not hover-only:
+    /// a hidden action cannot be found with Tab or seen on a touch screen.
     pub fn action(mut self, action: impl IntoElement) -> Self {
         self.actions.push(action.into_any_element());
         self

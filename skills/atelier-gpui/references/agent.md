@@ -37,7 +37,7 @@ AgentPanel::new("agent", conversation_title)
         .call(ToolCall::new("t1", "read_notes", "Read 96 notes", ToolState::Succeeded).icon(IconName::Eye))
         .call(ToolCall::new("t2", "edit_notes", "Revoiced bars 17–24", ToolState::Running).detail(json)))
     .entry(AssistantMessage::new(markdownish).meta("Claude Opus 5.5 · 14 s").streaming(false)
-        .action(Button::icon_only("copy", IconName::Copy).size(ControlSize::Small)))
+        .action(CopyButton::new("copy", markdownish.clone())))
     .entry(ApprovalCard::new("a1", "Create \u{201c}Pad swell\u{201d} on Strings?")
         .body("Adds one clip in bars 17–32. Nothing existing is replaced.")
         .allow_label("Create").on_allow(..).on_deny(..).on_always(..))
@@ -82,8 +82,48 @@ button you place in another rounded surface's corner does the same with `Button:
 - `ConversationRow` for history lists; live conversations show their status instead of time.
 - `StepList` for the agent's plan inside the transcript, and `TaskProgress::by_agent()` for long
   agent jobs (batch edits, renders) that outlive one message.
-- Give transcript rows ids (`UserMessage::id`, `AssistantMessage::id`) so they rise into place
-  as they arrive.
+- Give transcript rows ids (`UserMessage::id`, `AssistantMessage::id`) so they fade in as
+  they arrive; a `UserMessage` with an id also lets its text be selected and copied.
+
+## Message actions
+
+Put a message's actions — Copy, Retry, Edit, "Ask for more" — in its footer with `.action(..)`,
+on `AssistantMessage` and `UserMessage` alike: small ghost icon buttons, Copy first, then the
+commands that start another turn. They stay **visible**, not hover-only, so Tab finds them and
+a touch screen shows them; a streaming answer hides its footer until it is done. Copy is always
+a `CopyButton` (`CopyButton::new(id, text)`), which shows a check and "Copied" for a moment; on a
+card offering a candidate (a title, a concept), give it a label: `CopyButton::new(id,
+title).label("Copy title").copied_label("コピーしました")`.
+
+A message's own text is selectable: `UserMessage` with an id draws it with `SelectableText`;
+pass your Markdown view to `AssistantMessage::body` and make it selectable there.
+
+## Previewing an attachment
+
+A `ContextChip` that opens shows its attachment in a `Card` over the transcript or above the
+composer: the file's name as the title with a ghost `Button::icon_only(id, IconName::Close)` at
+the trailing end, then the content — text in `SelectableText::mono()`, an image fitted inside,
+audio in an `AudioPlayer`. Cap it at about half the panel's height and scroll inside. While it
+loads show a `Skeleton`; when it fails, a `ChatNotice::error` saying what to do.
+
+## Completions in the composer
+
+Slash commands, model names and mentions complete in a `Completions` list over the composer:
+
+```rust
+Composer::new("composer").input(input).completions(
+    Completions::new("slash")
+        .items(matches.iter().map(|m| Completion::new(m.name).description(m.help).matched(m.hits)))
+        .selected(Some(self.completion))
+        .on_select(cx.listener(|this, index, window, cx| this.accept(*index, window, cx))),
+)
+```
+
+Focus stays in the input. From there Up and Down move `selected` (the list keeps it in view),
+Tab accepts it, Enter accepts it only while the list is open and otherwise sends, and Escape
+closes the list and leaves the text. Show it as soon as the trigger (`/`, `@`) is typed, filter
+fuzzily as the person types, and draw the matched letters with `.matched(..)`. Say so when
+nothing matches (`.empty("No matching command")`) rather than hiding the list mid-word.
 
 ## Code
 
@@ -97,3 +137,13 @@ button you place in another rounded surface's corner does the same with `Button:
 Draw AI-authored objects with the object's own colour plus a dashed `colors.agent` border and a
 sparkle in their header, and offer Keep / Undo next to them (see `examples/showcase.rs`, the
 "Assistant suggestions" strip and the dashed clips).
+
+## Short text the agent wrote
+
+A name, a title or a one-line description the agent wrote — a cluster named by "Name with
+AI", a take's title — shows that it is the agent's wherever it appears, in lists and trees as
+well as where it was made: `AgentLabel::new(name)`, the text in its normal colour followed by a
+small sparkle in `colors.agent`. Give it `.tooltip(id, "Named by AI — rename to keep your
+own")`. The mark lasts until the person edits the text; then it is theirs and drawn as a plain
+`Label`. Keep the original next to the record, so Undo can bring it back. Do not tint the text
+itself or wash its row in `agent_wash`: in a list, only the mark differs.

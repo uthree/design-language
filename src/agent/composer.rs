@@ -29,6 +29,7 @@ pub struct Composer {
     placeholder: SharedString,
     context: Vec<AnyElement>,
     controls: Vec<AnyElement>,
+    completions: Option<AnyElement>,
     model: Option<SharedString>,
     busy: bool,
     focused: bool,
@@ -49,6 +50,7 @@ impl Composer {
             placeholder: "Ask anything…".into(),
             context: Vec::new(),
             controls: Vec::new(),
+            completions: None,
             model: None,
             busy: false,
             focused: false,
@@ -89,6 +91,14 @@ impl Composer {
     /// so the row stays one line and Send stays the only filled control in it.
     pub fn control(mut self, control: impl IntoElement) -> Self {
         self.controls.push(control.into_any_element());
+        self
+    }
+
+    /// Suggestions for what is being typed, usually [`crate::Completions`] for slash commands
+    /// or model names. They float over the composer, clear of the transcript's last line, and
+    /// leave focus in the input.
+    pub fn completions(mut self, completions: impl IntoElement) -> Self {
+        self.completions = Some(completions.into_any_element());
         self
     }
 
@@ -206,6 +216,7 @@ impl RenderOnce for Composer {
 
         div()
             .id(self.id.clone())
+            .relative()
             .flex()
             .flex_col()
             .gap(theme.spacing.xs)
@@ -271,6 +282,15 @@ impl RenderOnce for Composer {
                     // The send button's radius follows the composer's corner, not the capsule rule.
                     .child(action),
             )
+            .children(self.completions.map(|completions| {
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_full()
+                    .mb(theme.spacing.xs)
+                    .child(completions)
+            }))
     }
 }
 

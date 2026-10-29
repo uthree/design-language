@@ -181,3 +181,109 @@ fn a_press_on_the_title_bar_is_left_for_the_window_move(cx: &mut TestAppContext)
     press(cx, "tab enter");
     assert_eq!(*log.borrow(), ["first"]);
 }
+
+mod shortcuts {
+    use super::*;
+    use atelier::{AudioPlayer, SelectableText};
+    use gpui::{ClipboardItem, KeyBinding, actions};
+
+    actions!(test, [TogglePlay, MovePlayhead]);
+
+    /// A screen with an application-wide Space for play and Right for the playhead.
+    struct Transport {
+        log: Log,
+    }
+
+    impl Render for Transport {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let (play, playhead, seek) = (self.log.clone(), self.log.clone(), self.log.clone());
+            let frame = WindowFrame::new()
+                .child(TitleBar::new().title("Transport"))
+                .child(Button::new("button", "Button").on_click(note(&self.log, "button")))
+                .child(
+                    AudioPlayer::new("player", 0.5, "0:30", "1:00")
+                        .on_seek(move |to, _, _| seek.borrow_mut().push(format!("seek {to:.2}"))),
+                )
+                .child(SelectableText::new("quote", "let a = <b> **c**;"));
+            div()
+                .size_full()
+                .on_action(move |_: &TogglePlay, _, _| play.borrow_mut().push("play".into()))
+                .on_action(move |_: &MovePlayhead, _, _| {
+                    playhead.borrow_mut().push("playhead".into())
+                })
+                .child(frame)
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Log, &mut VisualTestContext) {
+        cx.update(|cx| {
+            atelier::init(cx, Theme::default());
+            // A second call must not bind anything twice.
+            atelier::init(cx, Theme::default());
+            cx.bind_keys([
+                KeyBinding::new("space", TogglePlay, None),
+                KeyBinding::new("right", MovePlayhead, None),
+            ]);
+        });
+        let log = Log::default();
+        let (_, window) = cx.add_window_view({
+            let log = log.clone();
+            |_, _| Transport { log }
+        });
+        window.run_until_parked();
+        (log, window)
+    }
+
+    #[gpui::test]
+    fn space_presses_a_focused_control_instead_of_playing(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        press(cx, "space");
+        assert_eq!(
+            *log.borrow(),
+            ["play"],
+            "nothing focused: the shortcut runs"
+        );
+        log.borrow_mut().clear();
+        press(cx, "tab space tab enter");
+        assert_eq!(*log.borrow(), ["button"], "on controls the keys are theirs");
+    }
+
+    #[gpui::test]
+    fn arrows_step_a_focused_track_and_move_the_playhead_elsewhere(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        press(cx, "right");
+        assert!(
+            !cx.update(|_, cx| atelier::focus_visible(cx)),
+            "an arrow on the canvas shows no ring"
+        );
+        // Button, the player's play button, then its scrubber.
+        press(cx, "tab tab tab right end");
+        assert_eq!(*log.borrow(), ["playhead", "seek 0.55", "seek 1.00"]);
+    }
+
+    #[gpui::test]
+    fn selected_text_copies_exactly(cx: &mut TestAppContext) {
+        let (_, cx) = open(cx);
+        let quote = cx.debug_bounds("quote").unwrap();
+        cx.simulate_mouse_move(quote.center(), None, Modifiers::default());
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Left,
+            position: quote.center(),
+            modifiers: Modifiers::default(),
+            click_count: 3,
+            first_mouse: false,
+        });
+        cx.simulate_event(gpui::MouseUpEvent {
+            button: MouseButton::Left,
+            position: quote.center(),
+            modifiers: Modifiers::default(),
+            click_count: 3,
+        });
+        cx.simulate_keystrokes("ctrl-c");
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|item| item.text()),
+            Some("let a = <b> **c**;".into())
+        );
+        cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
+    }
+}
