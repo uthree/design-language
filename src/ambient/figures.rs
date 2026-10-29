@@ -109,9 +109,10 @@ fn figure(shape: usize, i: usize, t: f32) -> [f32; 3] {
                 (2, 6),
                 (3, 7),
             ];
-            let per = POINTS.div_ceil(EDGES.len());
-            let (a, b) = EDGES[(i / per).min(EDGES.len() - 1)];
-            let k = (i % per) as f32 / per as f32;
+            // Spread evenly over all twelve edges, a share of a point each where they don't divide.
+            let along = (i * EDGES.len()) as f32 / POINTS as f32;
+            let (a, b) = EDGES[along as usize];
+            let k = along.fract();
             let [a, b] = [CORNERS[a], CORNERS[b]];
             [0, 1, 2].map(|axis| (a[axis] + (b[axis] - a[axis]) * k) * 0.72)
         }
@@ -441,6 +442,31 @@ mod tests {
         let cube = figures(Ambience::Formation, TAU * 0.2, FRAME, &still);
         let sheet = figures(Ambience::Formation, TAU * 0.45, FRAME, &still);
         assert_ne!(cube.items[40][0], sheet.items[40][0]);
+    }
+
+    #[test]
+    fn every_edge_of_the_cube_is_drawn_whole() {
+        // On each edge, points within a twelfth of an edge of each other from one end to the
+        // other: none missing, none short.
+        let mut along = [const { Vec::new() }; 12];
+        for i in 0..POINTS {
+            let at = figure(0, i, 0.);
+            let fixed: Vec<usize> = (0..3).filter(|&axis| at[axis].abs() > 0.7).collect();
+            // A corner lies on three edges; the rest on one.
+            if fixed.len() == 3 {
+                continue;
+            }
+            assert_eq!(fixed.len(), 2, "each point lies on an edge");
+            let free = 3 - fixed[0] - fixed[1];
+            let edge = free * 4 + (at[fixed[0]] > 0.) as usize * 2 + (at[fixed[1]] > 0.) as usize;
+            along[edge].push(at[free] / 0.72);
+        }
+        for mut edge in along {
+            edge.sort_by(f32::total_cmp);
+            assert!(edge.len() >= POINTS / 12);
+            assert!(edge[0] < -0.8 && edge[edge.len() - 1] > 0.8);
+            assert!(edge.windows(2).all(|w| w[1] - w[0] < 0.2));
+        }
     }
 
     #[test]
