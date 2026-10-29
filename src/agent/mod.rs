@@ -17,6 +17,7 @@ mod composer;
 mod label;
 mod panel;
 mod transcript;
+mod usage;
 
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
@@ -26,6 +27,7 @@ pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
     ToolCall, ToolGroup, ToolState, UserMessage,
 };
+pub use usage::{UsageLimit, UsageMeter};
 
 use gpui::{App, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div};
 

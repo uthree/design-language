@@ -52,6 +52,16 @@ pub struct Strings {
     pub task_states: [SharedString; 5],
     /// The agent's states: ready, working, needs approval, done, stopped.
     pub agent_states: [SharedString; 5],
+    /// The heading over a usage meter's limits.
+    pub usage: SharedString,
+    /// A usage meter's label; `{}` is the whole percentage left.
+    pub usage_left: SharedString,
+    /// A limit's share spent; `{}` is the whole percentage.
+    pub usage_used: SharedString,
+    /// When a limit fills again; `{}` is the time the application gives.
+    pub usage_resets: SharedString,
+    /// A spent limit whose reset time is not known.
+    pub usage_reached: SharedString,
 }
 
 impl Default for Strings {
@@ -97,6 +107,11 @@ impl Strings {
                 "Done".into(),
                 "Stopped".into(),
             ],
+            usage: "Plan usage".into(),
+            usage_left: "{} % left".into(),
+            usage_used: "{} % used".into(),
+            usage_resets: "Resets {}".into(),
+            usage_reached: "Limit reached".into(),
         }
     }
 
@@ -134,6 +149,11 @@ impl Strings {
                 "完了".into(),
                 "停止".into(),
             ],
+            usage: "利用枠".into(),
+            usage_left: "残り{}%".into(),
+            usage_used: "{}%使用".into(),
+            usage_resets: "{}にリセット".into(),
+            usage_reached: "上限に達しました".into(),
         }
     }
 
@@ -146,6 +166,21 @@ impl Strings {
     /// [`Strings::remove`] with the chip's label put in.
     pub fn remove(&self, label: &str) -> SharedString {
         self.remove.replace("{}", label).into()
+    }
+
+    /// [`Strings::usage_left`] with the percentage put in.
+    pub fn usage_left(&self, percent: &str) -> SharedString {
+        self.usage_left.replace("{}", percent).into()
+    }
+
+    /// [`Strings::usage_used`] with the percentage put in.
+    pub fn usage_used(&self, percent: &str) -> SharedString {
+        self.usage_used.replace("{}", percent).into()
+    }
+
+    /// [`Strings::usage_resets`] with the time put in.
+    pub fn usage_resets(&self, time: &str) -> SharedString {
+        self.usage_resets.replace("{}", time).into()
     }
 }
 
@@ -171,5 +206,12 @@ mod tests {
     fn remove_names_the_chip() {
         assert_eq!(Strings::english().remove("a.rs"), "Remove a.rs");
         assert_eq!(Strings::japanese().remove("a.rs"), "a.rsを外す");
+    }
+
+    #[test]
+    fn usage_puts_the_numbers_in() {
+        assert_eq!(Strings::english().usage_left("28"), "28 % left");
+        assert_eq!(Strings::japanese().usage_left("28"), "残り28%");
+        assert_eq!(Strings::japanese().usage_resets("14:30"), "14:30にリセット");
     }
 }

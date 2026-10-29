@@ -28,6 +28,11 @@ Also in 0.2.0, on top of the second round below.
 - `Composer::tone(..)` (a frame in the signal colour with its mark), `Composer::notice(..)` (a
   row inside the frame) and `Composer::attach_disabled(..)`. `ContextChip::on_click` opens the
   attachment; `ContextChip::remove_label(..)` names the remove tooltip.
+- `agent::UsageMeter` and `Composer::usage(..)`: what is left of the plan, as a small ring and
+  "28 % left" before Send. It follows the limit closest to running out, lists every
+  `UsageLimit` with its reset time on hover, and turns to warning under 20 % and danger under
+  5 %. Its words are in `Strings` (`usage`, `usage_left`, `usage_used`, `usage_resets`,
+  `usage_reached`).
 - `Morph::fill_to(..)` and `Morph::border(from, to)`.
 - `FormField::unlabelled()` and `FormField::note(..)`; under a top label the first control fills
   the width.

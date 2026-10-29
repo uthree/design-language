@@ -12,7 +12,7 @@
 
 mod common;
 
-use atelier::agent::{AgentLabel, AssistantMessage, Composer, UserMessage};
+use atelier::agent::{AgentLabel, AssistantMessage, Composer, UsageLimit, UsageMeter, UserMessage};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, Completion, Completions, ControlSize,
     CopyButton, Direction, Divider, Edge, IconName, Label, ListItem, Measure, Morph, OptionCard,
@@ -506,7 +506,12 @@ impl AurisScreens {
                         cx.notify();
                     })),
             )
-            .busy(self.slash.is_none());
+            .busy(self.slash.is_none())
+            .usage(
+                UsageMeter::new("usage")
+                    .limit(UsageLimit::new("5時間枠", 0.88).resets("1時間40分後"))
+                    .limit(UsageLimit::new("週間", 0.52).resets("月曜 9:00")),
+            );
         let composer = match self.slash {
             Some(selected) => composer.value("/mo").completions(
                 Completions::new("slash")

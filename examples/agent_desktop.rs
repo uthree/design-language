@@ -9,7 +9,8 @@ mod common;
 
 use atelier::agent::{
     AgentStatus, ApprovalCard, AssistantMessage, CodeBlock, Composer, ContextChip, ConversationRow,
-    DiffBlock, DiffLine, ReasoningBlock, ToolCall, ToolGroup, ToolState, UserMessage,
+    DiffBlock, DiffLine, ReasoningBlock, ToolCall, ToolGroup, ToolState, UsageLimit, UsageMeter,
+    UserMessage,
 };
 use atelier::{
     ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider, Edge,
@@ -377,7 +378,19 @@ impl Render for AgentDesktop {
                                                     )
                                                     .on_remove(|_, _, _| {}),
                                                 )
-                                                .model("Claude Opus 5.5"),
+                                                .model("Claude Opus 5.5")
+                                                .usage(
+                                                    UsageMeter::new("usage")
+                                                        .limit(
+                                                            UsageLimit::new("5-hour window", 0.62)
+                                                                .resets("in 1 h 40 min"),
+                                                        )
+                                                        .limit(
+                                                            UsageLimit::new("Weekly", 0.41)
+                                                                .resets("Mon 09:00"),
+                                                        )
+                                                        .on_click(|_, _, _| {}),
+                                                ),
                                         ),
                                     ),
                             ),

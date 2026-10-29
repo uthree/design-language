@@ -32,6 +32,7 @@ pub struct Composer {
     context: Vec<AnyElement>,
     controls: Vec<AnyElement>,
     completions: Option<AnyElement>,
+    usage: Option<AnyElement>,
     model: Option<SharedString>,
     attach_disabled: bool,
     tone: Option<Tone>,
@@ -56,6 +57,7 @@ impl Composer {
             context: Vec::new(),
             controls: Vec::new(),
             completions: None,
+            usage: None,
             model: None,
             attach_disabled: false,
             tone: None,
@@ -107,6 +109,13 @@ impl Composer {
     /// leave focus in the input.
     pub fn completions(mut self, completions: impl IntoElement) -> Self {
         self.completions = Some(completions.into_any_element());
+        self
+    }
+
+    /// The plan's remaining allowance, usually a [`super::UsageMeter`]. It sits at the
+    /// trailing end of the control row, before Send, where the person looks as they send.
+    pub fn usage(mut self, usage: impl IntoElement) -> Self {
+        self.usage = Some(usage.into_any_element());
         self
     }
 
@@ -320,6 +329,7 @@ impl RenderOnce for Composer {
                     .children(model)
                     .children(self.controls)
                     .child(div().flex_1())
+                    .children(self.usage)
                     .when(!self.busy, |row| {
                         row.child(Kbd::new(if cfg!(target_os = "macos") {
                             "↩"
