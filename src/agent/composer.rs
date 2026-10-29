@@ -1,15 +1,17 @@
 //! Where the person writes to the agent, and the chips around it.
 
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    AnyElement, AnyView, App, ClickEvent, ElementId, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder, px,
 };
 
 use crate::button::{Button, ButtonVariant, ControlSize};
-use crate::display::Kbd;
+use crate::display::{Kbd, Tone};
 use crate::focus::focusable;
 use crate::icon::{Icon, IconName, IconSource};
+use crate::overlay::Tooltip;
+use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, Theme};
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -26,11 +28,14 @@ pub struct Composer {
     value: Option<SharedString>,
     input: Option<AnyElement>,
     empty: Option<bool>,
-    placeholder: SharedString,
+    placeholder: Option<SharedString>,
     context: Vec<AnyElement>,
     controls: Vec<AnyElement>,
     completions: Option<AnyElement>,
     model: Option<SharedString>,
+    attach_disabled: bool,
+    tone: Option<Tone>,
+    notice: Option<AnyElement>,
     busy: bool,
     focused: bool,
     on_send: Option<ClickHandler>,
@@ -47,11 +52,14 @@ impl Composer {
             value: None,
             input: None,
             empty: None,
-            placeholder: "Ask anything…".into(),
+            placeholder: None,
             context: Vec::new(),
             controls: Vec::new(),
             completions: None,
             model: None,
+            attach_disabled: false,
+            tone: None,
+            notice: None,
             busy: false,
             focused: false,
             on_send: None,
@@ -82,7 +90,7 @@ impl Composer {
 
     /// Text shown while empty.
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
-        self.placeholder = placeholder.into();
+        self.placeholder = Some(placeholder.into());
         self
     }
 
@@ -99,6 +107,28 @@ impl Composer {
     /// leave focus in the input.
     pub fn completions(mut self, completions: impl IntoElement) -> Self {
         self.completions = Some(completions.into_any_element());
+        self
+    }
+
+    /// Grey out the attach button, for example while a take is being generated.
+    pub fn attach_disabled(mut self, disabled: bool) -> Self {
+        self.attach_disabled = disabled;
+        self
+    }
+
+    /// Draw the frame in a signal colour while a mode needs remembering — approvals skipped,
+    /// a destructive tool allowed. A mark joins the colour in the control row; say what the
+    /// mode is in a [`Composer::control`] or [`Composer::notice`] beside it.
+    pub fn tone(mut self, tone: Tone) -> Self {
+        self.tone = Some(tone);
+        self
+    }
+
+    /// A line inside the frame under the text, before the control row: a connection error
+    /// with its Retry, a note that context was compacted. Usually a
+    /// [`super::ChatNotice`].
+    pub fn notice(mut self, notice: impl IntoElement) -> Self {
+        self.notice = Some(notice.into_any_element());
         self
     }
 
@@ -178,8 +208,10 @@ impl RenderOnce for Composer {
         };
         let has_text = !empty;
 
+        let strings = cx.strings().clone();
         let mut attach = Button::icon_only((self.id.clone(), "attach"), IconName::Paperclip)
-            .tooltip("Attach context…");
+            .disabled(self.attach_disabled)
+            .tooltip(strings.attach.clone());
         if let Some(handler) = self.on_attach {
             attach = attach.on_click(handler);
         }
@@ -197,7 +229,7 @@ impl RenderOnce for Composer {
             let mut stop = Button::icon_only((self.id.clone(), "stop"), IconName::Stop)
                 .variant(ButtonVariant::Secondary)
                 .radius(control_radius)
-                .tooltip("Stop");
+                .tooltip(strings.stop.clone());
             if let Some(handler) = self.on_stop {
                 stop = stop.on_click(handler);
             }
@@ -207,7 +239,7 @@ impl RenderOnce for Composer {
                 .primary()
                 .disabled(!has_text)
                 .radius(control_radius)
-                .tooltip("Send");
+                .tooltip(strings.send.clone());
             if let Some(handler) = self.on_send {
                 send = send.on_click(handler);
             }
@@ -224,10 +256,10 @@ impl RenderOnce for Composer {
             .rounded(outer)
             .bg(colors.elevated)
             .border_1()
-            .border_color(if self.focused {
-                colors.accent.opacity(0.7)
-            } else {
-                colors.border_strong
+            .border_color(match self.tone {
+                Some(tone) if tone != Tone::Neutral => tone.colors(theme).0,
+                _ if self.focused => colors.accent.opacity(0.7),
+                _ => colors.border_strong,
             })
             .shadow(theme.elevation.low.clone())
             .when(!self.context.is_empty(), |composer| {
@@ -258,16 +290,32 @@ impl RenderOnce for Composer {
                                 .top(theme.spacing.xs)
                                 .left(theme.spacing.xs)
                                 .text_color(colors.text_faint)
-                                .child(self.placeholder),
+                                .child(
+                                    self.placeholder
+                                        .unwrap_or_else(|| strings.ask_anything.clone()),
+                                ),
                         )
                     })
                     .children(self.input),
             )
+            .children(self.notice)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(theme.spacing.xs)
+                    // The tone's mark, so the frame's colour is never the only sign.
+                    .children(self.tone.filter(|tone| *tone != Tone::Neutral).map(|tone| {
+                        div().pl(theme.spacing.xs).child(
+                            Icon::new(match tone {
+                                Tone::Agent => IconName::Sparkles,
+                                Tone::Success => IconName::Check,
+                                _ => IconName::Alert,
+                            })
+                            .size(px(14.))
+                            .color(tone.colors(theme).0),
+                        )
+                    }))
                     .child(attach)
                     .children(model)
                     .children(self.controls)
@@ -301,6 +349,8 @@ pub struct ContextChip {
     label: SharedString,
     icon: IconSource,
     color: Option<gpui::Hsla>,
+    remove_label: Option<SharedString>,
+    on_click: Option<ClickHandler>,
     on_remove: Option<ClickHandler>,
 }
 
@@ -316,8 +366,27 @@ impl ContextChip {
             label: label.into(),
             icon: icon.into(),
             color: None,
+            remove_label: None,
+            on_click: None,
             on_remove: None,
         }
+    }
+
+    /// Called when the chip itself is pressed — to open a preview of the attachment. Makes its
+    /// icon and label a tab stop of their own, apart from the remove button.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+
+    /// The remove button's tooltip, naming what goes; [`crate::Strings::remove`] with the
+    /// label by default ("Remove transport.rs", "transport.rsを外す").
+    pub fn remove_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.remove_label = Some(label.into());
+        self
     }
 
     /// Icon colour, for example the track's colour.
@@ -342,6 +411,9 @@ impl RenderOnce for ContextChip {
         let colors = &theme.colors;
         let height = theme.density.control_sm;
         let hover = colors.hover;
+        let remove_label = self
+            .remove_label
+            .unwrap_or_else(|| cx.strings().remove(&self.label));
         let remove = self.on_remove.map(|handler| {
             let id = ElementId::from((self.id.clone(), "remove"));
             focusable(
@@ -359,8 +431,43 @@ impl RenderOnce for ContextChip {
             .rounded(theme.shape.radius_xs)
             .hover(move |style| style.bg(hover))
             .child(Icon::new(IconName::Close).size(px(10.)))
+            .tooltip(move |window, cx| -> AnyView {
+                Tooltip::new(remove_label.clone()).build(window, cx)
+            })
             .on_click(handler)
         });
+        let content = div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.xs)
+            .child(
+                Icon::new(self.icon)
+                    .size(px(12.))
+                    .color(self.color.unwrap_or(colors.text_faint)),
+            )
+            .child(self.label);
+        // Pressing the chip and removing it are separate stops, so neither press reaches the
+        // other.
+        let content = match self.on_click {
+            Some(handler) => {
+                let id = ElementId::from((self.id.clone(), "open"));
+                focusable(
+                    div().id(id.clone()),
+                    &id,
+                    false,
+                    theme.shape.radius_xs,
+                    window,
+                    cx,
+                )
+                .rounded(theme.shape.radius_xs)
+                .cursor_pointer()
+                .hover(|style| style.text_color(colors.text))
+                .child(content)
+                .on_click(handler)
+                .into_any_element()
+            }
+            None => content.into_any_element(),
+        };
         div()
             .id(self.id)
             .flex()
@@ -380,12 +487,7 @@ impl RenderOnce for ContextChip {
             .border_color(colors.border)
             .text_size(theme.typography.size_xs)
             .text_color(colors.text_muted)
-            .child(
-                Icon::new(self.icon)
-                    .size(px(12.))
-                    .color(self.color.unwrap_or(colors.text_faint)),
-            )
-            .child(self.label)
+            .child(content)
             .children(remove)
     }
 }

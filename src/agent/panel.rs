@@ -12,6 +12,7 @@ use crate::display::Avatar;
 use crate::focus::focusable;
 use crate::icon::{Icon, IconName};
 use crate::motion::{lerp, looping};
+use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
 
@@ -105,7 +106,7 @@ impl RenderOnce for AgentPanel {
         let [from, middle, to] = colors.agent_gradient;
         let close = self.on_close.map(|handler| {
             Button::icon_only((self.id.clone(), "close"), IconName::SidebarRight)
-                .tooltip("Hide assistant")
+                .tooltip(cx.strings().hide_assistant.clone())
                 .on_click(handler)
         });
         let mut status = AgentStatusLabel::new(self.status);
@@ -278,7 +279,7 @@ impl RenderOnce for AgentToggle {
                 .size(px(15.))
                 .color(colors.agent),
         )
-        .child("Assistant")
+        .child(cx.strings().assistant.clone())
         // The state badge only matters while the panel cannot show it itself.
         .when(!self.open && !mark.is_empty(), |toggle| {
             toggle.child(

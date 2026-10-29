@@ -296,9 +296,7 @@ impl AurisScreens {
                     ))
                     .child(div().flex_1())
                     .child(
-                        CopyButton::new(("copy-title", index), title)
-                            .tooltip("タイトルをコピー")
-                            .copied_label("コピーしました"),
+                        CopyButton::new(("copy-title", index), title).tooltip("タイトルをコピー"),
                     ),
             )
             .child(
@@ -445,20 +443,14 @@ impl AurisScreens {
             .w_full()
             .max_w(px(1040.))
             .child(
-                UserMessage::new(REQUEST).id("request").action(
-                    CopyButton::new("copy-request", REQUEST)
-                        .tooltip("コピー")
-                        .copied_label("コピーしました"),
-                ),
+                UserMessage::new(REQUEST)
+                    .id("request")
+                    .action(CopyButton::new("copy-request", REQUEST)),
             )
             .child(
                 AssistantMessage::new(REPLY)
                     .id("reply")
-                    .action(
-                        CopyButton::new("copy-reply", REPLY)
-                            .tooltip("コピー")
-                            .copied_label("コピーしました"),
-                    )
+                    .action(CopyButton::new("copy-reply", REPLY))
                     // Two voices only: the bubble is the person, the prose is the assistant.
                     .anonymous()
                     .meta("GPT-6-Sol (Codex) · 2分14秒"),
@@ -691,21 +683,25 @@ fn main() {
         Some("compose") => Screen::Compose,
         _ => Screen::Chooser,
     };
-    common::run("Auris Studio", 1320., 860., move |choice, _| AurisScreens {
-        choice,
-        screen,
-        chooser_page: 0,
-        start: 1,
-        playing: Some(0),
-        learn_preferences: true,
-        effort: 1,
-        fast: false,
-        positions: [0.76, 0.],
-        volume: 0.8,
-        muted: false,
-        slash: common::argument("--slash").map(|_| 0),
-        ai_card: Measure::new(),
-        handoff: None,
-        handoffs: 0,
+    common::run("Auris Studio", 1320., 860., move |choice, cx| {
+        // Atelier's own words (tooltips, "Copied", Send) in the application's language.
+        atelier::Strings::japanese().install(cx);
+        AurisScreens {
+            choice,
+            screen,
+            chooser_page: 0,
+            start: 1,
+            playing: Some(0),
+            learn_preferences: true,
+            effort: 1,
+            fast: false,
+            positions: [0.76, 0.],
+            volume: 0.8,
+            muted: false,
+            slash: common::argument("--slash").map(|_| 0),
+            ai_card: Measure::new(),
+            handoff: None,
+            handoffs: 0,
+        }
     });
 }

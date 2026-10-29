@@ -50,8 +50,33 @@ check() {
 }
 
 # Wrapping and copying components.
-check error '\.debug_selector\(' \
-    "Atelier components take an id and use it as their test selector: give the component the id (Button::new(id, ..), ListItem::new(id, ..), Plot3d::id) instead of wrapping it in a div with a debug_selector. A control of your own keeps its selector with // atelier: allow."
+check warn '\.debug_selector\(' \
+    "if this div wraps an Atelier component, give the component the id instead (Button::new(id, ..), ListItem::new(id, ..), Plot3d::id): it uses it as its test selector. A control of your own keeps its selector with // atelier: allow."
+# A div whose debug_selector wraps an Atelier component a few lines further down: the component
+# takes that id itself. Reported once per wrapper, naming the component.
+wrapped=$(find "${dirs[@]}" -name '*.rs' -print0 2>/dev/null | xargs -0 -r awk '
+    FNR == 1 { pending = 0 }
+    /atelier: allow/ { pending = 0; next }
+    /\.debug_selector\(/ {
+        pending = 5; place = FILENAME ":" FNR
+        $0 = substr($0, index($0, ".debug_selector("))
+    }
+    pending > 0 {
+        if (match($0, /(Button|ListItem|Switch|Checkbox|MenuItem|SegmentedControl|TextField|Slider)::[a-z_]+\(/)) {
+            name = substr($0, RSTART, RLENGTH)
+            sub(/::.*/, "", name)
+            print place ": " name
+            pending = 0
+        } else {
+            pending--
+        }
+    }')
+while IFS= read -r hit; do
+    [ -z "$hit" ] && continue
+    echo "error: ${hit%: *}: a debug_selector wrapped around ${hit##*: }: pass the id to ${hit##*: } itself, which uses it as its selector."
+    errors=$((errors + 1))
+done <<<"$wrapped"
+
 check warn '\.tab_index\(' \
     "a hand-made tab stop: Atelier's Button, ListItem, MenuItem, Card::id and the rest are tab stops with the focus ring and Enter/Space already."
 check error 'fn (nav_item|icon_button|readout|level_meter)\b' \
@@ -68,6 +93,13 @@ check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \
     "use CopyButton: it copies, says Copied for a moment and moves the label to its tooltip."
+
+check error 'fn [a-z_]*composer_frame\b' \
+    "use Composer: .tone(..) for a warning frame with its mark, .notice(..) for a row inside the frame, .attach_disabled(..), .control(..)."
+check error '(punch|notes)\.svg' \
+    "use IconName::Punch / IconName::Notes."
+check warn 'motion\.enabled *= *false' \
+    "in tests, call atelier::motion::reduce_motion(cx)."
 
 # Keyboard.
 check error 'Claim[A-Za-z]*Activation' \

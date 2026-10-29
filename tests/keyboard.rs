@@ -287,3 +287,83 @@ mod shortcuts {
         cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
     }
 }
+
+mod chat {
+    use super::*;
+    use atelier::agent::AssistantMessage;
+    use gpui::ClipboardItem;
+
+    /// A title bar, an answer and a switch that reports its new value.
+    struct Chat {
+        log: Log,
+    }
+
+    impl Render for Chat {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let log = self.log.clone();
+            WindowFrame::new()
+                .child(TitleBar::new().title("Chat"))
+                .child(AssistantMessage::new("Here it is.\n\n- one <item>").id("reply"))
+                .child(
+                    Switch::new("switch", false).on_change(move |on: &bool, _, _| {
+                        log.borrow_mut().push(format!("switch {on}"))
+                    }),
+                )
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Log, &mut VisualTestContext) {
+        cx.update(|cx| {
+            atelier::init(cx, Theme::default());
+            atelier::motion::reduce_motion(cx);
+        });
+        let log = Log::default();
+        let (_, window) = cx.add_window_view({
+            let log = log.clone();
+            |_, _| Chat { log }
+        });
+        window.run_until_parked();
+        (log, window)
+    }
+
+    #[gpui::test]
+    fn the_title_has_a_selector(cx: &mut TestAppContext) {
+        let (_, cx) = open(cx);
+        assert!(cx.debug_bounds("atelier-title").is_some());
+    }
+
+    #[gpui::test]
+    fn switch_on_change_gets_the_new_value(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        let switch = cx.debug_bounds("switch").unwrap();
+        cx.simulate_click(switch.center(), Modifiers::default());
+        assert_eq!(*log.borrow(), ["switch true"]);
+    }
+
+    #[gpui::test]
+    fn an_answer_with_an_id_can_be_selected_block_by_block(cx: &mut TestAppContext) {
+        let (_, cx) = open(cx);
+        // The second block is the bullet; its text copies without the bullet mark.
+        let item = cx.debug_bounds("reply-block-2").unwrap();
+        cx.simulate_mouse_move(item.center(), None, Modifiers::default());
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Left,
+            position: item.center(),
+            modifiers: Modifiers::default(),
+            click_count: 3,
+            first_mouse: false,
+        });
+        cx.simulate_event(gpui::MouseUpEvent {
+            button: MouseButton::Left,
+            position: item.center(),
+            modifiers: Modifiers::default(),
+            click_count: 3,
+        });
+        cx.simulate_keystrokes("ctrl-c");
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|item| item.text()),
+            Some("one <item>".into())
+        );
+        cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
+    }
+}

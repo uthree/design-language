@@ -87,16 +87,34 @@ button you place in another rounded surface's corner does the same with `Button:
 
 ## Message actions
 
-Put a message's actions — Copy, Retry, Edit, "Ask for more" — in its footer with `.action(..)`,
-on `AssistantMessage` and `UserMessage` alike: small ghost icon buttons, Copy first, then the
-commands that start another turn. They stay **visible**, not hover-only, so Tab finds them and
-a touch screen shows them; a streaming answer hides its footer until it is done. Copy is always
-a `CopyButton` (`CopyButton::new(id, text)`), which shows a check and "Copied" for a moment; on a
-card offering a candidate (a title, a concept), give it a label: `CopyButton::new(id,
-title).label("Copy title").copied_label("コピーしました")`.
+A message's own text is the first way to copy it: give `UserMessage` and `AssistantMessage` an
+id and their text is selectable (`SelectableText`; the assistant's built-in Markdown block by
+block). With your own Markdown view in `AssistantMessage::body`, make it selectable there.
 
-A message's own text is selectable: `UserMessage` with an id draws it with `SelectableText`;
-pass your Markdown view to `AssistantMessage::body` and make it selectable there.
+Put a message's actions — Copy, Retry, Edit — in its footer with `.action(..)`, on
+`AssistantMessage` and `UserMessage` alike: small ghost **icon-only** buttons, Copy first
+(`CopyButton::new(id, text)`, which shows a check and says "Copied" in its tooltip). Never a
+labelled "Copy message" under every message: the transcript is for reading. The actions show
+while the pointer is over the message and whenever the person moves with the keyboard, so Tab
+still finds them; the row keeps its height, so nothing moves when they appear. Metadata (model,
+time) stays visible. `.pin_actions()` keeps them drawn, for the answer the person is most likely
+to act on next. A streaming answer hides its footer until it is done. On a card offering a
+candidate (a title, a concept) the copy is the point: give it a label, `CopyButton::new(id,
+title).label("Copy title")`.
+
+The composer: `.tone(Tone::Warning)` draws its frame in that colour with a mark in the control
+row while a mode needs remembering (approvals skipped); `.notice(ChatNotice::error(..))` puts a
+line inside the frame above the controls; `.attach_disabled(true)` greys out attach.
+`ContextChip::on_click` opens the attachment (a stop of its own, apart from remove), and
+`.remove_label(..)` names the remove button's tooltip.
+
+## Words
+
+Components draw their own words — tooltips, Send, "Copied", Allow and Deny, states — from
+`atelier::Strings`, English by default. Install another set once at start-up:
+`atelier::Strings::japanese().install(cx)` or your own `Strings { .. }`. A label passed to a
+component (`CopyButton::label`, `ApprovalCard::allow_label`, `Composer::placeholder`) still
+wins.
 
 ## Previewing an attachment
 

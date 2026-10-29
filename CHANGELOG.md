@@ -10,6 +10,57 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## 0.2.0 — Auris feedback, third round
+
+Also in 0.2.0, on top of the second round below.
+
+### Added
+
+- `Strings`: every word a component draws by itself (tooltips, Send, "Copied", Allow, Deny,
+  Cancel, task and agent states, the composer's placeholder) in one global, English by default.
+  `Strings::japanese().install(cx)` once at start-up; a label given to a component still wins.
+- Message text is the way to copy it: `AssistantMessage` with an id makes its built-in text
+  selectable block by block, as `UserMessage` already did. Message actions show only while the
+  pointer is over the message or the keyboard is moving (`pin_actions()` keeps them), so a
+  transcript carries no row of Copy buttons.
+- `TitleBar::drag_region(el)` for an application that marks its own drag area with
+  `window_drag(false)`, and `TitleBar::title_id(..)`: the title has the selector `atelier-title`.
+- `Composer::tone(..)` (a frame in the signal colour with its mark), `Composer::notice(..)` (a
+  row inside the frame) and `Composer::attach_disabled(..)`. `ContextChip::on_click` opens the
+  attachment; `ContextChip::remove_label(..)` names the remove tooltip.
+- `Morph::fill_to(..)` and `Morph::border(from, to)`.
+- `FormField::unlabelled()` and `FormField::note(..)`; under a top label the first control fills
+  the width.
+- `Switch::on_change` and `Checkbox::on_change`, handed the new value.
+- `atelier::motion::reduce_motion(cx)`, for tests.
+- `IconName::Punch` (punch-in range) and `IconName::Notes` (a note of the score).
+- The adoption check reports a `debug_selector` wrapper by the component it wraps, and finds
+  `composer_frame`, own `punch`/`notes` SVGs and motion turned off by hand.
+
+### Changed
+
+- `TextField`'s placeholder lies under the application's input at the text's start instead of
+  beside it.
+- The composer's placeholder and tooltips, the agent panel, the player, approvals and task
+  progress read their words from `Strings` instead of hard-coded English.
+- `CopyButton::copied_label` and `tooltip` default to `Strings`; `ApprovalCard::allow_label`
+  too.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| `composer_frame` drawing a warning frame, a notice row or a greyed attach | `Composer::tone`, `.notice`, `.attach_disabled` |
+| An own drag region laid beside `TitleBar::window_drag(false)` | `TitleBar::drag_region(el)` |
+| A `div` around `Morph` fading it into a veil | `Morph::fill_to(..)`, `.border(..)` |
+| `.empty(false)` plus an own placeholder in `TextField` | `.placeholder(..).empty(..)` |
+| `div().flex_1()` around each control in a `FormField` | Nothing: the first control fills the width |
+| `cx.global_mut::<Theme>().motion.enabled = false` in tests | `atelier::motion::reduce_motion(cx)` |
+| Inverting the value in `Switch::on_click` | `Switch::on_change` |
+| `punch.svg`, `notes.svg` | `IconName::Punch`, `IconName::Notes` |
+| Translating each tooltip (`.tooltip("コピー").copied_label("コピーしました")`) | `Strings::japanese().install(cx)` |
+| A labelled "Copy message" button under each message | The message's selectable text, and an icon-only `CopyButton` shown on hover |
+
 ## 0.2.0 — Auris feedback, second round
 
 ### Added

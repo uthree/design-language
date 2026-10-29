@@ -29,6 +29,7 @@ mod overlay;
 pub mod plot;
 mod progress;
 mod selectable;
+mod strings;
 mod text;
 mod theme;
 pub mod viz;
@@ -58,6 +59,7 @@ pub use progress::{
     skeleton_paragraph,
 };
 pub use selectable::{CopySelection, SELECTABLE_CONTEXT, SelectAll, SelectableText};
+pub use strings::{ActiveStrings, Strings};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,

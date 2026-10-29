@@ -61,7 +61,9 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   signal colours: `colors.info` mute, `colors.warning` solo/cycle, `colors.record` arm.
 - A button that opens a dialog or needs more input ends in `…` ("Export…"). Immediate commands
   do not.
-- Secondary commands go in a visible menu or a context menu, not in hover-only icon strips.
+- Secondary commands go in a visible menu or a context menu, not in hover-only icon strips. The
+  one exception is a transcript's message actions (Copy, Retry), which show on hover and while
+  the keyboard moves, so the conversation reads as text.
 - Loading indicators only while something really waits.
 - **Everything the pointer can press, the keyboard can reach.** Use Atelier's components (they
   are tab stops, press on Enter/Space and leave the order when disabled) rather than a `div` with
