@@ -205,7 +205,7 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
 
 - `AudioPlayer::new(id, position, "1:32", "2:00").peaks(peaks).playing(bool).volume(v)` — a
   preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made,
-  `.loading(true)` (a spinner for the play button) while it loads or decodes. `.on_seek(|to, w,
+  `.loading(true)` (a spinner for the play button) while it loads or decodes. `.on_seek(|to: &f32, w,
   cx| ..)` makes the scrubber follow a click or a drag and, once focused, the arrows, Home and
   End — one `.seek_step(5. / seconds)` a press; `.on_volume(..)` does the same for the volume,
   and `.muted(bool).on_mute(..)` adds a mute button beside it. The player only reports what

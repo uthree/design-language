@@ -197,14 +197,14 @@ mod shortcuts {
     impl Render for Transport {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             let (play, playhead, seek) = (self.log.clone(), self.log.clone(), self.log.clone());
-            let frame = WindowFrame::new()
-                .child(TitleBar::new().title("Transport"))
-                .child(Button::new("button", "Button").on_click(note(&self.log, "button")))
-                .child(
-                    AudioPlayer::new("player", 0.5, "0:30", "1:00")
-                        .on_seek(move |to, _, _| seek.borrow_mut().push(format!("seek {to:.2}"))),
-                )
-                .child(SelectableText::new("quote", "let a = <b> **c**;"));
+            let frame =
+                WindowFrame::new()
+                    .child(TitleBar::new().title("Transport"))
+                    .child(Button::new("button", "Button").on_click(note(&self.log, "button")))
+                    .child(AudioPlayer::new("player", 0.5, "0:30", "1:00").on_seek(
+                        move |to: &f32, _, _| seek.borrow_mut().push(format!("seek {to:.2}")),
+                    ))
+                    .child(SelectableText::new("quote", "let a = <b> **c**;"));
             div()
                 .size_full()
                 .on_action(move |_: &TogglePlay, _, _| play.borrow_mut().push("play".into()))

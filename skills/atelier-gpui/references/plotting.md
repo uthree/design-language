@@ -33,9 +33,9 @@ div().h(px(260.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 `.z_range()`; a fixed z range also fixes a surface's colour scale. It is orthographic, draws
 its back walls with the grid, and labels the two front floor edges and the leftmost upright.
 
-With an `.id(..)` it answers the pointer. `.on_pick(|hit, window, cx| ..)` gets the nearest
-point under a click, `Some(PlotPoint { series, index })` — `series` counts every `curve`,
-`scatter` and `particles` call from 0 — or `None` on a miss. `.on_orbit(|azimuth, elevation,
+With an `.id(..)` it answers the pointer. `.on_pick(|hit: &Option<PlotPoint>, window, cx| ..)` gets
+the nearest point under a click, `Some(PlotPoint { series, index })` — `series` counts every `curve`,
+`scatter` and `particles` call from 0 — or `None` on a miss. `.on_orbit(|&(azimuth, elevation),
 window, cx| ..)` reports the angles a drag asks for (half a degree a pixel); store them and pass
 them back to `.view(..)`. A press that moves less than 4 px is a click. `Plot3d::pick(bounds,
 position)` and `Plot3d::project(bounds, [x, y, z])` give the same answers from outside, from the

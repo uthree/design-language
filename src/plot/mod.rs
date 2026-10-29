@@ -1325,8 +1325,8 @@ impl ViewPreset {
     }
 }
 
-type PickHandler = Rc<dyn Fn(Option<PlotPoint>, &mut Window, &mut App) + 'static>;
-type OrbitHandler = Rc<dyn Fn(f32, f32, &mut Window, &mut App) + 'static>;
+type PickHandler = Rc<dyn Fn(&Option<PlotPoint>, &mut Window, &mut App) + 'static>;
+type OrbitHandler = Rc<dyn Fn(&(f32, f32), &mut Window, &mut App) + 'static>;
 
 /// How far a pointer may land from a point and still pick it, beyond the point's own radius.
 const PICK_SLOP: f32 = 4.;
@@ -1365,16 +1365,19 @@ impl Plot3d {
     /// cloud, or with `None` when the click missed every point. Needs [`Plot3d::id`].
     pub fn on_pick(
         mut self,
-        handler: impl Fn(Option<PlotPoint>, &mut Window, &mut App) + 'static,
+        handler: impl Fn(&Option<PlotPoint>, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_pick = Some(Rc::new(handler));
         self
     }
 
-    /// Called while the pointer drags across the view, with the azimuth and elevation it asks
+    /// Called while the pointer drags across the view, with the `(azimuth, elevation)` it asks
     /// for: half a degree a pixel, sideways for azimuth and up and down for elevation. Store
     /// them and pass them back to [`Plot3d::view`]. Needs [`Plot3d::id`].
-    pub fn on_orbit(mut self, handler: impl Fn(f32, f32, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_orbit(
+        mut self,
+        handler: impl Fn(&(f32, f32), &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_orbit = Some(Rc::new(handler));
         self
     }
@@ -2324,7 +2327,7 @@ impl RenderOnce for Plot3d {
                                         let azimuth = press.angles.0 - dx * ORBIT_RATE;
                                         let elevation =
                                             (press.angles.1 + dy * ORBIT_RATE).clamp(-90., 90.);
-                                        on_orbit(azimuth, elevation, window, cx);
+                                        on_orbit(&(azimuth, elevation), window, cx);
                                     }
                                 }
                             });
@@ -2342,7 +2345,7 @@ impl RenderOnce for Plot3d {
                                     {
                                         let hit =
                                             nearest(&pointer.read(cx).targets, event.position);
-                                        on_pick(hit, window, cx);
+                                        on_pick(&hit, window, cx);
                                     }
                                 },
                             );

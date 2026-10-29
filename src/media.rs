@@ -19,7 +19,7 @@ use crate::theme::ActiveTheme;
 use crate::viz::PeakBars;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
-type ValueHandler = Rc<dyn Fn(f32, &mut Window, &mut App) + 'static>;
+type ValueHandler = Rc<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
 
 /// How far an arrow key moves the scrubber when the player is not told: a twentieth of the
 /// clip. Pass [`AudioPlayer::seek_step`] five seconds' worth instead when the length is known.
@@ -139,13 +139,13 @@ impl AudioPlayer {
 
     /// Called with the position (0 to 1) the person asked for, by pointer or keyboard. Makes
     /// the scrubber a tab stop.
-    pub fn on_seek(mut self, handler: impl Fn(f32, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_seek(mut self, handler: impl Fn(&f32, &mut Window, &mut App) + 'static) -> Self {
         self.on_seek = Some(Rc::new(handler));
         self
     }
 
     /// Called with the volume (0 to 1) the person asked for. Makes the volume a tab stop.
-    pub fn on_volume(mut self, handler: impl Fn(f32, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_volume(mut self, handler: impl Fn(&f32, &mut Window, &mut App) + 'static) -> Self {
         self.on_volume = Some(Rc::new(handler));
         self
     }
@@ -381,7 +381,7 @@ fn track(
     };
     let step_to = |to: f32| {
         let on_change = on_change.clone();
-        move |window: &mut Window, cx: &mut App| on_change(to.clamp(0., 1.), window, cx)
+        move |window: &mut Window, cx: &mut App| on_change(&to.clamp(0., 1.), window, cx)
     };
     let (back, forward, start, end) = (
         step_to(value - step),
@@ -402,7 +402,7 @@ fn track(
                     track.dragging = true;
                     cx.notify();
                 });
-                on_change(at(&state, event.position.x, cx), window, cx);
+                on_change(&at(&state, event.position.x, cx), window, cx);
             }
         })
         .child(
@@ -420,7 +420,7 @@ fn track(
                         let state = state.clone();
                         move |event: &MouseMoveEvent, phase, window, cx| {
                             if phase.bubble() && event.pressed_button == Some(MouseButton::Left) {
-                                on_change(at(&state, event.position.x, cx), window, cx);
+                                on_change(&at(&state, event.position.x, cx), window, cx);
                             }
                         }
                     });

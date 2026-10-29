@@ -311,7 +311,7 @@ impl Completion {
     }
 }
 
-type SelectHandler = Rc<dyn Fn(usize, &mut Window, &mut App) + 'static>;
+type SelectHandler = Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
 
 /// What [`Completions`] remembers: its scroll, and which row it last scrolled to.
 #[derive(Default)]
@@ -386,7 +386,7 @@ impl Completions {
     }
 
     /// Called with the index of a clicked row.
-    pub fn on_select(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(Rc::new(handler));
         self
     }
@@ -467,7 +467,7 @@ impl RenderOnce for Completions {
                     )
                 }));
             if let Some(handler) = self.on_select.clone() {
-                entry = entry.on_click(move |_, window, cx| handler(index, window, cx));
+                entry = entry.on_click(move |_, window, cx| handler(&index, window, cx));
             }
             entry
         });
