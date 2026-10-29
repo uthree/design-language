@@ -209,6 +209,10 @@ impl InstrumentLab {
             .child(
                 ListItem::new("preset-3", "Calibrated · studio")
                     .no_icon_lane()
+                    // The assistant summed up the calibrated sound; the mark stays until the
+                    // person rewrites it.
+                    .description("Close, airy bow; quick attack")
+                    .description_agent(true)
                     .trailing(Badge::new("Fit").tone(Tone::Agent)),
             )
     }

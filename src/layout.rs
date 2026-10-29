@@ -12,7 +12,7 @@ use gpui::{
 };
 
 use crate::focus::{focusable, selector};
-use crate::icon::{Icon, IconSource};
+use crate::icon::{Icon, IconName, IconSource};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
@@ -296,6 +296,7 @@ pub struct ListItem {
     icon_color: Option<gpui::Hsla>,
     description: Option<SharedString>,
     description_lines: usize,
+    description_agent: bool,
     trailing: Option<AnyElement>,
     selected: bool,
     disabled: bool,
@@ -314,6 +315,7 @@ impl ListItem {
             icon_color: None,
             description: None,
             description_lines: 1,
+            description_agent: false,
             trailing: None,
             selected: false,
             disabled: false,
@@ -346,6 +348,14 @@ impl ListItem {
     /// such as Japanese; the row grows to fit.
     pub fn description_lines(mut self, lines: usize) -> Self {
         self.description_lines = lines.clamp(1, 3);
+        self
+    }
+
+    /// The description is text the agent wrote and nobody has changed yet — a cluster named by
+    /// AI: it ends in the agent's sparkle, as an [`crate::agent::AgentLabel`] would. Drop it once
+    /// the person edits the text.
+    pub fn description_agent(mut self, agent: bool) -> Self {
+        self.description_agent = agent;
         self
     }
 
@@ -467,14 +477,35 @@ impl RenderOnce for ListItem {
                             .text_size(theme.typography.size_sm)
                             .font_weight(gpui::FontWeight::NORMAL)
                             .text_color(colors.text_faint);
-                        if wraps {
+                        let line = if wraps {
                             line.text_ellipsis()
                                 .line_clamp(self.description_lines)
                                 .child(description)
-                                .into_any_element()
                         } else {
-                            line.truncate().child(description).into_any_element()
+                            line.truncate().child(description)
+                        };
+                        if !self.description_agent {
+                            return line.into_any_element();
                         }
+                        // The text keeps the row's colour; the mark after it is the agent's,
+                        // and stays in view when the text is cut.
+                        let mark = (theme.typography.size_sm * 0.8).max(px(10.));
+                        div()
+                            .flex()
+                            .map(|row| {
+                                if wraps {
+                                    row.items_end()
+                                } else {
+                                    row.items_center()
+                                }
+                            })
+                            .gap(theme.spacing.xxs)
+                            .min_w_0()
+                            .child(line.min_w_0())
+                            .child(div().flex_none().child(
+                                Icon::new(IconName::Sparkles).size(mark).color(colors.agent),
+                            ))
+                            .into_any_element()
                     })),
             )
             .children(self.trailing);

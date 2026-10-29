@@ -151,6 +151,10 @@ with the component and the hook it now has:
 | `group_color` (golden-ratio hues) | `theme.categorical(index)` |
 | `has_global::<Theme>()` to choose `init` or `install` | `init` once, `Theme::install` to switch |
 | the `/model` completion list in gpui-component spacing | `Completions` / `Composer::completions` |
+| `composer_frame` kept for Stop and a queueing Send side by side | `Composer::busy(..).queue(true)` |
+| a context chip wrapped to cut a long name, or removal hidden while a message waits | `ContextChip` cuts by itself (`.max_width(..)`); `.remove_disabled(true)` |
+| a list row drawn by hand to put the sparkle after an AI-written description | `ListItem::description_agent(true)` |
+| a placeholder of its own because the input keeps a left padding | `TextField::placeholder(..).input_inset(px(..))`, or drop the input's padding |
 | a hand-made attachment preview panel | `Card` + `SelectableText` / `AudioPlayer`, closed with a ghost `Button::icon_only(.., IconName::Close)` |
 
 Check each step under all three directions in both appearances, and keep Auris's existing visual

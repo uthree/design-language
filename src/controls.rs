@@ -741,6 +741,12 @@ impl RenderOnce for Knob {
 /// placeholder shows under the application's input. A static [`TextField::value`] is for
 /// mock-ups.
 ///
+/// The text area has no padding of its own: the placeholder starts at its left edge, where the
+/// field's padding (and the icon, if any) ends. Give the application's input no left padding
+/// either, so its first character lands where the placeholder's does. An input that keeps a
+/// padding of its own says how much with [`TextField::input_inset`], and the placeholder moves
+/// in by the same amount.
+///
 /// ```ignore
 /// TextField::new()
 ///     .id("project-name")
@@ -756,6 +762,7 @@ pub struct TextField {
     id: Option<ElementId>,
     value: Option<SharedString>,
     placeholder: Option<SharedString>,
+    input_inset: Pixels,
     icon: Option<IconSource>,
     focused: bool,
     empty: Option<bool>,
@@ -773,6 +780,7 @@ impl TextField {
             id: None,
             value: None,
             placeholder: None,
+            input_inset: px(0.),
             icon: None,
             focused: false,
             empty: None,
@@ -799,6 +807,14 @@ impl TextField {
     /// Text shown while empty.
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// The left padding the application's input keeps inside the text area, so the placeholder
+    /// starts where the input's first character does. 0 by default, which is what an input
+    /// should have: let the field's own padding do the work.
+    pub fn input_inset(mut self, inset: Pixels) -> Self {
+        self.input_inset = inset;
         self
     }
 
@@ -924,6 +940,7 @@ impl RenderOnce for TextField {
                                     .bottom_0()
                                     .left_0()
                                     .right_0()
+                                    .pl(self.input_inset)
                                     .flex()
                                     .items_center()
                                     .overflow_hidden()

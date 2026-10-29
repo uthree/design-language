@@ -26,6 +26,8 @@ pub struct Strings {
     pub send: SharedString,
     /// The composer's stop button.
     pub stop: SharedString,
+    /// The composer's send button while a turn runs and the message will wait for it.
+    pub queue: SharedString,
     /// A context chip's remove button; `{}` is the chip's label.
     pub remove: SharedString,
     /// A copy button's tooltip.
@@ -82,6 +84,7 @@ impl Strings {
             attach: "Attach context…".into(),
             send: "Send".into(),
             stop: "Stop".into(),
+            queue: "Queue message".into(),
             remove: "Remove {}".into(),
             copy: "Copy".into(),
             copied: "Copied".into(),
@@ -124,6 +127,7 @@ impl Strings {
             attach: "コンテキストを添付…".into(),
             send: "送信".into(),
             stop: "停止".into(),
+            queue: "予約して送る".into(),
             remove: "{}を外す".into(),
             copy: "コピー".into(),
             copied: "コピーしました".into(),

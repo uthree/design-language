@@ -138,7 +138,15 @@ The composer: `.tone(Tone::Warning)` draws its frame in that colour with a mark 
 row while a mode needs remembering (approvals skipped); `.notice(ChatNotice::error(..))` puts a
 line inside the frame above the controls; `.attach_disabled(true)` greys out attach.
 `ContextChip::on_click` opens the attachment (a stop of its own, apart from remove), and
-`.remove_label(..)` names the remove button's tooltip.
+`.remove_label(..)` names the remove button's tooltip. A chip is at most 240 px wide
+(`.max_width(..)` to change it) and never wider than the composer: a long file name is cut with
+an ellipsis and shows whole on hover. `.remove_disabled(true)` keeps the remove button but turns
+it off, for attachments that belong to a queued message.
+
+An agent that takes the next message while a turn runs keeps Send beside Stop:
+`.busy(running).queue(true)`. Stop comes first and Send stays in the corner; while busy, Send's
+tooltip is `Strings::queue` ("Queue message", 「予約して送る」) and `on_send` is called as usual —
+holding the message until the turn ends is yours. Without `.queue(..)`, Send becomes Stop.
 
 What is left of the plan goes in the composer too, at the trailing end of the control row
 before Send: `.usage(UsageMeter::new(id).limit(UsageLimit::new("5-hour window", used).resets("in
@@ -236,4 +244,6 @@ well as where it was made: `AgentLabel::new(name)`, the text in its normal colou
 small sparkle in `colors.agent`. Give it `.tooltip(id, "Named by AI — rename to keep your
 own")`. The mark lasts until the person edits the text; then it is theirs and drawn as a plain
 `Label`. Keep the original next to the record, so Undo can bring it back. Do not tint the text
-itself or wash its row in `agent_wash`: in a list, only the mark differs.
+itself or wash its row in `agent_wash`: in a list, only the mark differs. A `ListItem` whose
+description the agent wrote takes `.description_agent(true)`, which ends the description in the
+same mark.

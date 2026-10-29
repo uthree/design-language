@@ -2,13 +2,13 @@
 
 use gpui::{
     AnyElement, AnyView, App, ClickEvent, ElementId, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::FluentBuilder, px,
+    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, prelude::FluentBuilder, px,
 };
 
 use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Kbd, Tone};
-use crate::focus::focusable;
+use crate::focus::{focusable, selector};
 use crate::icon::{Icon, IconName, IconSource};
 use crate::overlay::Tooltip;
 use crate::strings::ActiveStrings;
@@ -21,7 +21,8 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 /// The text area is a slot: pass the application's editable input with [`Composer::input`] and
 /// say whether it is [`Composer::empty`], or a static [`Composer::value`] in mock-ups. The row
 /// under it holds attach, the model picker and any [`Composer::control`]s — an
-/// [`crate::agent::EffortButton`] for the reasoning effort and fast mode — before Send. While `busy`, Send becomes Stop.
+/// [`crate::agent::EffortButton`] for the reasoning effort and fast mode — before Send. While `busy`, Send becomes Stop;
+/// with [`Composer::queue`] Send stays beside Stop and queues the next message instead.
 #[derive(IntoElement)]
 pub struct Composer {
     id: ElementId,
@@ -39,6 +40,7 @@ pub struct Composer {
     tone: Option<Tone>,
     notice: Option<AnyElement>,
     busy: bool,
+    queue: bool,
     focused: bool,
     on_send: Option<ClickHandler>,
     on_stop: Option<ClickHandler>,
@@ -65,6 +67,7 @@ impl Composer {
             tone: None,
             notice: None,
             busy: false,
+            queue: false,
             focused: false,
             on_send: None,
             on_stop: None,
@@ -161,6 +164,15 @@ impl Composer {
         self
     }
 
+    /// Keep Send while `busy`, beside Stop, for an agent that takes the next message during a
+    /// turn. Send's tooltip becomes [`crate::Strings::queue`] ("Queue message") while the turn
+    /// runs, and [`Composer::on_send`] is called as usual: holding the message until the turn
+    /// ends is the application's part.
+    pub fn queue(mut self, queue: bool) -> Self {
+        self.queue = queue;
+        self
+    }
+
     /// Draw the focus ring.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
@@ -246,7 +258,7 @@ impl RenderOnce for Composer {
             }
             button
         });
-        let action = if self.busy {
+        let stop = self.busy.then(|| {
             let mut stop = Button::icon_only((self.id.clone(), "stop"), IconName::Stop)
                 .variant(ButtonVariant::Secondary)
                 .radius(control_radius)
@@ -255,19 +267,25 @@ impl RenderOnce for Composer {
                 stop = stop.on_click(handler);
             }
             stop
-        } else {
+        });
+        let queueing = self.busy && self.queue;
+        let send = (!self.busy || self.queue).then(|| {
             let mut send = Button::icon_only((self.id.clone(), "send"), IconName::ArrowUp)
                 .primary()
                 .disabled(!has_text)
                 .radius(control_radius)
-                .tooltip(strings.send.clone());
+                .tooltip(if queueing {
+                    strings.queue.clone()
+                } else {
+                    strings.send.clone()
+                });
             if let Some(handler) = self.on_send {
                 send = send.on_click(handler);
             }
             send
-        };
+        });
 
-        div()
+        selector(div(), &self.id)
             .id(self.id.clone())
             .relative()
             .flex()
@@ -288,6 +306,7 @@ impl RenderOnce for Composer {
                     div()
                         .flex()
                         .flex_wrap()
+                        .min_w_0()
                         .gap(theme.spacing.xs)
                         .children(self.context),
                 )
@@ -342,15 +361,17 @@ impl RenderOnce for Composer {
                     .children(self.controls)
                     .child(div().flex_1())
                     .children(self.usage)
-                    .when(!self.busy, |row| {
+                    .when(send.is_some(), |row| {
                         row.child(Kbd::new(if cfg!(target_os = "macos") {
                             "↩"
                         } else {
                             "Enter"
                         }))
                     })
-                    // The send button's radius follows the composer's corner, not the capsule rule.
-                    .child(action),
+                    // Stop comes before Send, so Send keeps its place at the trailing corner.
+                    // Both radii follow the composer's corner, not the capsule rule.
+                    .children(stop)
+                    .children(send),
             )
             .children(self.completions.map(|completions| {
                 div()
@@ -372,6 +393,8 @@ pub struct ContextChip {
     icon: IconSource,
     color: Option<gpui::Hsla>,
     remove_label: Option<SharedString>,
+    remove_disabled: bool,
+    max_width: Option<Pixels>,
     on_click: Option<ClickHandler>,
     on_remove: Option<ClickHandler>,
 }
@@ -389,6 +412,8 @@ impl ContextChip {
             icon: icon.into(),
             color: None,
             remove_label: None,
+            remove_disabled: false,
+            max_width: None,
             on_click: None,
             on_remove: None,
         }
@@ -408,6 +433,21 @@ impl ContextChip {
     /// label by default ("Remove transport.rs", "transport.rsを外す").
     pub fn remove_label(mut self, label: impl Into<SharedString>) -> Self {
         self.remove_label = Some(label.into());
+        self
+    }
+
+    /// Keep the remove button but turn it off: greyed, unclickable and out of the Tab order,
+    /// for example while the message it belongs to waits in the queue. Say why in
+    /// [`ContextChip::remove_label`] if the reason is not plain.
+    pub fn remove_disabled(mut self, disabled: bool) -> Self {
+        self.remove_disabled = disabled;
+        self
+    }
+
+    /// The widest the chip grows; a longer label is cut with an ellipsis and shown whole on
+    /// hover. 240 px by default. However wide, a chip never grows past the composer.
+    pub fn max_width(mut self, width: Pixels) -> Self {
+        self.max_width = Some(width);
         self
     }
 
@@ -436,38 +476,54 @@ impl RenderOnce for ContextChip {
         let remove_label = self
             .remove_label
             .unwrap_or_else(|| cx.strings().remove(&self.label));
+        let disabled = self.remove_disabled;
         let remove = self.on_remove.map(|handler| {
             let id = ElementId::from((self.id.clone(), "remove"));
-            focusable(
+            let button = focusable(
                 div().id(id.clone()),
                 &id,
-                false,
+                disabled,
                 theme.shape.radius_xs,
                 window,
                 cx,
             )
             .flex()
+            .flex_none()
             .items_center()
             .justify_center()
             .size(height - px(6.))
             .rounded(theme.shape.radius_xs)
-            .hover(move |style| style.bg(hover))
             .child(Icon::new(IconName::Close).size(px(10.)))
             .tooltip(move |window, cx| -> AnyView {
                 Tooltip::new(remove_label.clone()).build(window, cx)
-            })
-            .on_click(handler)
+            });
+            if disabled {
+                button.opacity(0.4)
+            } else {
+                button.hover(move |style| style.bg(hover)).on_click(handler)
+            }
         });
+        let label = self.label.clone();
+        // The label gives way first: it shrinks and cuts with an ellipsis, the icon and the
+        // remove button keep their size, and the whole name shows on hover.
         let content = div()
+            .id((self.id.clone(), "label"))
             .flex()
+            .flex_1()
+            .min_w_0()
             .items_center()
             .gap(theme.spacing.xs)
             .child(
-                Icon::new(self.icon)
-                    .size(px(12.))
-                    .color(self.color.unwrap_or(colors.text_faint)),
+                div().flex_none().child(
+                    Icon::new(self.icon)
+                        .size(px(12.))
+                        .color(self.color.unwrap_or(colors.text_faint)),
+                ),
             )
-            .child(self.label);
+            .child(div().min_w_0().truncate().child(self.label))
+            .tooltip(move |window, cx| -> AnyView {
+                Tooltip::new(label.clone()).build(window, cx)
+            });
         // Pressing the chip and removing it are separate stops, so neither press reaches the
         // other.
         let content = match self.on_click {
@@ -481,6 +537,9 @@ impl RenderOnce for ContextChip {
                     window,
                     cx,
                 )
+                .flex()
+                .flex_1()
+                .min_w_0()
                 .rounded(theme.shape.radius_xs)
                 .cursor_pointer()
                 .hover(|style| style.text_color(colors.text))
@@ -490,10 +549,12 @@ impl RenderOnce for ContextChip {
             }
             None => content.into_any_element(),
         };
-        div()
+        selector(div(), &self.id)
             .id(self.id)
             .flex()
-            .flex_none()
+            .flex_shrink()
+            .min_w_0()
+            .max_w(self.max_width.unwrap_or(px(240.)))
             .items_center()
             .gap(theme.spacing.xs)
             .h(height)

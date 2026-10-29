@@ -119,6 +119,10 @@ Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, a
   for mock-ups; `.focused(true)` draws the ring by hand. The placeholder is laid behind the
   value and the children at the text's start, where your caret is, so it never pushes your input
   aside; keep `.empty(..)` in step with your text instead of drawing a placeholder of your own.
+  The text area has no padding of its own — the field's padding is the only inset — so give your
+  input no left padding and its first character lands where the placeholder starts. An input
+  that must keep its own padding says so with `.input_inset(px(..))`, and the placeholder moves
+  in to match.
 
 Dragging and keyboard stepping for sliders and knobs belong to the application (it owns the value
 and its undo); wrap the component in an element that handles the gesture.
@@ -185,6 +189,8 @@ clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
   .selected(bool).indent(depth).disabled(bool)` — sidebar, list and tree rows with fixed
   icon/trailing lanes. The description is cut to one line; `.description_lines(2)` lets it wrap
   (use it for Japanese sidebar descriptions, which run long without spaces).
+  `.description_agent(true)` marks a description the agent wrote with its sparkle, as
+  `AgentLabel` does elsewhere.
 - `StatusBar::new().message("保存しました").tone(Tone::Success).busy(bool).trailing(..)` — the
   thin line along a window's bottom edge (`density.status_bar`) that reports what the last
   action did. It reports, never asks; a non-neutral tone carries its mark.

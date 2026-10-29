@@ -13,8 +13,8 @@
 mod common;
 
 use atelier::agent::{
-    AgentLabel, AssistantMessage, Composer, EffortButton, EffortPicker, UsageLimit, UsageMeter,
-    UserMessage,
+    AgentLabel, AssistantMessage, Composer, ContextChip, EffortButton, EffortPicker, UsageLimit,
+    UsageMeter, UserMessage,
 };
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, Completion, Completions, ControlSize,
@@ -553,7 +553,19 @@ impl AurisScreens {
             .model("GPT-6-Sol (Codex)")
             .model_logo(ProviderLogo::OpenAi)
             .control(effort)
+            // While the takes generate, the next request waits its turn: Stop and Send side by
+            // side, and the attachments stay until it goes.
             .busy(self.slash.is_none())
+            .queue(true)
+            .context(
+                ContextChip::new(
+                    "ctx-ref",
+                    IconName::Music,
+                    "参考音源_空戦テーマ_オーケストラ版_最終ミックス_v3.wav",
+                )
+                .on_remove(|_, _, _| {})
+                .remove_disabled(self.slash.is_none()),
+            )
             .usage(
                 UsageMeter::new("usage")
                     .limit(UsageLimit::new("5時間枠", 0.88).resets("1時間40分後"))
