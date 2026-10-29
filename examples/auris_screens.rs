@@ -6,22 +6,26 @@
 //! over it.
 //!
 //! ```text
-//! cargo run --example auris_screens -- [--screen chooser|compose] [--slash]
+//! cargo run --example auris_screens -- [--screen chooser|compose] [--effort] [--slash]
 //!                                       [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
 
 mod common;
 
-use atelier::agent::{AgentLabel, AssistantMessage, Composer, UsageLimit, UsageMeter, UserMessage};
+use atelier::agent::{
+    AgentLabel, AssistantMessage, Composer, EffortButton, EffortPicker, UsageLimit, UsageMeter,
+    UserMessage,
+};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, Completion, Completions, ControlSize,
     CopyButton, Direction, Divider, Edge, IconName, Label, ListItem, Measure, Morph, OptionCard,
-    ProgressBar, SectionHeader, Segment, SegmentedControl, Sidebar, Spinner, StepList, StepState,
-    Switch, TextColor, TextSize, TitleBar, WindowFrame, motion::appear,
+    ProgressBar, ProviderLogo, SectionHeader, Segment, SegmentedControl, Sidebar, Spinner,
+    StepList, StepState, Switch, TextColor, TextSize, TitleBar, WindowFrame, motion::appear,
 };
 use common::Themed;
 use gpui::{
-    AnyElement, Context, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px,
+    AnyElement, Context, Corner, IntoElement, MouseDownEvent, ParentElement, Render, Styled,
+    Window, anchored, deferred, div, point, prelude::*, px,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,10 +44,16 @@ struct AurisScreens {
     /// Compose: which take is playing.
     playing: Option<usize>,
     learn_preferences: bool,
-    /// Compose: the reasoning effort, 0 low to 2 high.
+    /// Compose: the reasoning effort, 0 low to 3 highest.
     effort: usize,
     /// Compose: fast mode.
     fast: bool,
+    /// Compose: whether the effort picker is open.
+    effort_open: bool,
+    /// Where the effort button was laid out, so a press on it does not count as outside.
+    effort_button: Measure,
+    /// Where the composer was laid out, for the effort picker to open over.
+    composer: Measure,
     /// Compose: where each take's scrubber is, the preview volume, and whether it is muted.
     positions: [f32; 2],
     volume: f32,
@@ -434,7 +444,68 @@ impl AurisScreens {
             )
     }
 
+    /// The effort button in the composer row, and the picker it opens above it.
+    fn effort_control(&self, cx: &mut Context<Self>) -> AnyElement {
+        const LEVELS: [&str; 4] = ["低", "中", "高", "最高"];
+        let button = EffortButton::new("effort", LEVELS[self.effort])
+            .fast(self.fast)
+            .open(self.effort_open)
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.effort_open = !this.effort_open;
+                cx.notify();
+            }));
+        let picker = self.effort_open.then(|| {
+            let button = self.effort_button.clone();
+            let picker = EffortPicker::new("effort-picker", LEVELS, self.effort)
+                .default_level(1)
+                .fast(self.fast)
+                .model("GPT-6-Sol (Codex)")
+                .on_select(cx.listener(|this, index: &usize, _, cx| {
+                    this.effort = *index;
+                    cx.notify();
+                }))
+                .on_fast(cx.listener(|this, _, _, cx| {
+                    this.fast = !this.fast;
+                    cx.notify();
+                }))
+                .on_reset(cx.listener(|this, _, _, cx| {
+                    this.effort = 1;
+                    this.fast = false;
+                    cx.notify();
+                }));
+            // Over the composer's top edge, lined up with the button; a press anywhere else
+            // closes it. The positions are the last frame's, which the open card keeps fresh.
+            let at = match (self.effort_button.bounds(), self.composer.bounds()) {
+                (Some(button), Some(composer)) => {
+                    point(button.origin.x - px(12.), composer.origin.y - px(8.))
+                }
+                _ => point(px(0.), px(0.)),
+            };
+            deferred(
+                anchored()
+                    .position(at)
+                    .anchor(Corner::BottomLeft)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(div().occlude().child(picker).on_mouse_down_out(cx.listener(
+                        move |this, event: &MouseDownEvent, _, cx| {
+                            if !button.bounds().is_some_and(|b| b.contains(&event.position)) {
+                                this.effort_open = false;
+                                cx.notify();
+                            }
+                        },
+                    ))),
+            )
+        });
+        div()
+            .relative()
+            .child(self.effort_button.probe())
+            .child(button)
+            .children(picker)
+            .into_any_element()
+    }
+
     fn compose(&self, cx: &mut Context<Self>) -> AnyElement {
+        let effort = self.effort_control(cx);
         let theme = cx.theme();
         let transcript = div()
             .flex()
@@ -480,32 +551,8 @@ impl AurisScreens {
         let composer = Composer::new("composer")
             .placeholder("要望を追加する（例：もっとブラスを前に）…")
             .model("GPT-6-Sol (Codex)")
-            .control(
-                SegmentedControl::new(
-                    "effort",
-                    [
-                        Segment::label("低"),
-                        Segment::label("中"),
-                        Segment::label("高"),
-                    ],
-                    self.effort,
-                )
-                .size(ControlSize::Small)
-                .on_select(cx.listener(|this, index: &usize, _, cx| {
-                    this.effort = *index;
-                    cx.notify();
-                })),
-            )
-            .control(
-                Button::icon_only("fast", IconName::Bolt)
-                    .size(ControlSize::Small)
-                    .selected(self.fast)
-                    .tooltip("高速モード")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.fast = !this.fast;
-                        cx.notify();
-                    })),
-            )
+            .model_logo(ProviderLogo::OpenAi)
+            .control(effort)
             .busy(self.slash.is_none())
             .usage(
                 UsageMeter::new("usage")
@@ -587,7 +634,14 @@ impl AurisScreens {
                     .gap(theme.spacing.md)
                     .px(theme.spacing.xxl)
                     .pb(theme.spacing.lg)
-                    .child(div().w_full().max_w(px(1040.)).child(composer))
+                    .child(
+                        div()
+                            .relative()
+                            .w_full()
+                            .max_w(px(1040.))
+                            .child(self.composer.probe())
+                            .child(composer),
+                    )
                     .child(footer),
             )
             .into_any_element()
@@ -704,6 +758,9 @@ fn main() {
             volume: 0.8,
             muted: false,
             slash: common::argument("--slash").map(|_| 0),
+            effort_open: std::env::args().any(|arg| arg == "--effort"),
+            effort_button: Measure::new(),
+            composer: Measure::new(),
             ai_card: Measure::new(),
             handoff: None,
             handoffs: 0,

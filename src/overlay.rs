@@ -277,6 +277,7 @@ pub struct Completion {
     label: SharedString,
     description: Option<SharedString>,
     icon: Option<IconSource>,
+    glyph: Option<SharedString>,
     matched: Vec<usize>,
 }
 
@@ -287,6 +288,7 @@ impl Completion {
             label: label.into(),
             description: None,
             icon: None,
+            glyph: None,
             matched: Vec::new(),
         }
     }
@@ -300,6 +302,12 @@ impl Completion {
     /// A leading icon.
     pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// A leading character in place of the icon, drawn a size up: an emoji, a symbol.
+    pub fn glyph(mut self, glyph: impl Into<SharedString>) -> Self {
+        self.glyph = Some(glyph.into());
         self
     }
 
@@ -452,6 +460,15 @@ impl RenderOnce for Completions {
                     item.icon
                         .map(|icon| Icon::new(icon).size(px(14.)).color(colors.text_muted)),
                 )
+                .children(item.glyph.map(|glyph| {
+                    div()
+                        .flex_none()
+                        .flex()
+                        .justify_center()
+                        .w(theme.typography.size_lg * 1.25)
+                        .text_size(theme.typography.size_lg)
+                        .child(glyph)
+                }))
                 .child(
                     div()
                         .flex_none()

@@ -20,8 +20,8 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 ///
 /// The text area is a slot: pass the application's editable input with [`Composer::input`] and
 /// say whether it is [`Composer::empty`], or a static [`Composer::value`] in mock-ups. The row
-/// under it holds attach, the model picker and any [`Composer::control`]s — the reasoning
-/// effort, a fast-mode switch — before Send. While `busy`, Send becomes Stop.
+/// under it holds attach, the model picker and any [`Composer::control`]s — an
+/// [`crate::agent::EffortButton`] for the reasoning effort and fast mode — before Send. While `busy`, Send becomes Stop.
 #[derive(IntoElement)]
 pub struct Composer {
     id: ElementId,
@@ -34,6 +34,7 @@ pub struct Composer {
     completions: Option<AnyElement>,
     usage: Option<AnyElement>,
     model: Option<SharedString>,
+    model_logo: Option<IconSource>,
     attach_disabled: bool,
     tone: Option<Tone>,
     notice: Option<AnyElement>,
@@ -59,6 +60,7 @@ impl Composer {
             completions: None,
             usage: None,
             model: None,
+            model_logo: None,
             attach_disabled: false,
             tone: None,
             notice: None,
@@ -96,8 +98,8 @@ impl Composer {
         self
     }
 
-    /// A control in the row under the text, after the model picker: the reasoning effort, a
-    /// fast-mode switch, a voice picker. Use small ghost buttons and small segmented controls,
+    /// A control in the row under the text, after the model picker: the effort and fast mode
+    /// ([`crate::agent::EffortButton`]), a voice picker. Use small ghost buttons and small segmented controls,
     /// so the row stays one line and Send stays the only filled control in it.
     pub fn control(mut self, control: impl IntoElement) -> Self {
         self.controls.push(control.into_any_element());
@@ -192,6 +194,13 @@ impl Composer {
         self
     }
 
+    /// The mark before the model picker's label — the [`crate::ProviderLogo`] of the model in
+    /// use — so the current provider reads at a glance.
+    pub fn model_logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.model_logo = Some(logo.into());
+        self
+    }
+
     /// Called on the model picker; open the model menu there.
     pub fn on_model(
         mut self,
@@ -229,6 +238,9 @@ impl RenderOnce for Composer {
                 .ghost()
                 .size(ControlSize::Small)
                 .icon_after(IconName::ChevronDown);
+            if let Some(logo) = self.model_logo {
+                button = button.icon(logo);
+            }
             if let Some(handler) = self.on_model {
                 button = button.on_click(handler);
             }

@@ -25,6 +25,12 @@ cargo run --example agent_desktop
 
 Sessions with live status on the left, the conversation in the middle (reasoning, grouped tool
 calls, command output, a diff, the task plan, an approval), and the changes it made on the right.
+The model picker under the composer groups the models by provider, each led by its provider's
+mark; the picked model's mark also stands on the picker and as the avatar of its answers.
+The composer takes typing (a stand-in for the application's own input: no selection or input
+method): `:thi` opens emoji suggestions, Up and Down move through them, Tab or Enter puts 🤔 in,
+and Enter sends the message into the transcript. `--draft "いい感じ :thi"` starts with text typed.
+Captured on Linux under Weston, with the picker open.
 
 ![Agent desktop](images/agent-desktop.png)
 
@@ -217,11 +223,14 @@ tempo and key, a waveform player rather than a bare slider, "この曲で続け�
 time left instead of an empty player. Stopping generation moved into the composer (Send becomes
 Stop), so the footer keeps only navigation, the preference switch and the editor hand-off,
 which explains why it is disabled. Only two voices speak, so the assistant's answer has no name
-line (`AssistantMessage::anonymous()`); the model picker, the reasoning effort and fast mode sit
-in the composer's own control row. Both messages carry a Copy button (`CopyButton`) and the
-person's text can be selected; each take's name was written by the assistant, so it wears the
-agent's sparkle (`AgentLabel`) and its own Copy button, and its player seeks, sets the volume
-and mutes, with the keyboard too. `--slash` opens the composer's `Completions` on `/mo`.
+line (`AssistantMessage::anonymous()`); the model picker and the effort sit in the composer's
+own control row. The effort button opens one card for the reasoning effort and fast mode
+(`EffortPicker`, `--effort`): the bolt toggles fast mode, the level reads in the accent over
+the model's name, and a wide stepped slider sparkles where it is filled. Both messages carry a
+Copy button (`CopyButton`) and the person's text can be selected; each take's name was written
+by the assistant, so it wears the agent's sparkle (`AgentLabel`) and its own Copy button, and
+its player seeks, sets the volume and mutes, with the keyboard too. `--slash` opens the
+composer's `Completions` on `/mo`.
 
 ![AI compose](images/auris-compose.png)
 

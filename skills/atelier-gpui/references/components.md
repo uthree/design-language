@@ -126,7 +126,8 @@ and its undo); wrap the component in an element that handles the gesture.
 ## Display
 
 `Badge::new("Rendered").tone(Tone::Success).dot()`, `Kbd::new("⌘K")`, `Avatar::person("UT")`,
-`Avatar::agent()`, `Divider::horizontal()` / `Divider::vertical().full()`,
+`Avatar::agent()`, `Avatar::logo(ProviderLogo::Anthropic)` (the agent as its provider's mark;
+prefer it when the model is known), `Divider::horizontal()` / `Divider::vertical().full()`,
 `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
 
 ## Progress and loading
@@ -299,4 +300,6 @@ There is no node-graph component: compose one from the pieces above on a `canvas
 in the input, which moves `selected` with Up/Down, accepts with Tab and closes with Escape. The
 list keeps the selected row in view, shows `.rows(6)` before scrolling and can say
 `.empty("No match")`. In the agent's composer pass it to `Composer::completions(..)`, which
-floats it above (see [agent.md](agent.md)).
+floats it above (see [agent.md](agent.md)). `Completion::glyph("🤔")` leads a row with an emoji
+or symbol instead of an icon; `emoji::completions(id, &matches)` builds the `:shortcode:` list
+(see "Emoji in messages" in [agent.md](agent.md)).
