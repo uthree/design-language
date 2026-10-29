@@ -147,7 +147,8 @@ water, their bells pulsing, lit from within, tentacles trailing, among sinking m
 **Shoal** wheels two schools of small fish through sunlit shallows, each fish flicking its tail
 and catching the light. **Formation** gathers points of light into one figure after another,
 the edges of a cube, a rippling sheet, a knot and a double helix, turning in space over a floor
-of faint lines, each point streaking a little along its path. **Garden** grows a row of plants
+of faint lines, each point streaking a little along its path; the camera crosses from one side
+of the window to the other with each new figure, so it is never hidden behind the content for long. **Garden** grows a row of plants
 over the cycle: stems wander up and branch, leaves unfold and every tip blooms, then the petals
 let go and drift down and the garden fades and grows again, swaying over a dusk of soft lights.
 Solar, Galaxy, Formation and Garden are rich takes on the pixel scenes behind the boards of

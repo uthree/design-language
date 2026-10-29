@@ -1,5 +1,6 @@
 // Formation: points of light gather into one figure after another (the edges of a cube, a
-// rippling sheet, a knot, a double helix), the figure turning slowly in space, after the
+// rippling sheet, a knot, a double helix), the figure turning slowly in space and crossing the
+// frame as it changes, after the
 // formation in bevytris. Nearer points are larger and brighter, and each streaks a little along
 // its path. They are placed each frame on the CPU (see `figures.rs`). The pointer scatters the
 // points near it and leaves ripples; moving the window swings the figure over a floor of faint
@@ -8,11 +9,18 @@
 // Where the floor meets the dark beyond it.
 const HORIZON: f32 = 0.3;
 
+// Where the figure stands across a frame `width` units wide at moment `t`: to one side of the
+// card while it holds its shape, crossing to the other each time it turns into the next. The
+// camera follows it, so the floor and the light behind it travel too. As in `figures.rs`.
+fn stage(t: f32, width: f32) -> f32 {
+    return 0.23 * width * clamp(sin(2. * t) * 1.6, -1., 1.);
+}
+
 fn scene(p: vec2f) -> vec3f {
     let t = params.time;
     let unit = min(params.size.x, params.size.y);
     let px = 1. / unit;
-    let centre = vec2f(0.25 * params.size.x / unit, -0.02);
+    let centre = vec2f(stage(t, params.size.x / unit), -0.02);
     // A deep backdrop, lit softly behind the figure.
     var color = mix(params.deep.rgb, params.base.rgb, ease(-0.6, 0.6, p.y) * 0.6);
     let behind = p - centre + params.sway * 0.15;

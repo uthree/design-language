@@ -3,8 +3,9 @@
 //! frame and far too many for each pixel to work out for itself.
 //!
 //! - Formation: points of light that gather into one figure after another (the edges of a cube, a
-//!   rippling sheet, a knot, a double helix), the figure turning in space, after the formation
-//!   behind the boards of bevytris. Each point carries where it was a moment before, so it is
+//!   rippling sheet, a knot, a double helix), the figure turning in space and crossing from one
+//!   side of the frame to the other as it changes, after the formation behind the boards of
+//!   bevytris. Each point carries where it was a moment before, so it is
 //!   drawn as a short streak along its path. The pointer scatters the points near it.
 //! - Garden: a row of plants that grow, branch, leaf and bloom over the cycle, then let their
 //!   petals go and fade, swaying in the wind, after bevytris's garden. They lean away from the
@@ -149,6 +150,13 @@ fn figure(shape: usize, i: usize, t: f32) -> [f32; 3] {
     }
 }
 
+/// Where the figure stands across the frame at moment `t`, `width` units wide: to one side of
+/// the middle, where the card is, while it holds its shape, crossing to the other side each time
+/// it turns into the next figure. As `stage` in `formation.wgsl`.
+pub(super) fn stage(t: f32, width: f32) -> f32 {
+    0.23 * width * ((2. * t).sin() * 1.6).clamp(-1., 1.)
+}
+
 /// Point `i` at moment `t` of the cycle: where it shows on the screen (before the pointer moves
 /// it) and how near it is (the perspective scale).
 fn formation_point(i: usize, t: f32, frame: [f32; 2], response: &Response) -> ([f32; 2], f32) {
@@ -165,8 +173,7 @@ fn formation_point(i: usize, t: f32, frame: [f32; 2], response: &Response) -> ([
     let p = [p[0] * cy + p[2] * sy, p[1], -p[0] * sy + p[2] * cy];
     let p = [p[0], p[1] * cx - p[2] * sx, p[1] * sx + p[2] * cx];
     let near = 2.6 / (2.6 + p[2]);
-    // To the side of the middle, where the card is.
-    let centre = [0.25 * frame[0], -0.02];
+    let centre = [stage(t, frame[0]), -0.02];
     let depth = 0.3 + 0.4 * near;
     (
         [

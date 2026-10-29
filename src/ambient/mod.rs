@@ -105,7 +105,8 @@ pub enum Ambience {
     /// from it, and the school closes up behind; the window leaves the schools behind.
     Shoal,
     /// Points of light gathering into one figure after another (a cube, a rippling sheet, a knot,
-    /// a double helix), turning slowly over a floor of faint lines. The pointer scatters the
+    /// a double helix), turning slowly over a floor of faint lines and crossing from one side of
+    /// the frame to the other with each new figure. The pointer scatters the
     /// points near it; the window swings the figure.
     Formation,
     /// A row of plants that grow, leaf and bloom over the cycle, then let their petals go and

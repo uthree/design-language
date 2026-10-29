@@ -789,7 +789,7 @@ impl Shader {
     fn formation(&self, p: V2) -> V3 {
         let t = self.time;
         let px = 1. / self.unit;
-        let centre = v2(0.25 * self.size.x / self.unit, -0.02);
+        let centre = v2(super::figures::stage(t, self.size.x / self.unit), -0.02);
         let white = v3(1., 1., 1.);
         let mut color = self.deep.mix(self.base, ease(-0.6, 0.6, p.y) * 0.6);
         let behind = p - centre + self.sway * 0.15;
