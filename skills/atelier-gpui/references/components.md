@@ -221,7 +221,8 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
   are lenses, Galaxy bends light, Jellyfish and Shoal shy away, Formation's points scatter,
   Garden's plants lean away, and Aurora's brighter stars wake
   into constellations that the person can join by dragging from star to star (a click on the
-  open sky sends a shooting star, a double click wipes the lines). As with the metal, **anything
+  open sky sends a shooting star, a double click wipes the lines), and a click on `Shoal`
+  scatters food the nearest fish break away to eat. As with the metal, **anything
   laid over it that takes clicks must `.occlude()`**. `.phase(t)` draws one still
   frame, `.period(d)` changes the cycle. Without a GPU it is a single still frame. Offer
   `Ambience::ALL` (with `label()`) if the person picks the scene.

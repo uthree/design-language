@@ -171,6 +171,19 @@ impl Sim {
         }
     }
 
+    /// A splash at `centre` (in pixels from the box's corner), ringing out as the pointer's
+    /// ripples do.
+    pub fn splash(&mut self, centre: [f32; 2]) {
+        if self.waves.len() == WAVES {
+            self.waves.remove(0);
+        }
+        self.waves.push(Wave {
+            centre,
+            age: 0.,
+            strength: 1.,
+        });
+    }
+
     /// Whether anything is still moving: the scene swinging, the pointer easing or fading, or a
     /// ripple spreading.
     pub fn moving(&self) -> bool {

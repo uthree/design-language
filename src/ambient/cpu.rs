@@ -688,17 +688,6 @@ impl Shader {
 
     // shoal.wgsl
 
-    fn path(&self, s: f32, t: f32) -> (V2, V2) {
-        let width = self.size.x / self.unit;
-        let reach = v2(0.5 * width * 0.78, 0.14 + 0.03 * s);
-        let level = -0.1 + 0.24 * s;
-        let a = t + s * PI;
-        let b = 2. * t + s * 1.3;
-        let at = v2(reach.x * a.sin(), reach.y * b.sin() + level);
-        let heading = v2(reach.x * a.cos(), 2. * reach.y * b.cos());
-        (at, heading * (1. / heading.length().max(1e-4)))
-    }
-
     fn shoal(&self, p: V2) -> V3 {
         let t = self.time;
         let px = 1. / self.unit;
@@ -726,58 +715,72 @@ impl Shader {
         let silver =
             (self.deep.mix(self.hues[3], 0.35) * 0.55).mix(self.hues[3].mix(white, 0.6), self.dark);
         let belly = silver.mix(white.mix(sunlit, 0.3), lerp(0.25, 0.6, self.dark));
-        for s in 0..SHOAL_SCHOOLS {
-            let school = s as f32;
-            let scale = lerp(0.8, 1.2, school);
-            let depth = 0.3 + 0.5 * school;
-            let clear = lerp(0.55, 1., school);
-            for f in 0..SHOAL_FISH {
-                let n = f as f32 + school * 31.;
-                let lag = -hash(v2(n, 1.)) * 0.8;
-                let side = (hash(v2(n, 2.)) - 0.5) * 0.13 * scale;
-                let size = (0.028 + 0.014 * hash(v2(n, 3.))) * scale;
-                let (course, mut heading) = self.path(school, t + lag);
-                let across = v2(-heading.y, heading.x);
-                let mut at = course + across * side + self.orbit(5. + (f % 3) as f32, n) * 0.008
-                    - self.sway * depth;
-                let reach = 2. * size + 0.14;
-                if (p - at).dot(p - at) > reach * reach {
-                    continue;
-                }
-                let away = at - self.pointer;
-                let fear = self.touch(at, 0.2);
-                let flight = away * (1. / away.length().max(1e-3));
-                at = at + flight * (fear * 0.11);
-                heading = (heading + flight * (fear * 1.6)).normalize();
-                at = at + self.ripples(at).1 * 0.03;
-
-                let l = p - at;
-                if l.dot(l) > size * size * 3.5 {
-                    continue;
-                }
-                let x = l.dot(heading) / size;
-                let mut y = l.dot(v2(-heading.y, heading.x)) / size;
-                let beat = t * SHOAL_BEATS + n * 1.7;
-                y -= 0.1 * (beat - x * 2.).sin() * (1. - x) * (1. - x) * 0.25;
-                let half = 0.26 * (1. - x * x).max(0.).sqrt() * (1. + 0.25 * x);
-                let mut sdf = if x.abs() > 1. { 1. } else { y.abs() - half };
-                let fan = 0.34 * ease(-0.85, -1.5, x);
-                let notch = fan * 0.45 * ease(-1.25, -1.55, x);
-                if x < -0.8 && x > -1.55 {
-                    sdf = sdf.min((y.abs() - fan).max(notch - y.abs()));
-                }
-                let cover = ease(px / size, -px / size, sdf);
-                if cover <= 0. {
-                    continue;
-                }
-                let up = l.dot(v2(0., -1.)) / size;
-                let mut body = belly.mix(silver, ease(-0.15, 0.2, up));
-                let glint = (t * 7. + n * 2.3).sin().max(0.).powi(16);
-                body = body.mix(white.mix(sunlit, 0.4), glint * lerp(0.25, 0.6, self.dark));
-                let eye = ease(0.08, 0.05, v2(x - 0.62, y).length());
-                body = body.mix(self.deep * 0.5, eye * 0.8);
-                color = color.mix(color.mix(body, clear), cover * 0.92);
+        let crumb = self.hues[0]
+            .mix(self.deep, 0.55)
+            .mix(self.hues[0].mix(white, 0.45), self.dark);
+        for &[pellet, _] in &self.figures[1] {
+            let d = (p - v2(pellet[0], pellet[1])).length();
+            if d > 0.05 {
+                continue;
             }
+            let ring =
+                ease(0.006, 0., (d - 0.012 - 0.03 * pellet[2]).abs()) * (1. - pellet[2]) * 0.5;
+            let radius = 0.004 + 0.002 * pellet[3];
+            color = color.mix(crumb, ease(radius + px, radius - px, d) * 0.95);
+            color = self.light(
+                color,
+                crumb.mix(sunlit, 0.5),
+                (-d / 0.012).exp() * lerp(0.15, 0.4, self.dark) + ring,
+            );
+        }
+
+        for &[course, fish] in &self.figures[0] {
+            let mut at = v2(course[0], course[1]);
+            let mut heading = v2(course[2], course[3]);
+            let [size, n, hunting, shine] = fish;
+            let clear = if n >= 26. { 1. } else { 0.55 };
+            let reach = 2. * size + 0.14;
+            if (p - at).dot(p - at) > reach * reach {
+                continue;
+            }
+            let away = at - self.pointer;
+            let fear = self.touch(at, 0.2) * (1. - 0.85 * hunting);
+            let flight = away * (1. / away.length().max(1e-3));
+            at = at + flight * (fear * 0.11);
+            heading = (heading + flight * (fear * 1.6)).normalize();
+            at = at + self.ripples(at).1 * 0.03;
+
+            let l = p - at;
+            color = self.light(
+                color,
+                sunlit,
+                (-l.length() / (size * 0.6)).exp() * shine * shine * 0.35,
+            );
+            if l.dot(l) > size * size * 3.5 {
+                continue;
+            }
+            let x = l.dot(heading) / size;
+            let mut y = l.dot(v2(-heading.y, heading.x)) / size;
+            let beat = t * SHOAL_BEATS * (1. + 0.5 * hunting) + n * 1.7;
+            y -= 0.1 * (beat - x * 2.).sin() * (1. - x) * (1. - x) * 0.25;
+            let half = 0.26 * (1. - x * x).max(0.).sqrt() * (1. + 0.25 * x);
+            let mut sdf = if x.abs() > 1. { 1. } else { y.abs() - half };
+            let fan = 0.34 * ease(-0.85, -1.5, x);
+            let notch = fan * 0.45 * ease(-1.25, -1.55, x);
+            if x < -0.8 && x > -1.55 {
+                sdf = sdf.min((y.abs() - fan).max(notch - y.abs()));
+            }
+            let cover = ease(px / size, -px / size, sdf);
+            if cover <= 0. {
+                continue;
+            }
+            let up = l.dot(v2(0., -1.)) / size;
+            let mut body = belly.mix(silver, ease(-0.15, 0.2, up));
+            let glint = (t * 7. + n * 2.3).sin().max(0.).powi(16).max(shine);
+            body = body.mix(white.mix(sunlit, 0.4), glint * lerp(0.25, 0.6, self.dark));
+            let eye = ease(0.08, 0.05, v2(x - 0.62, y).length());
+            body = body.mix(self.deep * 0.5, eye * 0.8);
+            color = color.mix(color.mix(body, clear), cover * 0.92);
         }
         color
     }
@@ -1011,8 +1014,6 @@ const JELLY_TENTACLES: usize = 7;
 const JELLY_PULSES: f32 = 20.;
 
 /// As `SCHOOLS`, `FISH` and `BEATS` in `shoal.wgsl`.
-const SHOAL_SCHOOLS: usize = 2;
-const SHOAL_FISH: usize = 26;
 const SHOAL_BEATS: f32 = 100.;
 
 /// As `LAKE` in `aurora.wgsl`.

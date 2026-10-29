@@ -164,7 +164,8 @@ layers further, and it swings back. All but Dunes answer the pointer too. Bloom 
 round itself, Caustics gathers the light like a lens, Solar gathers ghosts of the sun along the
 line to it, and Galaxy bends the light round itself like a great mass; these leave ripples as it
 travels. Jellyfish glow brighter and shy away from it, fish dart away from it while the
-school closes up behind, Formation's points scatter round it, and Garden's plants lean away
+school closes up behind (and a click scatters food that sinks slowly, which the nearest fish
+break away from the school to snap up), Formation's points scatter round it, and Garden's plants lean away
 from it. Aurora's curtains stay still, but its brighter stars wake as the
 pointer passes and join into a constellation round it that fades behind it; press on a star
 and let go over another to draw a line between them that stays (draw it again to take it

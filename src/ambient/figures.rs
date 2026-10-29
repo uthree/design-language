@@ -40,7 +40,7 @@ impl Default for Figures {
 }
 
 impl Figures {
-    fn push(&mut self, kind: usize, item: [[f32; 4]; 2]) -> bool {
+    pub(super) fn push(&mut self, kind: usize, item: [[f32; 4]; 2]) -> bool {
         let used: u32 = self.counts.iter().sum();
         if used as usize == FIGURES {
             return false;
@@ -64,6 +64,8 @@ pub(super) fn figures(
     match ambience {
         Ambience::Formation => formation(time, frame, response),
         Ambience::Garden => garden(time, frame, response),
+        // Shoal's fish as they swim with no food in the water.
+        Ambience::Shoal => super::pond::Pond::default().figures(time, size, response),
         _ => Figures::default(),
     }
 }
@@ -226,7 +228,7 @@ const BLOOMS: usize = 26;
 const STEP: f32 = 0.045;
 
 /// A number from 0 to 1, the same every time for `a`, `b` and `c`.
-fn hash(a: usize, b: usize, c: usize) -> f32 {
+pub(super) fn hash(a: usize, b: usize, c: usize) -> f32 {
     let mut x = (a as u32).wrapping_mul(0x9e37_79b9)
         ^ (b as u32).wrapping_mul(0x85eb_ca6b)
         ^ (c as u32).wrapping_mul(0xc2b2_ae35);
