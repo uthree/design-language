@@ -22,7 +22,7 @@ use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// The fill of an "on" control: the accent, or the foreground in solid-primary directions.
-fn on_fill(theme: &Theme) -> Hsla {
+pub(crate) fn on_fill(theme: &Theme) -> Hsla {
     match theme.primary_style {
         PrimaryStyle::Accent => theme.colors.accent,
         PrimaryStyle::Solid => theme.colors.solid,
@@ -70,6 +70,13 @@ impl Switch {
     ) -> Self {
         self.on_click = Some(Box::new(handler));
         self
+    }
+
+    /// Called on click, Enter or Space with the new value, the opposite of the one shown:
+    /// store it. Use this or [`Switch::on_click`], not both.
+    pub fn on_change(self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        let next = !self.on;
+        self.on_click(move |_, window, cx| handler(&next, window, cx))
     }
 }
 
@@ -201,6 +208,13 @@ impl Checkbox {
     ) -> Self {
         self.on_click = Some(Box::new(handler));
         self
+    }
+
+    /// Called on click, Enter or Space with the new value, the opposite of the one shown:
+    /// store it. Use this or [`Checkbox::on_click`], not both.
+    pub fn on_change(self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        let next = !self.checked;
+        self.on_click(move |_, window, cx| handler(&next, window, cx))
     }
 }
 
@@ -889,26 +903,48 @@ impl RenderOnce for TextField {
                 self.icon
                     .map(|icon| Icon::new(icon).size(px(14.)).color(theme.colors.text_faint)),
             )
-            .children(self.value.map(|value| {
+            // The text area: the value or the application's input, with the placeholder laid
+            // under it where the caret starts, not beside it.
+            .child(
                 div()
+                    .relative()
+                    .flex()
                     .flex_1()
-                    .truncate()
-                    .text_color(theme.colors.text)
-                    .child(value)
-            }))
-            .children(self.children)
-            .children(
-                empty
-                    .then_some(self.placeholder)
-                    .flatten()
-                    .map(|placeholder| {
+                    .min_w_0()
+                    .h_full()
+                    .items_center()
+                    .children(
+                        empty
+                            .then_some(self.placeholder)
+                            .flatten()
+                            .map(|placeholder| {
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .left_0()
+                                    .right_0()
+                                    .flex()
+                                    .items_center()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_color(theme.colors.text_faint)
+                                            .child(placeholder),
+                                    )
+                            }),
+                    )
+                    .children(self.value.map(|value| {
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_color(theme.colors.text_faint)
-                            .child(placeholder)
-                    }),
+                            .text_color(theme.colors.text)
+                            .child(value)
+                    }))
+                    .children(self.children),
             )
             .children(self.trailing);
         match self.id {

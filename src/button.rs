@@ -11,6 +11,7 @@ use gpui::{
 use crate::focus::focusable;
 use crate::icon::{Icon, IconName, IconSource};
 use crate::overlay::Tooltip;
+use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 
 /// What a button means, which decides how loudly it is drawn.
@@ -395,8 +396,8 @@ pub struct CopyButton {
     id: ElementId,
     text: SharedString,
     label: Option<SharedString>,
-    copied: SharedString,
-    tooltip: SharedString,
+    copied: Option<SharedString>,
+    tooltip: Option<SharedString>,
     size: ControlSize,
 }
 
@@ -407,8 +408,8 @@ impl CopyButton {
             id: id.into(),
             text: text.into(),
             label: None,
-            copied: "Copied".into(),
-            tooltip: "Copy".into(),
+            copied: None,
+            tooltip: None,
             size: ControlSize::Small,
         }
     }
@@ -419,15 +420,15 @@ impl CopyButton {
         self
     }
 
-    /// What it says once it has copied, for another language ("コピーしました").
+    /// What it says once it has copied; [`crate::Strings::copied`] by default.
     pub fn copied_label(mut self, copied: impl Into<SharedString>) -> Self {
-        self.copied = copied.into();
+        self.copied = Some(copied.into());
         self
     }
 
-    /// The tooltip of an icon-only button, "Copy" by default.
+    /// The tooltip of an icon-only button; [`crate::Strings::copy`] by default.
     pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
-        self.tooltip = tooltip.into();
+        self.tooltip = Some(tooltip.into());
         self
     }
 
@@ -446,21 +447,22 @@ impl RenderOnce for CopyButton {
             |_, _| Copied::default(),
         );
         let shown = state.read(cx).shown;
+        let copied = self.copied.unwrap_or_else(|| cx.strings().copied.clone());
         let icon = if shown {
             IconName::Check
         } else {
             IconName::Copy
         };
         let button = match (&self.label, shown) {
-            (Some(_), true) => Button::new(self.id, self.copied.clone()).icon(icon),
+            (Some(_), true) => Button::new(self.id, copied.clone()).icon(icon),
             (Some(label), false) => Button::new(self.id, label.clone()).icon(icon),
             (None, _) => Button::icon_only(self.id, icon),
         };
         let tooltip = match (self.label, shown) {
             (Some(label), true) => label,
             (Some(label), false) => label,
-            (None, true) => self.copied,
-            (None, false) => self.tooltip,
+            (None, true) => copied,
+            (None, false) => self.tooltip.unwrap_or_else(|| cx.strings().copy.clone()),
         };
         let text = self.text;
         button

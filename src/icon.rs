@@ -82,10 +82,12 @@ icons! {
     Minus => "minus",
     More => "more",
     Music => "music",
+    Notes => "notes",
     Paperclip => "paperclip",
     Pause => "pause",
     Play => "play",
     Plus => "plus",
+    Punch => "punch",
     Record => "record",
     Redo => "redo",
     Refresh => "refresh",
@@ -110,6 +112,67 @@ icons! {
     WindowMinimize => "window-minimize",
     WindowRestore => "window-restore",
     Wrench => "wrench",
+}
+
+/// The marks of the AI providers an application may offer, drawn small and in one colour.
+///
+/// They go wherever a model is named — the model picker, the current model, the assistant's
+/// avatar — so the person can tell providers apart before they read. Each is a simplified mark
+/// on the icon grid, drawn as a mask like the set: it takes the text colour, never the
+/// provider's brand colours, so no provider stands out from the rest. They identify; they are
+/// not the providers' official artwork. An application that wants the official logo puts the
+/// provider's own file in the same place with [`IconSource::svg`] or [`IconSource::image`],
+/// following that provider's brand guidelines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ProviderLogo {
+    /// Anthropic (Claude).
+    Anthropic,
+    /// OpenAI (GPT, Codex).
+    OpenAi,
+    /// Google (Gemini).
+    Google,
+    /// A model running on the person's own machine.
+    Local,
+}
+
+impl ProviderLogo {
+    /// Every mark, in declaration order.
+    pub const ALL: &[Self] = &[Self::Anthropic, Self::OpenAi, Self::Google, Self::Local];
+
+    /// Asset path served by [`Assets`].
+    pub fn path(self) -> &'static str {
+        match self {
+            Self::Anthropic => "logos/anthropic.svg",
+            Self::OpenAi => "logos/openai.svg",
+            Self::Google => "logos/google.svg",
+            Self::Local => "logos/local.svg",
+        }
+    }
+
+    /// The provider's name, for menus and accessible labels.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Anthropic => "Anthropic",
+            Self::OpenAi => "OpenAI",
+            Self::Google => "Google",
+            Self::Local => "Local",
+        }
+    }
+
+    fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::Anthropic => include_bytes!("../assets/logos/anthropic.svg"),
+            Self::OpenAi => include_bytes!("../assets/logos/openai.svg"),
+            Self::Google => include_bytes!("../assets/logos/google.svg"),
+            Self::Local => include_bytes!("../assets/logos/local.svg"),
+        }
+    }
+}
+
+impl From<ProviderLogo> for IconSource {
+    fn from(logo: ProviderLogo) -> Self {
+        Self::Svg(logo.path().into())
+    }
 }
 
 /// Serves the embedded icons, then defers to an application's own source for anything else.
@@ -138,6 +201,9 @@ impl AssetSource for Assets {
         if let Some(bytes) = embedded(path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
+        if let Some(logo) = ProviderLogo::ALL.iter().find(|logo| logo.path() == path) {
+            return Ok(Some(Cow::Borrowed(logo.bytes())));
+        }
         match &self.fallback {
             Some(fallback) => fallback.load(path),
             None => Ok(None),
@@ -148,6 +214,7 @@ impl AssetSource for Assets {
         let mut found: Vec<SharedString> = IconName::ALL
             .iter()
             .map(|icon| icon.path())
+            .chain(ProviderLogo::ALL.iter().map(|logo| logo.path()))
             .filter(|candidate| candidate.starts_with(path))
             .map(SharedString::from)
             .collect();
@@ -158,13 +225,15 @@ impl AssetSource for Assets {
     }
 }
 
-/// What an icon draws: one of the set, an application's own SVG, or a full-colour image.
+/// What an icon draws: one of the set, a [`ProviderLogo`], an application's own SVG, or a
+/// full-colour image.
 ///
 /// Everything that takes an icon takes `impl Into<IconSource>`, so an [`IconName`] still works
-/// as before and an application's own glyph goes in the same place:
+/// as before and a provider's mark or an application's own glyph goes in the same place:
 ///
 /// ```ignore
 /// ListItem::new("tempo", "Tempo").icon(IconName::Metronome)
+/// MenuItem::new("opus", "Claude Opus 5.5").icon(ProviderLogo::Anthropic)
 /// ListItem::new("punch", "Punch in").icon(IconSource::svg("icons/auris-punch.svg"))
 /// OptionCard::new("openai", IconSource::image("logos/provider.png"), "Provider")
 /// ```
@@ -271,6 +340,15 @@ mod tests {
         for icon in IconName::ALL {
             let bytes = assets.load(icon.path()).unwrap().unwrap();
             assert!(bytes.starts_with(b"<svg"), "{}", icon.name());
+        }
+    }
+
+    #[test]
+    fn every_provider_logo_is_embedded() {
+        let assets = Assets::default();
+        for logo in ProviderLogo::ALL {
+            let bytes = assets.load(logo.path()).unwrap().unwrap();
+            assert!(bytes.starts_with(b"<svg"), "{}", logo.label());
         }
     }
 }

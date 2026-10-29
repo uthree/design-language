@@ -84,7 +84,17 @@ cx.simulate_keystrokes("tab");
 cx.simulate_event(KeyUpEvent { keystroke: Keystroke::parse("enter").unwrap() });
 ```
 
-Do not wrap Atelier components in `div().debug_selector(..)` to find them.
+A selector is the component's `ElementId` as `to_string()` writes it: `"save"` is `save`,
+`("song-adopt", 3)` is `song-adopt-3`, and a child id adds its name (`ElementId::NamedChild`,
+as `reply-block-2` for the second block of the answer with id `reply`). For two numbers, build
+the name yourself: `ElementId::Name(format!("cell-{row}-{column}").into())`. The title bar's
+title is `atelier-title`.
+
+Turn animation off in tests that press or drag things that would still be moving in:
+`atelier::motion::reduce_motion(cx)` after `atelier::init`.
+
+Do not wrap Atelier components in `div().debug_selector(..)` to find them; the adoption check
+reports a wrapper whose next lines hold a `Button`, `ListItem`, `Switch` or another control.
 
 ## Migrating an existing gpui UI (Auris Studio)
 
@@ -128,6 +138,15 @@ with the component and the hook it now has:
 | `agent_components::selectable_text` and a redrawn user bubble | `UserMessage::new(text).id(..)`; `SelectableText` elsewhere |
 | copy buttons swapping their own label (`workshop_copy_button`) | `CopyButton::new(id, text).label(..).copied_label(..)` |
 | `audio_player.rs` for seek, volume, mute, loading | `AudioPlayer::on_seek/on_volume/on_mute/loading` |
+| `composer_frame` (a warning-coloured frame, a notice row, attach greyed) | `Composer::tone(..)`, `.notice(..)`, `.attach_disabled(..)` |
+| an own drag region beside `window_drag(false)` | `TitleBar::drag_region(el)` |
+| a wrapper `div` fading the `Morph` into a veil | `Morph::fill_to(..)` and `.border(..)` |
+| `.empty(false)` plus a placeholder of its own in `TextField` | `.placeholder(..).empty(..)`: it lies under your input |
+| `div().flex_1()` around each control in a `FormField` | nothing: the first control fills the width |
+| `cx.global_mut::<Theme>().motion.enabled = false` in tests | `atelier::motion::reduce_motion(cx)` |
+| `punch.svg`, `notes.svg` | `IconName::Punch`, `IconName::Notes` |
+| tooltips and labels translated one by one (`.tooltip("コピー")`) | `Strings::japanese().install(cx)` |
+| a labelled copy button under each message | the message's selectable text, and an icon-only `CopyButton` shown on hover |
 | `TimbreCamera`, `scatter_batches`, own `pick` | `scatter` per colour; `Plot3d::id(..).on_pick(..).on_orbit(..)`, `ViewPreset` |
 | `group_color` (golden-ratio hues) | `theme.categorical(index)` |
 | `has_global::<Theme>()` to choose `init` or `install` | `init` once, `Theme::install` to switch |

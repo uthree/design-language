@@ -22,7 +22,7 @@
 //! ```
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, CursorStyle, Decorations, Div, HitboxBehavior,
+    AnyElement, App, Bounds, BoxShadow, CursorStyle, Decorations, Div, ElementId, HitboxBehavior,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce,
     ResizeEdge, SharedString, Size, StatefulInteractiveElement, StyleRefinement, Styled, Tiling,
     TitlebarOptions, Window, WindowControlArea, WindowDecorations, WindowOptions, canvas, div,
@@ -301,6 +301,8 @@ pub struct TitleBar {
     trailing: Vec<AnyElement>,
     window_controls: Option<(Pixels, AnyElement)>,
     window_drag: bool,
+    drag_region: Option<AnyElement>,
+    title_id: Option<ElementId>,
 }
 
 impl TitleBar {
@@ -314,7 +316,16 @@ impl TitleBar {
             trailing: Vec::new(),
             window_controls: None,
             window_drag: true,
+            drag_region: None,
+            title_id: None,
         }
+    }
+
+    /// The id of the title, and its test selector; `"atelier-title"` by default. A test can
+    /// check that the title sits on the window's centre line, or press it.
+    pub fn title_id(mut self, id: impl Into<ElementId>) -> Self {
+        self.title_id = Some(id.into());
+        self
     }
 
     /// The document or window title, centred on the window.
@@ -350,6 +361,16 @@ impl TitleBar {
     /// double-click maximise through its own `WM_NCHITTEST` — and the title bar only lays out.
     pub fn window_drag(mut self, drag: bool) -> Self {
         self.window_drag = drag;
+        self
+    }
+
+    /// The application's own drag area, laid behind the whole bar: it fills it edge to edge,
+    /// the title included, and every control sits on top of it and keeps its clicks. Use it
+    /// with [`TitleBar::window_drag`]`(false)`, when the application marks its drag region
+    /// itself; give the element `size_full()` (it is placed in an absolutely positioned layer
+    /// the size of the bar).
+    pub fn drag_region(mut self, region: impl IntoElement) -> Self {
+        self.drag_region = Some(region.into_any_element());
         self
     }
 }
@@ -390,9 +411,12 @@ impl RenderOnce for TitleBar {
             .map(|_| frame_radius(theme));
         let height = theme.density.title_bar;
 
+        let title_id = self
+            .title_id
+            .unwrap_or_else(|| ElementId::Name("atelier-title".into()));
         let heading = self.title.map(|title| {
             // One line, truncating down to a few characters when the bar runs out of room.
-            div()
+            crate::focus::selector(div().id(title_id.clone()), &title_id)
                 .flex()
                 .flex_shrink()
                 .min_w(px(MIN_TITLE_WIDTH))
@@ -461,6 +485,11 @@ impl RenderOnce for TitleBar {
             );
         self.base
             .id("atelier-title-bar")
+            .relative()
+            .children(
+                self.drag_region
+                    .map(|region| div().absolute().top_0().left_0().size_full().child(region)),
+            )
             .flex()
             .flex_none()
             .items_center()

@@ -20,10 +20,10 @@ use atelier::agent::{
 use atelier::{
     ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox,
     ControlSize, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName, Kbd, Knob,
-    Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, SectionHeader,
-    Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StepList, StepState, Switch,
-    Tabs, TaskProgress, TaskState, TextColor, TextField, TextSize, Theme, TitleBar, Tone,
-    WindowFrame, menu_separator, skeleton_paragraph,
+    Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo,
+    SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StepList,
+    StepState, Switch, Tabs, TaskProgress, TaskState, TextColor, TextField, TextSize, Theme,
+    TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Hsla, IntoElement,
@@ -573,6 +573,7 @@ impl Showcase {
         let border = cx.theme().colors.border;
         let piano = track_color(&TRACKS[1]);
         let panel = AgentPanel::new("agent", "Reharmonise the chorus")
+            .logo(ProviderLogo::Anthropic)
             .status(AgentStatus::AwaitingApproval)
             .status_detail("3 tools · 14 s")
             .action(Button::icon_only("history", IconName::History).tooltip("Conversations"))
@@ -623,6 +624,7 @@ impl Showcase {
             .entry(AssistantMessage::new(
                 "I opened the chorus voicing and drafted a pad to sit above it:\n\n- Left hand now plays tenths, so the bass line breathes.\n- Right hand keeps the melody on top; nothing in the vocal range moved.\n- A strings pad holds the chord tones an octave up.\n\nThe revoiced clip is marked as an AI draft — undo restores the original.",
             )
+            .logo(ProviderLogo::Anthropic)
             .meta("Claude Opus 5.5 · 14 s")
             .action(Button::icon_only("copy", IconName::Copy).size(ControlSize::Small))
             .action(Button::icon_only("retry", IconName::Refresh).size(ControlSize::Small).tooltip("Regenerate")))
@@ -638,6 +640,7 @@ impl Showcase {
                     .placeholder("Ask about the song, or describe a change…")
                     .context(ContextChip::new("ctx-sel", IconName::Music, "Selection: 2 clips").color(piano).on_remove(|_, _, _| {}))
                     .model("Claude Opus 5.5")
+                    .model_logo(ProviderLogo::Anthropic)
                     .focused(true),
             )
 ;
@@ -686,7 +689,7 @@ impl Showcase {
                     )
                     .child(ProgressRing::new(0.72).size(px(20.)).tone(Tone::Agent)),
             )
-            .child(ThinkingIndicator::new("Thinking"))
+            .child(ThinkingIndicator::new("Thinking").logo(ProviderLogo::Anthropic))
             .child(
                 Label::new("Indeterminate")
                     .size(TextSize::Small)
@@ -996,6 +999,7 @@ impl Showcase {
             }))
             .child(Avatar::person("UT"))
             .child(Avatar::agent())
+            .child(Avatar::logo(ProviderLogo::Anthropic))
             .child(Spinner::new("spinner"))
             .child(
                 div()
@@ -1071,7 +1075,9 @@ impl Showcase {
                     .flex()
                     .flex_col()
                     .gap(theme.spacing.md)
-                    .child(ThinkingIndicator::new("Reading the score"))
+                    .child(
+                        ThinkingIndicator::new("Reading the score").logo(ProviderLogo::Anthropic),
+                    )
                     .child(
                         ChatNotice::error(
                             "Couldn't reach the model. Check your connection and try again.",
@@ -1103,6 +1109,7 @@ impl Showcase {
                         Composer::new("composer2")
                             .value("Make the bass follow the kick in bars 9–16")
                             .model("Claude Sonnet 5.5")
+                            .model_logo(ProviderLogo::Anthropic)
                             .busy(true),
                     ),
             );

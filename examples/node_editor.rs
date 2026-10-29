@@ -17,9 +17,9 @@ use atelier::agent::{
 };
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ButtonVariant, ControlSize, Direction,
-    Disclosure, Divider, Edge, Icon, IconName, Label, ListItem, SectionHeader, Segment,
-    SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StatusDot, TaskProgress, TextColor,
-    TextField, TextSize, Theme, TitleBar, Tone, Tooltip, WindowFrame,
+    Disclosure, Divider, Edge, Icon, IconName, Label, ListItem, ProviderLogo, SectionHeader,
+    Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StatusDot, TaskProgress,
+    TextColor, TextField, TextSize, Theme, TitleBar, Tone, Tooltip, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -1632,6 +1632,7 @@ impl NodeEditor {
     fn agent_panel(&self, width: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let panel = AgentPanel::new("agent", "Match my other tracks' loudness")
+            .logo(ProviderLogo::Anthropic)
             .status(AgentStatus::Completed)
             .status_detail("2 tools · 9 s")
             .action(Button::icon_only("history", IconName::History).tooltip("Conversations"))
@@ -1671,6 +1672,7 @@ impl NodeEditor {
                     "Your last three takes measured around −22 LUFS, while the album sits near −14. I added a Loudness normalize node between Decode audio and both outputs:\n\n- Target −14 LUFS integrated, true peak −1 dBTP.\n- Preview and Save now both receive the normalized audio.\n\nIt is marked on the canvas; Undo there rewires Decode audio straight to the outputs.",
                 )
                 .id("message-2")
+                .logo(ProviderLogo::Anthropic)
                 .meta("Claude Opus 5.5 · 9 s")
                 .action(Button::icon_only("copy", IconName::Copy).size(ControlSize::Small)),
             )
@@ -1684,7 +1686,8 @@ impl NodeEditor {
                             node.kind.spec().title,
                         ))
                     })
-                    .model("Claude Opus 5.5"),
+                    .model("Claude Opus 5.5")
+                    .model_logo(ProviderLogo::Anthropic),
             );
         div()
             .w(px(width))

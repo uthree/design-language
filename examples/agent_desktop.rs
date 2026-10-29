@@ -17,8 +17,8 @@ use atelier::agent::{
 use atelier::emoji::{self, EmojiMatch};
 use atelier::{
     ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider, Edge,
-    FocusNext, IconName, Label, ListItem, Sidebar, StepList, StepState, Tabs, TaskProgress,
-    TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
+    FocusNext, IconName, Label, ListItem, MenuItem, Popover, ProviderLogo, Sidebar, StepList,
+    StepState, Tabs, TaskProgress, TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -45,6 +45,8 @@ struct AgentDesktop {
     transcript_scroll: ScrollHandle,
     /// Focus the composer on the first frame.
     autofocus: bool,
+    model: usize,
+    model_menu: bool,
 }
 
 impl Themed for AgentDesktop {
@@ -70,10 +72,51 @@ const SESSIONS: [(&str, &str, AgentStatus); 6] = [
     ("Review CLAP host PR", "Yesterday", AgentStatus::Idle),
 ];
 
+/// The models on offer, grouped by provider in the picker.
+const MODELS: [(&str, ProviderLogo); 7] = [
+    ("Claude Opus 5.5", ProviderLogo::Anthropic),
+    ("Claude Sonnet 5.5", ProviderLogo::Anthropic),
+    ("Claude Haiku 5.5", ProviderLogo::Anthropic),
+    ("GPT-6-Sol (Codex)", ProviderLogo::OpenAi),
+    ("GPT-6-Mini", ProviderLogo::OpenAi),
+    ("Gemini 4 Pro", ProviderLogo::Google),
+    ("Qwen 4 Coder (Ollama)", ProviderLogo::Local),
+];
+
 /// How many emoji suggestions to offer at once.
 const EMOJI_LIMIT: usize = 8;
 
 impl AgentDesktop {
+    /// The model picker: one group per provider, each row led by the provider's mark.
+    fn model_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let mut menu = Popover::new().id("model-menu").w(px(260.));
+        let mut provider = None;
+        for (index, (name, logo)) in MODELS.into_iter().enumerate() {
+            if provider != Some(logo) {
+                provider = Some(logo);
+                menu = menu.child(
+                    div()
+                        .px(px(8.))
+                        .pt(if index == 0 { px(4.) } else { theme.spacing.sm })
+                        .pb(px(2.))
+                        .child(Label::caption(logo.label())),
+                );
+            }
+            menu = menu.child(
+                MenuItem::new(("model", index), name)
+                    .icon(logo)
+                    .checked(index == self.model)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.model = index;
+                        this.model_menu = false;
+                        cx.notify();
+                    })),
+            );
+        }
+        menu
+    }
+
     /// The emoji the shortcode before the caret could mean, unless Escape closed them.
     fn emoji_matches(&self) -> Vec<EmojiMatch> {
         if self.emoji_dismissed {
@@ -273,7 +316,8 @@ impl AgentDesktop {
                     "Found it. `play()` returns before the audio thread has taken its first block, so a position read right after it can still be zero.\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:",
                 )
                 .id("m2")
-                .meta("Claude Opus 5.5 · 41 s"),
+                .logo(MODELS[self.model].1)
+                .meta(format!("{} · 41 s", MODELS[self.model].0)),
             )
             .child(
                 DiffBlock::new("engine/src/transport.rs")
@@ -427,6 +471,8 @@ impl Render for AgentDesktop {
         let sidebar = window.viewport_size().width >= px(SIDEBAR_MIN_WINDOW);
         let switch = common::theme_switch(self, cx);
         let (title, _, status) = SESSIONS[self.session];
+        let (model, model_logo) = MODELS[self.model];
+        let model_menu = self.model_menu.then(|| self.model_menu(cx));
         WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
@@ -472,30 +518,50 @@ impl Render for AgentDesktop {
                                     .px(theme.spacing.xl)
                                     .pb(theme.spacing.lg)
                                     .child(
-                                        div().w_full().max_w(px(780.)).child(
-                                            Composer::new("composer")
-                                                .placeholder("Reply, or describe the next change…")
-                                                .input(self.draft_input(window, cx))
-                                                .empty(self.draft.is_empty())
-                                                .focused(self.input.is_focused(window))
-                                                .when_some(
-                                                    self.emoji_list(cx),
-                                                    Composer::completions,
-                                                )
-                                                .on_send(cx.listener(|this, _, _, cx| {
-                                                    this.send();
-                                                    cx.notify();
-                                                }))
-                                                .context(
-                                                    ContextChip::new(
-                                                        "ctx-file",
-                                                        IconName::File,
-                                                        "transport.rs",
+                                        div()
+                                            .relative()
+                                            .w_full()
+                                            .max_w(px(780.))
+                                            .child(
+                                                Composer::new("composer")
+                                                    .placeholder(
+                                                        "Reply, or describe the next change…",
                                                     )
-                                                    .on_remove(|_, _, _| {}),
-                                                )
-                                                .model("Claude Opus 5.5"),
-                                        ),
+                                                    .input(self.draft_input(window, cx))
+                                                    .empty(self.draft.is_empty())
+                                                    .focused(self.input.is_focused(window))
+                                                    .when_some(
+                                                        self.emoji_list(cx),
+                                                        Composer::completions,
+                                                    )
+                                                    .on_send(cx.listener(|this, _, _, cx| {
+                                                        this.send();
+                                                        cx.notify();
+                                                    }))
+                                                    .context(
+                                                        ContextChip::new(
+                                                            "ctx-file",
+                                                            IconName::File,
+                                                            "transport.rs",
+                                                        )
+                                                        .on_remove(|_, _, _| {}),
+                                                    )
+                                                    .model(model)
+                                                    .model_logo(model_logo)
+                                                    .on_model(cx.listener(|this, _, _, cx| {
+                                                        this.model_menu = !this.model_menu;
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            // The picker opens upward from the composer's
+                                            // bottom row, over the transcript.
+                                            .children(model_menu.map(|menu| {
+                                                div()
+                                                    .absolute()
+                                                    .bottom(px(52.))
+                                                    .left(px(44.))
+                                                    .child(menu)
+                                            })),
                                     ),
                             ),
                     )
@@ -595,5 +661,7 @@ fn main() {
         input: cx.focus_handle(),
         transcript_scroll: ScrollHandle::new(),
         autofocus: true,
+        model: 0,
+        model_menu: false,
     });
 }

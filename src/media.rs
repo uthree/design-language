@@ -14,6 +14,7 @@ use crate::focus::{
     CONTROL_CONTEXT, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT, focusable,
 };
 use crate::icon::{Icon, IconName};
+use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
 use crate::viz::PeakBars;
@@ -187,7 +188,11 @@ impl RenderOnce for AudioPlayer {
             .variant(ButtonVariant::Secondary)
             .size(ControlSize::Small)
             .disabled(self.disabled)
-            .tooltip(if self.playing { "Pause" } else { "Play" });
+            .tooltip(if self.playing {
+                cx.strings().pause.clone()
+            } else {
+                cx.strings().play.clone()
+            });
             if let Some(handler) = self.on_play {
                 play = play.on_click(handler);
             }
@@ -257,7 +262,11 @@ impl RenderOnce for AudioPlayer {
                 )
                 .size(ControlSize::Small)
                 .selected(muted)
-                .tooltip(if muted { "Unmute" } else { "Mute" })
+                .tooltip(if muted {
+                    cx.strings().unmute.clone()
+                } else {
+                    cx.strings().mute.clone()
+                })
                 .on_click(handler)
                 .into_any_element(),
                 None => Icon::new(if muted {

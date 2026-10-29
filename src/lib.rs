@@ -30,6 +30,7 @@ mod overlay;
 pub mod plot;
 mod progress;
 mod selectable;
+mod strings;
 mod text;
 mod theme;
 pub mod viz;
@@ -46,7 +47,7 @@ pub use focus::{
 };
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
-pub use icon::{Assets, Icon, IconName, IconSource};
+pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
@@ -59,6 +60,7 @@ pub use progress::{
     skeleton_paragraph,
 };
 pub use selectable::{CopySelection, SELECTABLE_CONTEXT, SelectAll, SelectableText};
+pub use strings::{ActiveStrings, Strings};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,
