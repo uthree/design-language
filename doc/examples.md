@@ -25,6 +25,9 @@ cargo run --example agent_desktop
 
 Sessions with live status on the left, the conversation in the middle (reasoning, grouped tool
 calls, command output, a diff, the task plan, an approval), and the changes it made on the right.
+The model picker under the composer groups the models by provider, each led by its provider's
+mark; the picked model's mark also stands on the picker and as the avatar of its answers.
+Captured on Linux under Weston, with the picker open.
 
 ![Agent desktop](images/agent-desktop.png)
 

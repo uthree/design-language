@@ -126,7 +126,8 @@ and its undo); wrap the component in an element that handles the gesture.
 ## Display
 
 `Badge::new("Rendered").tone(Tone::Success).dot()`, `Kbd::new("⌘K")`, `Avatar::person("UT")`,
-`Avatar::agent()`, `Divider::horizontal()` / `Divider::vertical().full()`,
+`Avatar::agent()`, `Avatar::logo(ProviderLogo::Anthropic)` (the agent as its provider's mark;
+prefer it when the model is known), `Divider::horizontal()` / `Divider::vertical().full()`,
 `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
 
 ## Progress and loading
