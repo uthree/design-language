@@ -13,8 +13,8 @@ mod common;
 
 use atelier::{
     ActiveTheme, Appearance, Button, Checkbox, ControlSize, Direction, Divider, Edge, FormField,
-    FormGroup, IconName, Kbd, ListItem, SectionHeader, Segment, SegmentedControl, Sidebar,
-    StatusBar, Switch, TextField, TitleBar, Tone, WindowFrame,
+    FormGroup, IconName, Kbd, ListItem, ProviderLogo, SectionHeader, Segment, SegmentedControl,
+    Sidebar, StatusBar, Switch, TextField, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -227,9 +227,13 @@ impl Preferences {
     fn assistant(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![
             FormGroup::untitled()
-                .child(FormField::new("モデル").child(
-                    Button::new("model", "GPT-6-Sol (Codex)").icon_after(IconName::ChevronDown),
-                ))
+                .child(
+                    FormField::new("モデル").child(
+                        Button::new("model", "GPT-6-Sol (Codex)")
+                            .icon(ProviderLogo::OpenAi)
+                            .icon_after(IconName::ChevronDown),
+                    ),
+                )
                 .child(
                     FormField::new("高速モード")
                         .description("案を早く出すかわりに、作り込みを浅くします。")

@@ -15,9 +15,9 @@ mod common;
 use atelier::agent::{AssistantMessage, Composer, UserMessage};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ControlSize, Direction, Divider, Edge,
-    IconName, Label, ListItem, Measure, Morph, OptionCard, ProgressBar, SectionHeader, Segment,
-    SegmentedControl, Sidebar, Spinner, StepList, StepState, Switch, TextColor, TextSize, TitleBar,
-    WindowFrame, motion::appear,
+    IconName, Label, ListItem, Measure, Morph, OptionCard, ProgressBar, ProviderLogo,
+    SectionHeader, Segment, SegmentedControl, Sidebar, Spinner, StepList, StepState, Switch,
+    TextColor, TextSize, TitleBar, WindowFrame, motion::appear,
 };
 use common::Themed;
 use gpui::{
@@ -443,6 +443,7 @@ impl AurisScreens {
         let composer = Composer::new("composer")
             .placeholder("要望を追加する（例：もっとブラスを前に）…")
             .model("GPT-6-Sol (Codex)")
+            .model_logo(ProviderLogo::OpenAi)
             .control(
                 SegmentedControl::new(
                     "effort",

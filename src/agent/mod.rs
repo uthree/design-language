@@ -6,6 +6,9 @@
 //!
 //! * **The AI has one colour.** [`crate::Colors::agent`] marks what the agent did or is doing —
 //!   its avatar, running work, its edits. Nothing else uses it, so it keeps meaning something.
+//! * **A model is shown with its provider's mark.** Where the model is known, the picker, the
+//!   current model and the assistant's avatar carry its [`crate::ProviderLogo`], in the text
+//!   colour, so the person can tell whose model is answering before reading the name.
 //! * **Every state has a shape as well as a colour.** [`AgentStatus::mark`] pairs with each one.
 //! * **The person's words and the agent's words differ in form, not only colour.** The person
 //!   speaks in a bubble on the trailing edge; the agent writes full-width prose.

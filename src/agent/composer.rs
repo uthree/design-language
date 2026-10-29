@@ -30,6 +30,7 @@ pub struct Composer {
     context: Vec<AnyElement>,
     controls: Vec<AnyElement>,
     model: Option<SharedString>,
+    model_logo: Option<IconSource>,
     busy: bool,
     focused: bool,
     on_send: Option<ClickHandler>,
@@ -50,6 +51,7 @@ impl Composer {
             context: Vec::new(),
             controls: Vec::new(),
             model: None,
+            model_logo: None,
             busy: false,
             focused: false,
             on_send: None,
@@ -143,6 +145,13 @@ impl Composer {
         self
     }
 
+    /// The mark before the model picker's label — the [`crate::ProviderLogo`] of the model in
+    /// use — so the current provider reads at a glance.
+    pub fn model_logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.model_logo = Some(logo.into());
+        self
+    }
+
     /// Called on the model picker; open the model menu there.
     pub fn on_model(
         mut self,
@@ -178,6 +187,9 @@ impl RenderOnce for Composer {
                 .ghost()
                 .size(ControlSize::Small)
                 .icon_after(IconName::ChevronDown);
+            if let Some(logo) = self.model_logo {
+                button = button.icon(logo);
+            }
             if let Some(handler) = self.on_model {
                 button = button.on_click(handler);
             }

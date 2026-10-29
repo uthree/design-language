@@ -6,11 +6,11 @@ use gpui::{
     linear_gradient, prelude::FluentBuilder, px, relative,
 };
 
+use super::transcript::agent_avatar;
 use super::{AgentStatus, AgentStatusLabel};
 use crate::button::Button;
-use crate::display::Avatar;
 use crate::focus::focusable;
-use crate::icon::{Icon, IconName};
+use crate::icon::{Icon, IconName, IconSource};
 use crate::motion::{lerp, looping};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
@@ -28,6 +28,7 @@ pub struct AgentPanel {
     title: SharedString,
     status: AgentStatus,
     status_detail: Option<SharedString>,
+    logo: Option<IconSource>,
     actions: Vec<AnyElement>,
     transcript: Vec<AnyElement>,
     composer: Option<AnyElement>,
@@ -43,6 +44,7 @@ impl AgentPanel {
             title: title.into(),
             status: AgentStatus::Idle,
             status_detail: None,
+            logo: None,
             actions: Vec::new(),
             transcript: Vec::new(),
             composer: None,
@@ -60,6 +62,13 @@ impl AgentPanel {
     /// Words after the state.
     pub fn status_detail(mut self, detail: impl Into<SharedString>) -> Self {
         self.status_detail = Some(detail.into());
+        self
+    }
+
+    /// The header's avatar as the provider's mark — a [`crate::ProviderLogo`] — instead of the
+    /// agent's gradient.
+    pub fn logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.logo = Some(logo.into());
         self
     }
 
@@ -131,7 +140,7 @@ impl RenderOnce for AgentPanel {
                     .px(theme.spacing.md)
                     .border_b_1()
                     .border_color(colors.border)
-                    .child(Avatar::agent().size(px(22.)))
+                    .child(agent_avatar(self.logo).size(px(22.)))
                     .child(
                         div()
                             .flex()

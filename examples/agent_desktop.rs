@@ -13,8 +13,8 @@ use atelier::agent::{
 };
 use atelier::{
     ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider, Edge,
-    IconName, Label, ListItem, Sidebar, StepList, StepState, Tabs, TaskProgress, TextColor,
-    TextField, TextSize, TitleBar, Tone, WindowFrame,
+    IconName, Label, ListItem, MenuItem, Popover, ProviderLogo, Sidebar, StepList, StepState, Tabs,
+    TaskProgress, TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, prelude::*, px};
@@ -25,6 +25,8 @@ struct AgentDesktop {
     pane_tab: usize,
     reasoning_open: bool,
     tool_open: bool,
+    model: usize,
+    model_menu: bool,
 }
 
 impl Themed for AgentDesktop {
@@ -50,7 +52,48 @@ const SESSIONS: [(&str, &str, AgentStatus); 6] = [
     ("Review CLAP host PR", "Yesterday", AgentStatus::Idle),
 ];
 
+/// The models on offer, grouped by provider in the picker.
+const MODELS: [(&str, ProviderLogo); 7] = [
+    ("Claude Opus 5.5", ProviderLogo::Anthropic),
+    ("Claude Sonnet 5.5", ProviderLogo::Anthropic),
+    ("Claude Haiku 5.5", ProviderLogo::Anthropic),
+    ("GPT-6-Sol (Codex)", ProviderLogo::OpenAi),
+    ("GPT-6-Mini", ProviderLogo::OpenAi),
+    ("Gemini 4 Pro", ProviderLogo::Google),
+    ("Qwen 4 Coder (Ollama)", ProviderLogo::Local),
+];
+
 impl AgentDesktop {
+    /// The model picker: one group per provider, each row led by the provider's mark.
+    fn model_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let mut menu = Popover::new().id("model-menu").w(px(260.));
+        let mut provider = None;
+        for (index, (name, logo)) in MODELS.into_iter().enumerate() {
+            if provider != Some(logo) {
+                provider = Some(logo);
+                menu = menu.child(
+                    div()
+                        .px(px(8.))
+                        .pt(if index == 0 { px(4.) } else { theme.spacing.sm })
+                        .pb(px(2.))
+                        .child(Label::caption(logo.label())),
+                );
+            }
+            menu = menu.child(
+                MenuItem::new(("model", index), name)
+                    .icon(logo)
+                    .checked(index == self.model)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.model = index;
+                        this.model_menu = false;
+                        cx.notify();
+                    })),
+            );
+        }
+        menu
+    }
+
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let section = |label: &'static str| {
@@ -177,7 +220,8 @@ impl AgentDesktop {
                     "Found it. `play()` returns before the audio thread has taken its first block, so a position read right after it can still be zero.\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:",
                 )
                 .id("m2")
-                .meta("Claude Opus 5.5 · 41 s"),
+                .logo(MODELS[self.model].1)
+                .meta(format!("{} · 41 s", MODELS[self.model].0)),
             )
             .child(
                 DiffBlock::new("engine/src/transport.rs")
@@ -321,6 +365,8 @@ impl Render for AgentDesktop {
         let sidebar = window.viewport_size().width >= px(SIDEBAR_MIN_WINDOW);
         let switch = common::theme_switch(self, cx);
         let (title, _, status) = SESSIONS[self.session];
+        let (model, model_logo) = MODELS[self.model];
+        let model_menu = self.model_menu.then(|| self.model_menu(cx));
         WindowFrame::new()
             .font(theme.typography.ui.clone())
             .text_color(theme.colors.text)
@@ -366,19 +412,39 @@ impl Render for AgentDesktop {
                                     .px(theme.spacing.xl)
                                     .pb(theme.spacing.lg)
                                     .child(
-                                        div().w_full().max_w(px(780.)).child(
-                                            Composer::new("composer")
-                                                .placeholder("Reply, or describe the next change…")
-                                                .context(
-                                                    ContextChip::new(
-                                                        "ctx-file",
-                                                        IconName::File,
-                                                        "transport.rs",
+                                        div()
+                                            .relative()
+                                            .w_full()
+                                            .max_w(px(780.))
+                                            .child(
+                                                Composer::new("composer")
+                                                    .placeholder(
+                                                        "Reply, or describe the next change…",
                                                     )
-                                                    .on_remove(|_, _, _| {}),
-                                                )
-                                                .model("Claude Opus 5.5"),
-                                        ),
+                                                    .context(
+                                                        ContextChip::new(
+                                                            "ctx-file",
+                                                            IconName::File,
+                                                            "transport.rs",
+                                                        )
+                                                        .on_remove(|_, _, _| {}),
+                                                    )
+                                                    .model(model)
+                                                    .model_logo(model_logo)
+                                                    .on_model(cx.listener(|this, _, _, cx| {
+                                                        this.model_menu = !this.model_menu;
+                                                        cx.notify();
+                                                    })),
+                                            )
+                                            // The picker opens upward from the composer's
+                                            // bottom row, over the transcript.
+                                            .children(model_menu.map(|menu| {
+                                                div()
+                                                    .absolute()
+                                                    .bottom(px(52.))
+                                                    .left(px(44.))
+                                                    .child(menu)
+                                            })),
                                     ),
                             ),
                     )
@@ -420,5 +486,7 @@ fn main() {
         pane_tab: 0,
         reasoning_open: false,
         tool_open: true,
+        model: 0,
+        model_menu: false,
     });
 }

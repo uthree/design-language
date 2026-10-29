@@ -41,7 +41,7 @@ pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, 
 pub use focus::{FocusNext, FocusPrevious, focus_visible, set_focus_visible, tab_navigation};
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
-pub use icon::{Assets, Icon, IconName, IconSource};
+pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };

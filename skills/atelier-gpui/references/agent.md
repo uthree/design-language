@@ -14,6 +14,13 @@ them. They know nothing about providers or transport.
   window does this; its people said the name was noise). Keep the identity line — `.name(..)`,
   with the avatar — only where more than one agent or person speaks. An anonymous message moves
   its `.meta(..)` into the footer.
+- **Name a model with its provider's mark.** `ProviderLogo` (`Anthropic`, `OpenAi`, `Google`,
+  `Local`) goes in the model picker (one `MenuItem::icon(logo)` per model, grouped under a
+  `Label::caption(logo.label())` per provider), on the current model (`Composer::model_logo`) and
+  as the agent's avatar (`AssistantMessage::logo`, `ThinkingIndicator::logo`, `AgentPanel::logo`,
+  `Avatar::logo`) in place of the gradient sparkle. The marks are simplified, single-colour
+  identifiers drawn in the text colour, never in brand colours; to show a provider's official
+  logo, pass its file through `IconSource::svg/image` and follow that provider's brand rules.
 - **The answer leads; the work folds.** Reasoning and tool calls are collapsed one-liners
   (`ReasoningBlock`, `ToolCall` in a `ToolGroup`) that open on click.
 - **Ask before acting on something the person owns.** `ApprovalCard` names the verb and object;
@@ -26,6 +33,7 @@ them. They know nothing about providers or transport.
 
 ```rust
 AgentPanel::new("agent", conversation_title)
+    .logo(ProviderLogo::Anthropic)           // the header avatar: the answering provider's mark
     .status(AgentStatus::Running)            // gradient edge appears while running
     .status_detail("3 tools · 14 s")
     .action(Button::icon_only("history", IconName::History).tooltip("Conversations"))
@@ -36,14 +44,15 @@ AgentPanel::new("agent", conversation_title)
     .entry(ToolGroup::new("Used 3 tools")
         .call(ToolCall::new("t1", "read_notes", "Read 96 notes", ToolState::Succeeded).icon(IconName::Eye))
         .call(ToolCall::new("t2", "edit_notes", "Revoiced bars 17–24", ToolState::Running).detail(json)))
-    .entry(AssistantMessage::new(markdownish).meta("Claude Opus 5.5 · 14 s").streaming(false)
+    .entry(AssistantMessage::new(markdownish).logo(ProviderLogo::Anthropic).meta("Claude Opus 5.5 · 14 s").streaming(false)
         .action(Button::icon_only("copy", IconName::Copy).size(ControlSize::Small)))
     .entry(ApprovalCard::new("a1", "Create \u{201c}Pad swell\u{201d} on Strings?")
         .body("Adds one clip in bars 17–32. Nothing existing is replaced.")
         .allow_label("Create").on_allow(..).on_deny(..).on_always(..))
     .entry(ChatNotice::status("Context compacted"))
     .empty_state(/* greeting + SuggestionChips */)
-    .composer(Composer::new("composer").input(your_input_view).model("Claude Opus 5.5")
+    .composer(Composer::new("composer").input(your_input_view)
+        .model("Claude Opus 5.5").model_logo(ProviderLogo::Anthropic)
         .context(chip).busy(running).on_send(..).on_stop(..).on_model(..))
 ```
 
@@ -62,7 +71,8 @@ whether it holds text with `.empty(bool)` — the composer then shows the placeh
 input and disables Send while it is empty. Atelier does not ship a text editor; `.value(..)` is
 for mock-ups.
 
-The row under the text holds attach, the model picker (`.model(label)`, `.on_model(..)`) and
+The row under the text holds attach, the model picker (`.model(label)`, `.model_logo(logo)`,
+`.on_model(..)`, which opens a `Popover` of `MenuItem`s grouped by provider) and
 then your own `.control(..)`s before Send: the reasoning effort as a small `SegmentedControl`,
 fast mode as a small latching `Button::icon_only(id, IconName::Bolt).selected(fast)`, a voice
 picker as a small ghost button with a chevron. Keep them small and unfilled so the row stays one

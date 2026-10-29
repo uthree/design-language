@@ -11,7 +11,7 @@ use gpui::{
 use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Avatar, Spinner};
 use crate::focus::focusable;
-use crate::icon::{Icon, IconName};
+use crate::icon::{Icon, IconName, IconSource};
 use crate::motion::{appear, chevron, lerp, looping, reveal, transition};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
@@ -107,6 +107,7 @@ pub struct AssistantMessage {
     body: Option<AnyElement>,
     name: SharedString,
     meta: Option<SharedString>,
+    logo: Option<IconSource>,
     anonymous: bool,
     streaming: bool,
     actions: Vec<AnyElement>,
@@ -121,6 +122,7 @@ impl AssistantMessage {
             body: None,
             name: "Assistant".into(),
             meta: None,
+            logo: None,
             anonymous: false,
             streaming: false,
             actions: Vec::new(),
@@ -148,6 +150,13 @@ impl AssistantMessage {
     /// Muted metadata after the name: the model, the time taken.
     pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
         self.meta = Some(meta.into());
+        self
+    }
+
+    /// Draw the identity line's avatar as the provider's mark — a [`crate::ProviderLogo`] —
+    /// instead of the agent's gradient, so the person sees whose model answered.
+    pub fn logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.logo = Some(logo.into());
         self
     }
 
@@ -265,7 +274,7 @@ impl RenderOnce for AssistantMessage {
                 .flex()
                 .items_center()
                 .gap(theme.spacing.sm)
-                .child(Avatar::agent().size(px(20.)))
+                .child(agent_avatar(self.logo).size(px(20.)))
                 .child(
                     Label::new(self.name)
                         .size(TextSize::Small)
@@ -869,6 +878,7 @@ impl RenderOnce for ChatNotice {
 #[derive(IntoElement)]
 pub struct ThinkingIndicator {
     label: SharedString,
+    logo: Option<IconSource>,
 }
 
 impl ThinkingIndicator {
@@ -876,7 +886,14 @@ impl ThinkingIndicator {
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
             label: label.into(),
+            logo: None,
         }
+    }
+
+    /// The provider's mark in place of the agent's gradient, as on [`AssistantMessage::logo`].
+    pub fn logo(mut self, logo: impl Into<IconSource>) -> Self {
+        self.logo = Some(logo.into());
+        self
     }
 }
 
@@ -888,7 +905,7 @@ impl RenderOnce for ThinkingIndicator {
             .flex()
             .items_center()
             .gap(theme.spacing.sm)
-            .child(Avatar::agent().size(px(20.)))
+            .child(agent_avatar(self.logo).size(px(20.)))
             .child(div().flex().gap(px(3.)).children((0..3usize).map(|index| {
                 looping(
                     div().size(px(5.)).rounded(px(2.5)).bg(color),
@@ -909,4 +926,9 @@ impl RenderOnce for ThinkingIndicator {
                     .color(TextColor::Muted),
             )
     }
+}
+
+/// The agent's avatar: the provider's mark when the application gave one, else the gradient.
+pub(super) fn agent_avatar(logo: Option<IconSource>) -> Avatar {
+    logo.map_or_else(Avatar::agent, Avatar::logo)
 }
