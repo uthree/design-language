@@ -12,7 +12,8 @@ mod common;
 
 use atelier::agent::{
     AgentStatus, ApprovalCard, AssistantMessage, CodeBlock, Composer, ContextChip, ConversationRow,
-    DiffBlock, DiffLine, ReasoningBlock, ToolCall, ToolGroup, ToolState, UserMessage,
+    DiffBlock, DiffLine, ReasoningBlock, ToolCall, ToolGroup, ToolState, UsageLimit, UsageMeter,
+    UserMessage,
 };
 use atelier::emoji::{self, EmojiMatch};
 use atelier::{
@@ -548,6 +549,21 @@ impl Render for AgentDesktop {
                                                     )
                                                     .model(model)
                                                     .model_logo(model_logo)
+                                                    .usage(
+                                                        UsageMeter::new("usage")
+                                                            .limit(
+                                                                UsageLimit::new(
+                                                                    "5-hour window",
+                                                                    0.62,
+                                                                )
+                                                                .resets("in 1 h 40 min"),
+                                                            )
+                                                            .limit(
+                                                                UsageLimit::new("Weekly", 0.41)
+                                                                    .resets("Mon 09:00"),
+                                                            )
+                                                            .on_click(|_, _, _| {}),
+                                                    )
                                                     .on_model(cx.listener(|this, _, _, cx| {
                                                         this.model_menu = !this.model_menu;
                                                         cx.notify();

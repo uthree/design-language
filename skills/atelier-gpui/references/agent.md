@@ -140,6 +140,15 @@ line inside the frame above the controls; `.attach_disabled(true)` greys out att
 `ContextChip::on_click` opens the attachment (a stop of its own, apart from remove), and
 `.remove_label(..)` names the remove button's tooltip.
 
+What is left of the plan goes in the composer too, at the trailing end of the control row
+before Send: `.usage(UsageMeter::new(id).limit(UsageLimit::new("5-hour window", used).resets("in
+1 h 40 min")).limit(UsageLimit::new("Weekly", used)))`, with `used` from 0 to 1. The meter shows
+the limit closest to running out as a 14 px ring that drains and "28 % left"; hovering lists
+every limit with its share used and reset time. It stays faint while there is room and turns to
+warning under 20 % left and danger under 5 % (`.warn_below`, `.danger_below`); a spent limit
+says when it resets instead of a percentage. `.on_click` opens the plan's usage page. Do not
+put usage in the status bar or the panel header as well: one place, where the person sends.
+
 ## Words
 
 Components draw their own words — tooltips, Send, "Copied", Allow and Deny, states — from

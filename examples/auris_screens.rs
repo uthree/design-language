@@ -13,7 +13,8 @@
 mod common;
 
 use atelier::agent::{
-    AgentLabel, AssistantMessage, Composer, EffortButton, EffortPicker, UserMessage,
+    AgentLabel, AssistantMessage, Composer, EffortButton, EffortPicker, UsageLimit, UsageMeter,
+    UserMessage,
 };
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, Completion, Completions, ControlSize,
@@ -552,7 +553,12 @@ impl AurisScreens {
             .model("GPT-6-Sol (Codex)")
             .model_logo(ProviderLogo::OpenAi)
             .control(effort)
-            .busy(self.slash.is_none());
+            .busy(self.slash.is_none())
+            .usage(
+                UsageMeter::new("usage")
+                    .limit(UsageLimit::new("5時間枠", 0.88).resets("1時間40分後"))
+                    .limit(UsageLimit::new("週間", 0.52).resets("月曜 9:00")),
+            );
         let composer = match self.slash {
             Some(selected) => composer.value("/mo").completions(
                 Completions::new("slash")
