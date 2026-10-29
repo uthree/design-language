@@ -216,8 +216,10 @@ tempo and key, a waveform player rather than a bare slider, "この曲で続け�
 time left instead of an empty player. Stopping generation moved into the composer (Send becomes
 Stop), so the footer keeps only navigation, the preference switch and the editor hand-off,
 which explains why it is disabled. Only two voices speak, so the assistant's answer has no name
-line (`AssistantMessage::anonymous()`); the model picker, the reasoning effort and fast mode sit
-in the composer's own control row.
+line (`AssistantMessage::anonymous()`); the model picker and the effort sit in the composer's
+own control row. The effort button opens one card for the reasoning effort and fast mode
+(`EffortPicker`, `--effort`): the bolt toggles fast mode, the level reads in the accent over
+the model's name, and a wide stepped slider sparkles where it is filled.
 
 ![AI compose](images/auris-compose.png)
 

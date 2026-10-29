@@ -14,11 +14,13 @@
 
 mod code;
 mod composer;
+mod effort;
 mod panel;
 mod transcript;
 
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
+pub use effort::{EffortButton, EffortPicker};
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,

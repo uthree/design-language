@@ -63,12 +63,34 @@ input and disables Send while it is empty. Atelier does not ship a text editor; 
 for mock-ups.
 
 The row under the text holds attach, the model picker (`.model(label)`, `.on_model(..)`) and
-then your own `.control(..)`s before Send: the reasoning effort as a small `SegmentedControl`,
-fast mode as a small latching `Button::icon_only(id, IconName::Bolt).selected(fast)`, a voice
-picker as a small ghost button with a chevron. Keep them small and unfilled so the row stays one
+then your own `.control(..)`s before Send: the reasoning effort and fast mode as one
+`EffortButton` (below), a voice picker as a small ghost button with a chevron. Keep them small and unfilled so the row stays one
 line and Send is the only filled control in it. Do not rebuild the frame to add a control. Send
 and Stop already follow the composer's corner (`Theme::concentric(radius_lg, spacing.sm)`); a
 button you place in another rounded surface's corner does the same with `Button::radius(..)`.
+
+### Effort and fast mode
+
+Reasoning effort and fast mode are one control, because they are one trade: speed against
+thought. `EffortButton::new(id, level).fast(fast).open(open)` sits in the composer row, showing
+the level (and the bolt, latched, while fast mode is on), and opens an
+`EffortPicker::new(id, levels, selected)` above it with `anchored` + `deferred`:
+
+```rust
+EffortPicker::new("effort", ["Low", "Medium", "High", "Max"], effort)
+    .default_level(1)            // reset returns here; disabled while already there
+    .fast(fast)                  // the bolt, top left, latches in the accent
+    .model("GPT-6.1 Sol")        // under the level; .on_model opens the model menu
+    .on_select(cx.listener(|this, level: &usize, _, cx| { this.effort = *level; cx.notify() }))
+    .on_fast(cx.listener(|this, _, _, cx| { this.fast = !this.fast; cx.notify() }))
+    .on_reset(cx.listener(|this, _, _, cx| { this.effort = 1; this.fast = false; cx.notify() }))
+```
+
+The level reads in the accent at the top. The slider is a wide stepped track: the filled part
+sparkles (still when `theme.motion.enabled` is off), a dot marks each step above the thumb, and
+a click, a drag or the arrow keys, Home and End move it a step; the thumb glides there. Close the
+picker on a press outside it (`on_mouse_down_out`), leaving presses on the button to toggle it.
+`examples/auris_screens.rs` (`--screen compose --effort`) wires it up.
 
 ## Entry points
 

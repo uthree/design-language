@@ -18,8 +18,8 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 ///
 /// The text area is a slot: pass the application's editable input with [`Composer::input`] and
 /// say whether it is [`Composer::empty`], or a static [`Composer::value`] in mock-ups. The row
-/// under it holds attach, the model picker and any [`Composer::control`]s — the reasoning
-/// effort, a fast-mode switch — before Send. While `busy`, Send becomes Stop.
+/// under it holds attach, the model picker and any [`Composer::control`]s — an
+/// [`crate::agent::EffortButton`] for the reasoning effort and fast mode — before Send. While `busy`, Send becomes Stop.
 #[derive(IntoElement)]
 pub struct Composer {
     id: ElementId,
@@ -84,8 +84,8 @@ impl Composer {
         self
     }
 
-    /// A control in the row under the text, after the model picker: the reasoning effort, a
-    /// fast-mode switch, a voice picker. Use small ghost buttons and small segmented controls,
+    /// A control in the row under the text, after the model picker: the effort and fast mode
+    /// ([`crate::agent::EffortButton`]), a voice picker. Use small ghost buttons and small segmented controls,
     /// so the row stays one line and Send stays the only filled control in it.
     pub fn control(mut self, control: impl IntoElement) -> Self {
         self.controls.push(control.into_any_element());
