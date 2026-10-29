@@ -19,6 +19,7 @@ use crate::controls::arc;
 use crate::display::{Spinner, Tone};
 use crate::icon::{Icon, IconName};
 use crate::motion::{ease_out, lerp, looping, transition, tween};
+use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
@@ -458,18 +459,20 @@ impl RenderOnce for TaskProgress {
         let colors = &theme.colors;
         let state = self.state;
         let live = matches!(state, TaskState::Running | TaskState::Queued);
+        let strings = cx.strings().clone();
+        let [queued, working, done, failed, cancelled] = strings.task_states;
         let (status, status_color) = match state {
-            TaskState::Queued => ("Queued".into(), colors.text_faint),
+            TaskState::Queued => (queued, colors.text_faint),
             TaskState::Running => match self.progress {
                 Some(progress) => (
                     SharedString::from(format!("{} %", (progress * 100.).round() as u32)),
                     colors.text_muted,
                 ),
-                None => ("Working".into(), colors.text_muted),
+                None => (working, colors.text_muted),
             },
-            TaskState::Succeeded => ("Done".into(), colors.success),
-            TaskState::Failed => ("Failed".into(), colors.danger),
-            TaskState::Cancelled => ("Cancelled".into(), colors.text_faint),
+            TaskState::Succeeded => (done, colors.success),
+            TaskState::Failed => (failed, colors.danger),
+            TaskState::Cancelled => (cancelled, colors.text_faint),
         };
         let mark = match state {
             TaskState::Running => Spinner::new((self.id.clone(), "spinner"))
@@ -513,7 +516,7 @@ impl RenderOnce for TaskProgress {
             _ => ProgressBar::new(0.).tone(Tone::Neutral),
         });
         let cancel = self.on_cancel.filter(|_| live).map(|handler| {
-            Button::new((self.id.clone(), "cancel"), "Cancel")
+            Button::new((self.id.clone(), "cancel"), strings.cancel)
                 .ghost()
                 .size(ControlSize::Small)
                 .on_click(handler)

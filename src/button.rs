@@ -1,14 +1,17 @@
 //! Buttons: the one primary action, everything else, and icon-only tools.
 
+use std::time::Duration;
+
 use gpui::{
-    AnyView, App, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, linear_color_stop,
-    linear_gradient, px,
+    AnyView, App, ClickEvent, ClipboardItem, ElementId, Hsla, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    linear_color_stop, linear_gradient, px,
 };
 
 use crate::focus::focusable;
-use crate::icon::{Icon, IconSource};
+use crate::icon::{Icon, IconName, IconSource};
 use crate::overlay::Tooltip;
+use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 
 /// What a button means, which decides how loudly it is drawn.
@@ -371,5 +374,123 @@ impl RenderOnce for Button {
             button = button.on_click(handler);
         }
         button
+    }
+}
+
+/// How long [`CopyButton`] says it copied before it turns back.
+const COPIED_FOR: Duration = Duration::from_millis(1600);
+
+/// What a [`CopyButton`] remembers: whether it just copied, and which press that was.
+#[derive(Default)]
+struct Copied {
+    shown: bool,
+    press: u64,
+}
+
+/// A button that copies `text` to the clipboard and says so: its icon turns to a check and,
+/// with a label, the label reads "Copied" for a moment while the old label moves to the
+/// tooltip. Every copy in the interface uses it, so they all answer the same way —
+/// [`crate::agent::CodeBlock::copyable`], message footers, candidate cards.
+#[derive(IntoElement)]
+pub struct CopyButton {
+    id: ElementId,
+    text: SharedString,
+    label: Option<SharedString>,
+    copied: Option<SharedString>,
+    tooltip: Option<SharedString>,
+    size: ControlSize,
+}
+
+impl CopyButton {
+    /// An icon-only Copy button, as message footers and code blocks carry.
+    pub fn new(id: impl Into<ElementId>, text: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            text: text.into(),
+            label: None,
+            copied: None,
+            tooltip: None,
+            size: ControlSize::Small,
+        }
+    }
+
+    /// Show a label, such as "Copy title", which reads "Copied" for a moment after a press.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// What it says once it has copied; [`crate::Strings::copied`] by default.
+    pub fn copied_label(mut self, copied: impl Into<SharedString>) -> Self {
+        self.copied = Some(copied.into());
+        self
+    }
+
+    /// The tooltip of an icon-only button; [`crate::Strings::copy`] by default.
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
+    }
+
+    /// Control height; small by default.
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+}
+
+impl RenderOnce for CopyButton {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let state = window.use_keyed_state(
+            ElementId::NamedChild(Box::new(self.id.clone()), "copied".into()),
+            cx,
+            |_, _| Copied::default(),
+        );
+        let shown = state.read(cx).shown;
+        let copied = self.copied.unwrap_or_else(|| cx.strings().copied.clone());
+        let icon = if shown {
+            IconName::Check
+        } else {
+            IconName::Copy
+        };
+        let button = match (&self.label, shown) {
+            (Some(_), true) => Button::new(self.id, copied.clone()).icon(icon),
+            (Some(label), false) => Button::new(self.id, label.clone()).icon(icon),
+            (None, _) => Button::icon_only(self.id, icon),
+        };
+        let tooltip = match (self.label, shown) {
+            (Some(label), true) => label,
+            (Some(label), false) => label,
+            (None, true) => copied,
+            (None, false) => self.tooltip.unwrap_or_else(|| cx.strings().copy.clone()),
+        };
+        let text = self.text;
+        button
+            .ghost()
+            .size(self.size)
+            .tooltip(tooltip)
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
+                let press = state.update(cx, |copied, cx| {
+                    copied.shown = true;
+                    copied.press += 1;
+                    cx.notify();
+                    copied.press
+                });
+                let state = state.clone();
+                cx.spawn(async move |cx| {
+                    cx.background_executor().timer(COPIED_FOR).await;
+                    state
+                        .update(cx, |copied, cx| {
+                            // A later press keeps it showing for its own full moment.
+                            if copied.press == press {
+                                copied.shown = false;
+                                cx.notify();
+                            }
+                        })
+                        .ok();
+                })
+                .detach();
+            })
     }
 }

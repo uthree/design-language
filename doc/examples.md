@@ -200,6 +200,7 @@ no response. Captured on Linux under Weston.
 ```bash
 cargo run --example auris_screens -- --screen chooser
 cargo run --example auris_screens -- --screen compose
+cargo run --example auris_screens -- --screen compose --slash   # the composer completing "/mo"
 ```
 
 **Project chooser.** What changed from the current window: the two ways to start are choice
@@ -217,7 +218,10 @@ time left instead of an empty player. Stopping generation moved into the compose
 Stop), so the footer keeps only navigation, the preference switch and the editor hand-off,
 which explains why it is disabled. Only two voices speak, so the assistant's answer has no name
 line (`AssistantMessage::anonymous()`); the model picker, the reasoning effort and fast mode sit
-in the composer's own control row.
+in the composer's own control row. Both messages carry a Copy button (`CopyButton`) and the
+person's text can be selected; each take's name was written by the assistant, so it wears the
+agent's sparkle (`AgentLabel`) and its own Copy button, and its player seeks, sets the volume
+and mutes, with the keyboard too. `--slash` opens the composer's `Completions` on `/mo`.
 
 ![AI compose](images/auris-compose.png)
 

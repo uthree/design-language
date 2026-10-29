@@ -137,12 +137,15 @@ impl Preferences {
                     FormField::new("自動保存")
                         .description("作業中のプロジェクトを1分ごとに保存します。")
                         .beside()
-                        .child(Switch::new("autosave", self.autosave).on_click(cx.listener(
-                            |this, _, _, cx| {
-                                this.autosave = !this.autosave;
-                                cx.notify();
-                            },
-                        ))),
+                        .note("保存は数秒おきに行われます")
+                        .child(
+                            Switch::new("autosave", self.autosave).on_change(cx.listener(
+                                |this, on: &bool, _, cx| {
+                                    this.autosave = *on;
+                                    cx.notify();
+                                },
+                            )),
+                        ),
                 )
                 .child(
                     FormField::new("起動時に最後のプロジェクトを開く")

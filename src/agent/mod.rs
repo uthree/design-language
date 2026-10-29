@@ -14,11 +14,13 @@
 
 mod code;
 mod composer;
+mod label;
 mod panel;
 mod transcript;
 
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
+pub use label::AgentLabel;
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
@@ -28,6 +30,7 @@ pub use transcript::{
 use gpui::{App, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div};
 
 use crate::display::{Spinner, StatusDot};
+use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, Theme};
 
 /// What the agent is doing, as the window chrome and the panel header report it.
@@ -129,7 +132,7 @@ impl RenderOnce for AgentStatusLabel {
                 div()
                     .flex_none()
                     .text_color(color)
-                    .child(self.status.label()),
+                    .child(cx.strings().agent_states[self.status as usize].clone()),
             )
             // The detail gives way first when the label runs out of room.
             .children(
