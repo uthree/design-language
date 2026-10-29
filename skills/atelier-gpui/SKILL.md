@@ -27,7 +27,8 @@ repository) and at the examples that compose it into whole screens: `showcase` (
 component catalogue), `agent_desktop` (a coding-agent app), `instrument_lab` (physical-model
 views), `visualizer` (analysers), `node_editor` (a ComfyUI-style node graph), `plot_lab`
 (MATLAB-style 2-D and 3-D plots), `ambient` (a welcome screen over liquid metal or an
-ambient scene: aurora, silk dunes, clouds of colour or caustics) and
+ambient scene: aurora, silk dunes, clouds of colour, caustics, a low sun, a galaxy, jellyfish
+or a shoal of fish) and
 `auris_screens` (Auris's project chooser and AI compose
 window, with the hand-off between them) and `preferences` (a settings window: pages, forms,
 status bar, keyboard navigation).

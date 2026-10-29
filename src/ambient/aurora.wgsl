@@ -1,6 +1,8 @@
 // Aurora: three curtains of light hang over a night sky, folding slowly as they drift, each lit
 // in fine rays that brighten towards its lower hem. Moving the window swings the curtains, the
-// nearest furthest. Still water below mirrors it all. It leaves the pointer alone.
+// nearest furthest. Still water below mirrors it all. Among the stars are a few brighter ones the
+// pointer wakes and joins into constellations, and lines the person draws between them, and
+// shooting stars (see `stars.rs`); the curtains themselves leave the pointer alone.
 
 fn curtain(p: vec2f, index: f32) -> vec4f {
     let t = params.time;
@@ -46,12 +48,65 @@ fn sky(p: vec2f) -> vec3f {
     let twinkle = 0.6 + 0.4 * sin(params.time * 3. + star * 40.);
     let stars = step(0.985, star) * ease(0.18, 0., length(centre)) * twinkle * (1. - horizon);
     color += vec3f(stars * params.dark * 0.7);
+    color = constellations(p + params.sway * 0.15, color);
 
     for (var i = 0; i < 3; i++) {
         let c = curtain(p, f32(i));
         color = light(color, c.rgb, c.a);
     }
     return color;
+}
+
+// The brighter stars at `q` (in the sky's own frame), the lines between them and the shooting
+// stars, over `color`.
+fn constellations(q: vec2f, color: vec3f) -> vec3f {
+    let px = 1. / min(params.size.x, params.size.y);
+    // Starlight over the dark; in a light appearance, ink.
+    let ink = mix(
+        mix(params.deep.rgb, params.hues[3].rgb, 0.45) * 0.6,
+        mix(vec3f(1.), params.hues[0].rgb, 0.2),
+        params.dark,
+    );
+    let line_ink = mix(ink, params.hues[1].rgb, 0.35);
+    var c = color;
+    for (var i = 0u; i < params.line_count; i++) {
+        let line = params.lines[i];
+        let strength = params.strengths[i / 4u][i % 4u];
+        let d = segment(q, line.xy, line.zw);
+        let core = ease(1.3 * px, 0., d);
+        let halo = exp(-d / (5. * px)) * 0.22;
+        c = light(c, line_ink, strength * (core * 0.6 + halo));
+    }
+    for (var i = 0u; i < 28u; i++) {
+        let star = params.stars[i];
+        let d = q - star.xy;
+        let r = length(d);
+        if r > 0.09 {
+            continue;
+        }
+        let awake = star.z;
+        let twinkle = 0.75 + 0.25 * sin(params.time * 5. + f32(i) * 2.4);
+        let radius = (1. + 1.4 * star.w + awake * 0.9) * px;
+        let core = ease(radius, 0., r) * (0.45 + 0.35 * star.w + 0.4 * awake) * twinkle;
+        let halo = exp(-r * r / (radius * radius * 10.)) * (0.12 + 0.5 * awake);
+        // Four thin spikes while it is awake.
+        let spikes = (exp(-abs(d.x) / (0.6 * px)) + exp(-abs(d.y) / (0.6 * px)))
+            * exp(-r / (0.02 * (0.3 + awake))) * awake * 0.35;
+        c = light(c, mix(ink, params.hues[(i + 1u) % 4u].rgb, 0.25 * awake), core + halo + spikes);
+    }
+    for (var i = 0u; i < params.meteor_count; i++) {
+        let meteor = params.meteors[i];
+        let heading = vec2f(cos(meteor.z), sin(meteor.z));
+        let age = meteor.w;
+        let tail = meteor.xy - heading * (0.06 + 0.14 * (1. - age));
+        let d = segment(q, meteor.xy, tail);
+        // Brighter towards the head.
+        let along = clamp(dot(q - tail, heading) / max(length(meteor.xy - tail), 1e-4), 0., 1.);
+        let fade = sin(min(age * 1.2, 1.) * PI);
+        let streak = ease(1.6 * px, 0., d) * along * along + exp(-d / (4. * px)) * along * 0.3;
+        c = light(c, ink, streak * fade);
+    }
+    return c;
 }
 
 // Where the sky meets still water, which mirrors it.

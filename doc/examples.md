@@ -99,11 +99,11 @@ These two screenshots were captured on Linux under Xvfb.
 ## ambient — a welcome screen over liquid metal or an ambient scene
 
 ```bash
-cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|caustics
+cargo run --release --example ambient -- --backdrop metal|aurora|dunes|bloom|caustics|solar|galaxy|jellyfish|shoal
 ```
 
-A welcome card over the backdrop picked in the title bar: liquid metal or one of four ambient
-scenes. A bar below the card picks the backdrop's palette (`--palette
+A welcome card over a backdrop: liquid metal or one of eight ambient scenes. A bar below the
+card picks the backdrop and its palette (`--palette
 theme|dusk|ocean|ember|meadow|graphite`): the theme's own colours or a preset, through
 `.palette(BackdropPalette::…)` on either backdrop.
 
@@ -132,22 +132,35 @@ kept to the welcome screen: on controls it made sizes uneven and said too much. 
 
 ### Ambient scenes
 
-`AmbientBackdrop` behind the same card: four slow, abstract scenes in the manner of a desktop
+`AmbientBackdrop` behind the same card: eight slow scenes in the manner of a desktop
 wallpaper. **Aurora** hangs curtains of light in leaning rays
 over a night sky with stars, mirrored in still water below. **Dunes** lays sheets of silk one in
 front of another, each lit from above with a sheen on its slopes and a soft shadow on the one
 behind. **Bloom** melts great clouds of colour into one another, stirred by slow eddies under a
 frosted sheen. **Caustics** plays light through moving water over a deep floor, the colours
-bending apart into thin fringes, with shafts of light from the surface. Every scene takes its
+bending apart into thin fringes, with shafts of light from the surface. **Solar** sets a low sun
+in wide breathing bands of colour, rays turning in its corona, soft clouds in its light and
+three ridges standing in haze below, each rimmed with light. **Galaxy** turns a spiral galaxy
+over a field of stars: a warm core, arms of young stars with lanes of dust and knots of glowing
+gas, and now and then a shooting star. **Jellyfish** sends jellyfish drifting up through deep
+water, their bells pulsing, lit from within, tentacles trailing, among sinking marine snow.
+**Shoal** wheels two schools of small fish through sunlit shallows, each fish flicking its tail
+and catching the light. Solar and Galaxy are rich takes on the pixel sunset and galaxy behind
+the boards of [bevytris](https://github.com/uthree/bevytris). Every scene takes its
 colours from the theme — background, agent gradient and accent — or from the palette picked
 below the card, as light over the dark in a dark appearance and as washes of colour in a light
 one.
 
 Each is a WGSL shader on the crate's wgpu device, shaded off screen and read back like the metal.
 Each answers the window: moving or resizing it leaves the scene behind for a moment, nearer
-layers further, and it swings back. Bloom and Caustics also answer the pointer — stirring the
-colour round itself, or gathering the light like a lens — and leave ripples as it travels; Aurora
-and Dunes leave it alone, so the sky and the silk stay still.
+layers further, and it swings back. All but Dunes answer the pointer too. Bloom stirs the colour
+round itself, Caustics gathers the light like a lens, Solar gathers ghosts of the sun along the
+line to it, and Galaxy bends the light round itself like a great mass; these leave ripples as it
+travels. Jellyfish glow brighter and shy away from it, and fish dart away from it while the
+school closes up behind. Aurora's curtains stay still, but its brighter stars wake as the
+pointer passes and join into a constellation round it that fades behind it; press on a star
+and let go over another to draw a line between them that stays (draw it again to take it
+away), press on the open sky to send a shooting star, and double-click to wipe the lines away.
 Without a hardware GPU the backdrop is one still frame shaded on the CPU, with no animation and
 no response. Captured on Linux under Weston.
 
@@ -158,6 +171,16 @@ no response. Captured on Linux under Weston.
 ![Bloom, Glass light](images/ambient-bloom-glass-light.png)
 
 ![Caustics, Mono dark](images/ambient-caustics-mono-dark.png)
+
+![Aurora with a constellation drawn, Glass dark](images/ambient-aurora-constellation.png)
+
+![Solar, Glass dark](images/ambient-solar-glass-dark.png)
+
+![Galaxy, Glass dark](images/ambient-galaxy-glass-dark.png)
+
+![Jellyfish, Glass dark](images/ambient-jellyfish-glass-dark.png)
+
+![Shoal, Studio light](images/ambient-shoal-studio-light.png)
 
 ## auris_screens — two Auris Studio windows redrawn
 
