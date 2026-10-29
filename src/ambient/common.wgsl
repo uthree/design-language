@@ -23,6 +23,15 @@ struct Params {
     hues: array<vec4f, 4>,
     // Each ripple's centre, how far it has spread, and its strength.
     waves: array<vec4f, 8>,
+    // Aurora's sky (see `stars.rs`): how many lines and shooting stars there are; each brighter
+    // star's place, how awake it is and its size; each line's ends, and their strengths, four to
+    // a vector; each shooting star's head, heading and age.
+    line_count: u32,
+    meteor_count: u32,
+    stars: array<vec4f, 28>,
+    lines: array<vec4f, 48>,
+    strengths: array<vec4f, 12>,
+    meteors: array<vec4f, 2>,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -59,6 +68,11 @@ fn hash(p: vec2f) -> f32 {
     let q = fract(p * vec2f(123.34, 456.21));
     let r = q + dot(q, q + 45.32);
     return fract(r.x * r.y);
+}
+
+// A grid `cell`, repeating every `period` cells down, for patterns that scroll and loop.
+fn wrap(cell: vec2f, period: f32) -> vec2f {
+    return vec2f(cell.x, cell.y - floor(cell.y / period) * period);
 }
 
 // Smooth value noise, 0 to 1.
@@ -121,6 +135,18 @@ fn light(background: vec3f, color: vec3f, amount: f32) -> vec3f {
     let glow = 1. - (1. - background) * (1. - color * max(amount, 0.));
     let wash = mix(background, color, clamp(amount, 0., 1.));
     return mix(wash, glow, params.dark);
+}
+
+// How far `p` is from the segment from `a` to `b`.
+fn segment(p: vec2f, a: vec2f, b: vec2f) -> f32 {
+    let ab = b - a;
+    let t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-8), 0., 1.);
+    return length(p - a - ab * t);
+}
+
+// `v` turned by the angle whose cosine and sine are `turn`.
+fn rotate(v: vec2f, turn: vec2f) -> vec2f {
+    return vec2f(v.x * turn.x - v.y * turn.y, v.x * turn.y + v.y * turn.x);
 }
 
 fn luminance(color: vec3f) -> f32 {

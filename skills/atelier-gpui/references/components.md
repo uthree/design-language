@@ -210,10 +210,16 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
   anywhere work happens.
 - `AmbientBackdrop::new(id, Ambience::…)` — an ambient scene (`atelier::ambient`) for the same
   place, when chrome is too much: `Aurora` (curtains of light over a night sky and still water),
-  `Dunes` (sheets of silk in layers), `Bloom` (clouds of colour melting together) or `Caustics`
-  (light through water). Colours come from the theme unless a palette is set (below). The same rules as the metal: fill the
-  welcome screen, put the words on a `Card`, nothing to wire up; it answers the window (and the
-  pointer too in `Bloom` and `Caustics`, see `answers_pointer()`), `.phase(t)` draws one still
+  `Dunes` (sheets of silk in layers), `Bloom` (clouds of colour melting together), `Caustics`
+  (light through water), `Solar` (a low sun in graded light over ridges in haze), `Galaxy` (a
+  spiral galaxy turning in deep space), `Jellyfish` (jellyfish drifting up through deep water) or
+  `Shoal` (schools of fish wheeling through sunlit shallows). Colours come from the theme unless a palette is set (below). The same rules as the metal: fill the
+  welcome screen, put the words on a `Card`, nothing to wire up; it answers the window, and the
+  pointer in every scene but `Dunes` (see `answers_pointer()`): Bloom stirs, Caustics and Solar
+  are lenses, Galaxy bends light, Jellyfish and Shoal shy away, and Aurora's brighter stars wake
+  into constellations that the person can join by dragging from star to star (a click on the
+  open sky sends a shooting star, a double click wipes the lines). As with the metal, **anything
+  laid over it that takes clicks must `.occlude()`**. `.phase(t)` draws one still
   frame, `.period(d)` changes the cycle. Without a GPU it is a single still frame. Offer
   `Ambience::ALL` (with `label()`) if the person picks the scene.
 - `.palette(BackdropPalette::…)` on either backdrop — its colours: `Theme` (default: the agent

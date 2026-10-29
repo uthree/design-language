@@ -1,13 +1,17 @@
 //! A welcome screen over a backdrop: liquid metal, or an ambient scene — aurora, silk dunes,
-//! clouds of colour or caustics — drifting slowly behind a card that holds the words and the two
-//! ways to start. The title bar picks the backdrop; a bar below the card picks its palette.
+//! clouds of colour, caustics, a low sun, a galaxy, jellyfish or a shoal of fish — drifting
+//! slowly behind a card that holds the words and the two ways to start. A bar below the card
+//! picks the backdrop and its palette.
 //!
 //! The liquid metal can be played with: press on a drop and carry it, bring drops together to
 //! fuse them into one (carry it too fast and it tears apart), and double-click to part them
-//! again.
+//! again. So can the aurora's stars: pass over them to wake a constellation, press on one and
+//! let go over another to draw a line between them, press on the open sky to send a shooting
+//! star, and double-click to wipe the lines away.
 //!
 //! ```text
-//! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics]
+//! cargo run --example ambient -- [--backdrop metal|aurora|dunes|bloom|caustics|solar|galaxy|
+//!     jellyfish|shoal]
 //!     [--palette theme|dusk|ocean|ember|meadow|graphite]
 //!     [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
@@ -33,13 +37,17 @@ enum Backdrop {
 }
 
 impl Backdrop {
-    /// Every backdrop, in the order the title bar offers them.
-    const ALL: [Backdrop; 5] = [
+    /// Every backdrop, in the order the picker offers them.
+    const ALL: [Backdrop; 9] = [
         Backdrop::Metal,
         Backdrop::Ambient(Ambience::Aurora),
         Backdrop::Ambient(Ambience::Dunes),
         Backdrop::Ambient(Ambience::Bloom),
         Backdrop::Ambient(Ambience::Caustics),
+        Backdrop::Ambient(Ambience::Solar),
+        Backdrop::Ambient(Ambience::Galaxy),
+        Backdrop::Ambient(Ambience::Jellyfish),
+        Backdrop::Ambient(Ambience::Shoal),
     ];
 
     fn label(self) -> &'static str {
@@ -103,12 +111,18 @@ impl Render for Welcome {
             .iter()
             .position(|palette| *palette == self.palette)
             .unwrap_or(0);
-        let palettes = div()
+        // Backdrops can take clicks, so the bar takes its own.
+        let pickers = div()
             .occlude()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(theme.spacing.xs)
             .p(theme.spacing.xs)
             .rounded(theme.shape.radius_lg)
             .bg(theme.colors.overlay)
             .shadow(theme.elevation.medium.clone())
+            .child(backdrops)
             .child(
                 SegmentedControl::new(
                     "palette",
@@ -160,15 +174,7 @@ impl Render for Welcome {
             .size_full()
             .flex()
             .flex_col()
-            .child(
-                TitleBar::new().title("Ambient").trailing(
-                    div()
-                        .flex()
-                        .gap(theme.spacing.sm)
-                        .child(backdrops)
-                        .child(switch),
-                ),
-            )
+            .child(TitleBar::new().title("Ambient").trailing(switch))
             .child(
                 div()
                     .flex_1()
@@ -188,7 +194,8 @@ impl Render for Welcome {
                             .flex()
                             .items_center()
                             .justify_center()
-                            // The card takes its own clicks; the metal around it takes the rest.
+                            // The card takes its own clicks; the backdrop around it takes the
+                            // rest.
                             .child(div().occlude().child(card)),
                     )
                     .child(
@@ -199,7 +206,7 @@ impl Render for Welcome {
                             .right_0()
                             .flex()
                             .justify_center()
-                            .child(palettes),
+                            .child(pickers),
                     ),
             )
     }

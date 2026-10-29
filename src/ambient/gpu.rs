@@ -7,7 +7,7 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use super::{Ambience, Frame};
+use super::{Ambience, Frame, stars};
 
 struct Gpu {
     shared: &'static crate::gpu::Gpu,
@@ -48,6 +48,10 @@ fn source(ambience: Ambience) -> &'static str {
         Ambience::Dunes => include_str!("dunes.wgsl"),
         Ambience::Bloom => include_str!("bloom.wgsl"),
         Ambience::Caustics => include_str!("caustics.wgsl"),
+        Ambience::Solar => include_str!("solar.wgsl"),
+        Ambience::Galaxy => include_str!("galaxy.wgsl"),
+        Ambience::Jellyfish => include_str!("jellyfish.wgsl"),
+        Ambience::Shoal => include_str!("shoal.wgsl"),
     }
 }
 
@@ -196,8 +200,16 @@ impl Gpu {
     }
 }
 
+/// Where Aurora's sky starts in the shader's `Params`, in 4-byte words: after the frame, the
+/// colours and the ripples.
+const SKY: usize = 12 + 4 + 4 + 4 * 4 + super::sim::WAVES * 4;
+/// Where the stars start: after the two counts, padded to a whole vector.
+const STARS: usize = SKY + 4;
+const LINES: usize = STARS + stars::STARS * 4;
+const STRENGTHS: usize = LINES + stars::LINES * 4;
+const METEORS: usize = STRENGTHS + stars::LINES;
 /// The shader's `Params`, in 4-byte words.
-const PARAMS_LEN: usize = 12 + 4 + 4 + 4 * 4 + super::sim::WAVES * 4;
+const PARAMS_LEN: usize = METEORS + stars::METEORS * 4;
 
 /// The shader's `Params` for one frame, laid out as WGSL lays out the struct.
 fn params(frame: &Frame) -> [f32; PARAMS_LEN] {
@@ -226,6 +238,13 @@ fn params(frame: &Frame) -> [f32; PARAMS_LEN] {
     for (slot, value) in slots.zip(colors.chain(response.waves)) {
         *slot = value;
     }
+    let sky = &frame.sky;
+    words[SKY] = f32::from_bits(sky.line_count as u32);
+    words[SKY + 1] = f32::from_bits(sky.meteor_count as u32);
+    words[STARS..LINES].copy_from_slice(sky.stars.as_flattened());
+    words[LINES..STRENGTHS].copy_from_slice(sky.lines.as_flattened());
+    words[STRENGTHS..METEORS].copy_from_slice(&sky.strengths);
+    words[METEORS..].copy_from_slice(sky.meteors.as_flattened());
     words
 }
 
