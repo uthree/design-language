@@ -25,7 +25,14 @@ order they are drawn, Enter and Space press the focused one (its `on_click`, `on
 `on_toggle` runs), and `.disabled(true)` takes it out of the order. A row or chip without a
 handler is not a stop. Nothing to wire up beyond:
 
-- `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`).
+- `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`). Every tab stop
+  carries the key context `AtelierControl` (`atelier::CONTROL_CONTEXT`); while one holds focus,
+  Atelier takes Enter and Space before any binding is matched, so an application's Space for
+  play does not fire there. Bind other keys with `Some("!AtelierControl")` to keep them off
+  controls. Tracks (the `AudioPlayer` scrubber and volume) add `AtelierTrack`, where the
+  arrows, Home and End step them (`StepBackward`, `StepForward`, `StepToStart`, `StepToEnd`)
+  ahead of the application's own arrow bindings. A focusable element of your own placed
+  inside an Atelier control gives itself a key context, so the keys stay its own. Arrow keys show the focus ring only while a control holds focus.
 - `WindowFrame` handles them and holds the window's root focus, so Tab works from the moment
   the window opens. A window whose root is your own element wraps it in
   `atelier::tab_navigation(root)`, puts the focus `handle` on an empty child
@@ -49,7 +56,20 @@ handler is not a stop. Nothing to wire up beyond:
 `.weight(..)`, `.heading_weight()`, `.mono()`, `.truncate()`.
 `Label::heading(t)` for section titles, `Label::caption(t)` for small uppercase region labels.
 
+`SelectableText::new(id, text)` for read-only text the person may want to copy: a message, an
+attached file (`.mono()`), a log, error details. Drag, Shift-click, double-click (word) and
+triple-click (line) select; ⌘C/Ctrl+C copies the exact characters — line breaks, indentation,
+`<`, `**` — and ⌘A/Ctrl+A selects all (key context `AtelierSelectableText`). It is no tab
+stop, and its selection shows in `colors.selection` while it holds focus. Takes `.size(..)`,
+`.color(..)`. Each needs its own id.
+
 ## Buttons
+
+`CopyButton::new(id, text)` copies `text` and answers: a check and "Copied" for a moment
+(both words come from `Strings`; `.copied_label(..)` and `.tooltip(..)` override them).
+Icon-only by default with the tooltip "Copy"; with
+`.label("Copy title")` the label turns into "Copied" and moves to the tooltip meanwhile. Use it
+for every copy action.
 
 ```rust
 Button::new("export", "Export…").primary()
@@ -70,7 +90,8 @@ Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, a
 
 - `Switch::new(id, on).label("Snap to grid")` — a setting that applies immediately.
 - `Checkbox::new(id, checked).label("Count-in")` — an independent choice. Both take
-  `.disabled(bool)`.
+  `.disabled(bool)` and `.on_change(cx.listener(|this, on: &bool, _, cx| ..))`, which hands
+  over the new value so nothing has to invert it (`on_click` still exists).
 - `SegmentedControl::new(id, [Segment::label("Light"), Segment::icon(IconName::Play)], selected)`
   `.size(ControlSize::Small).on_select(cx.listener(|this, index: &usize, window, cx| ...))`.
 - `Tabs::new(id, ["Score", "Piano roll"], selected).on_select(...)` — views of one object.
@@ -88,14 +109,16 @@ Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, a
       .on_mouse_down(MouseButton::Left, cx.listener(Self::place_caret))
       .key_context("TextInput")
       .placeholder("Untitled")
-      .empty(self.name.is_empty())               // placeholder under your input
+      .empty(self.name.is_empty())               // placeholder laid under your input
       .trailing(Button::new("browse", "Choose…").size(ControlSize::Small))
       .child(self.name_input.clone())            // your editable element
   ```
 
   It is an interactive element like a `div` (`on_mouse_down`, `on_key_down`, `on_action`,
   `track_focus`, `key_context`), and `.id(..)` makes it stateful (`.on_click`). `.value(..)` is
-  for mock-ups; `.focused(true)` draws the ring by hand.
+  for mock-ups; `.focused(true)` draws the ring by hand. The placeholder is laid behind the
+  value and the children at the text's start, where your caret is, so it never pushes your input
+  aside; keep `.empty(..)` in step with your text instead of drawing a placeholder of your own.
 
 Dragging and keyboard stepping for sliders and knobs belong to the application (it owns the value
 and its undo); wrap the component in an element that handles the gesture.
@@ -140,7 +163,12 @@ clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
   maximise through its own `WM_NCHITTEST`) keeps that and still uses `TitleBar` for the layout:
   `.window_controls(width, its_buttons)` puts its own minimise/maximise/close in place of the
   title bar's (the title stays centred against `width`), and `.window_drag(false)` leaves the
-  drag region to it. On Windows 11 22H2 and later under Glass, the acrylic backdrop makes DWM
+  drag region to it; `.drag_region(el)` lays the application's own drag element behind the whole
+  bar, title included, with every control on top keeping its clicks. The title has an id and
+  selector (`"atelier-title"`, or `.title_id(..)`), so a test can check it is centred. There is
+  no subtitle slot on purpose: a save state goes in the `StatusBar`, a document's path in a
+  breadcrumb or the content, the application's name nowhere (the window and the dock already
+  say it). On Windows 11 22H2 and later under Glass, the acrylic backdrop makes DWM
   draw its own caption buttons under the window; the title bar paints its chrome opaque there so
   they never show through its own (doubled glyphs when maximised). Do not paint it yourself.
   Do not re-implement the bar's centring: the sides carry no padding, because
@@ -163,9 +191,13 @@ clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
 
 ## Forms and preferences
 
-`FormField::new(label).description(..).error(..).child(control)` — one labelled setting; the
-label sits above the control (`LabelPlacement::Above`, the default) or, for a switch or
-checkbox, `.beside()` it with the control at the trailing edge. `FormGroup::new(title)
+`FormField::new(label).description(..).note(..).error(..).child(control)` — one labelled
+setting; the label sits above the control (`LabelPlacement::Above`, the default) or, for a
+switch or checkbox, `.beside()` it with the control at the trailing edge. Above, the first
+control fills the width (no `div().flex_1()` wrapper) and any after it, such as "Browse…", keep
+their own width. `.note(..)` is a second, conditional line ("Clicking now creates notes on the
+grid"), shown only while it applies. `FormField::unlabelled()` is for a group holding a single
+setting that its `FormGroup` title already names. `FormGroup::new(title)
 .description(..)` holds fields on one surface; `FormGroup::untitled()` for a single group.
 A preferences window, as `examples/preferences.rs` builds it:
 
@@ -186,7 +218,13 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
 ## Media and choices
 
 - `AudioPlayer::new(id, position, "1:32", "2:00").peaks(peaks).playing(bool).volume(v)` — a
-  preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made.
+  preview player; with peaks the scrubber is a waveform. `.disabled(true)` while a take is made,
+  `.loading(true)` (a spinner for the play button) while it loads or decodes. `.on_seek(|to: &f32, w,
+  cx| ..)` makes the scrubber follow a click or a drag and, once focused, the arrows, Home and
+  End — one `.seek_step(5. / seconds)` a press; `.on_volume(..)` does the same for the volume,
+  and `.muted(bool).on_mute(..)` adds a mute button beside it. The player only reports what
+  the person asked for; the position stays the playback clock's, so seek and redraw from it.
+  The duration may change while it plays (a draft still being written).
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen. Moving
   from a card to the screen it starts uses the hand-off in [motion.md](motion.md).
@@ -256,3 +294,10 @@ There is no node-graph component: compose one from the pieces above on a `canvas
 `menu_separator(cx)`, `MenuItem::checked/danger/disabled/icon`. Position them with gpui's
 `anchored()` + `deferred()`. Tooltips: `Button::tooltip(..)`, or on any stateful div
 `.tooltip(|window, cx| Tooltip::new("Text").shortcut("⌘B").build(window, cx))`.
+
+`Completions::new(id).items([Completion::new("/model").description("Switch model").matched(hits)])
+.selected(Some(i)).on_select(..)` is the suggestion list under or over a text input; focus stays
+in the input, which moves `selected` with Up/Down, accepts with Tab and closes with Escape. The
+list keeps the selected row in view, shows `.rows(6)` before scrolling and can say
+`.empty("No match")`. In the agent's composer pass it to `Composer::completions(..)`, which
+floats it above (see [agent.md](agent.md)).

@@ -6,18 +6,18 @@
 //! over it.
 //!
 //! ```text
-//! cargo run --example auris_screens -- [--screen chooser|compose]
+//! cargo run --example auris_screens -- [--screen chooser|compose] [--slash]
 //!                                       [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
 
 mod common;
 
-use atelier::agent::{AssistantMessage, Composer, UserMessage};
+use atelier::agent::{AgentLabel, AssistantMessage, Composer, UserMessage};
 use atelier::{
-    ActiveTheme, Appearance, AudioPlayer, Badge, Button, ControlSize, Direction, Divider, Edge,
-    IconName, Label, ListItem, Measure, Morph, OptionCard, ProgressBar, ProviderLogo,
-    SectionHeader, Segment, SegmentedControl, Sidebar, Spinner, StepList, StepState, Switch,
-    TextColor, TextSize, TitleBar, WindowFrame, motion::appear,
+    ActiveTheme, Appearance, AudioPlayer, Badge, Button, Completion, Completions, ControlSize,
+    CopyButton, Direction, Divider, Edge, IconName, Label, ListItem, Measure, Morph, OptionCard,
+    ProgressBar, ProviderLogo, SectionHeader, Segment, SegmentedControl, Sidebar, Spinner,
+    StepList, StepState, Switch, TextColor, TextSize, TitleBar, WindowFrame, motion::appear,
 };
 use common::Themed;
 use gpui::{
@@ -44,6 +44,12 @@ struct AurisScreens {
     effort: usize,
     /// Compose: fast mode.
     fast: bool,
+    /// Compose: where each take's scrubber is, the preview volume, and whether it is muted.
+    positions: [f32; 2],
+    volume: f32,
+    muted: bool,
+    /// Compose: the slash command being typed, with its suggestions open.
+    slash: Option<usize>,
     /// Where the AI card was laid out, for the hand-off.
     ai_card: Measure,
     /// The hand-off in progress: its number, so each one plays once, and where it started.
@@ -260,11 +266,9 @@ impl AurisScreens {
     ) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let playing = self.playing == Some(index);
-        let (elapsed, position) = if playing {
-            ("1:32", 0.76)
-        } else {
-            ("0:00", 0.)
-        };
+        let position = self.positions[index];
+        let seconds = (position * 120.).round() as u32;
+        let elapsed = format!("{}:{:02}", seconds / 60, seconds % 60);
         div()
             .flex()
             .flex_col()
@@ -280,7 +284,21 @@ impl AurisScreens {
             } else {
                 theme.colors.border
             })
-            .child(Label::new(title).size(TextSize::Large).heading_weight())
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(theme.spacing.xs)
+                    // The assistant named the take: its mark stays until the person renames it.
+                    .child(AgentLabel::new(title).size(TextSize::Large).tooltip(
+                        ("named", index),
+                        "AI が付けた名前 — 変えると自分の名前になります",
+                    ))
+                    .child(div().flex_1())
+                    .child(
+                        CopyButton::new(("copy-title", index), title).tooltip("タイトルをコピー"),
+                    ),
+            )
             .child(
                 div()
                     .flex()
@@ -297,6 +315,22 @@ impl AurisScreens {
                 AudioPlayer::new(("player", index), position, elapsed, "2:00")
                     .peaks(take_peaks(index as f32 * 3.1))
                     .playing(playing)
+                    .seek_step(5. / 120.)
+                    .on_seek(cx.listener(move |this, to: &f32, _, cx| {
+                        this.positions[index] = *to;
+                        cx.notify();
+                    }))
+                    .volume(self.volume)
+                    .muted(self.muted)
+                    .on_volume(cx.listener(|this, volume: &f32, _, cx| {
+                        this.volume = *volume;
+                        this.muted = false;
+                        cx.notify();
+                    }))
+                    .on_mute(cx.listener(|this, _, _, cx| {
+                        this.muted = !this.muted;
+                        cx.notify();
+                    }))
                     .on_play(cx.listener(move |this, _, _, cx| {
                         this.playing = if this.playing == Some(index) {
                             None
@@ -408,15 +442,18 @@ impl AurisScreens {
             .gap(theme.spacing.xl)
             .w_full()
             .max_w(px(1040.))
-            .child(UserMessage::new("Ace Combatみたいな超かっこいい曲作ってほしい").id("request"))
             .child(
-                AssistantMessage::new(
-                    "空戦の疾走感と英雄的なスケールを軸に、方向性の異なるオリジナル曲を3案作ります。気に入った案を選ぶと、その曲で続けて編集できます。",
-                )
-                .id("reply")
-                // Two voices only: the bubble is the person, the prose is the assistant.
-                .anonymous()
-                .meta("GPT-6-Sol (Codex) · 2分14秒"),
+                UserMessage::new(REQUEST)
+                    .id("request")
+                    .action(CopyButton::new("copy-request", REQUEST)),
+            )
+            .child(
+                AssistantMessage::new(REPLY)
+                    .id("reply")
+                    .action(CopyButton::new("copy-reply", REPLY))
+                    // Two voices only: the bubble is the person, the prose is the assistant.
+                    .anonymous()
+                    .meta("GPT-6-Sol (Codex) · 2分14秒"),
             )
             .child(
                 div()
@@ -470,7 +507,23 @@ impl AurisScreens {
                         cx.notify();
                     })),
             )
-            .busy(true);
+            .busy(self.slash.is_none());
+        let composer = match self.slash {
+            Some(selected) => composer.value("/mo").completions(
+                Completions::new("slash")
+                    .items(COMMANDS.iter().map(|(name, help, matched)| {
+                        Completion::new(*name)
+                            .description(*help)
+                            .matched(matched.to_vec())
+                    }))
+                    .selected(Some(selected))
+                    .on_select(cx.listener(|this, index: &usize, _, cx| {
+                        this.slash = Some(*index);
+                        cx.notify();
+                    })),
+            ),
+            None => composer,
+        };
 
         let footer = div()
             .flex()
@@ -616,22 +669,40 @@ impl Render for AurisScreens {
     }
 }
 
+const REQUEST: &str = "Ace Combatみたいな超かっこいい曲作ってほしい";
+const REPLY: &str = "空戦の疾走感と英雄的なスケールを軸に、方向性の異なるオリジナル曲を3案作ります。気に入った案を選ぶと、その曲で続けて編集できます。";
+
+/// The slash commands the composer completes, with the letters of `/mo` they match.
+const COMMANDS: [(&str, &str, &[usize]); 3] = [
+    ("/model", "使うモデルを切り替える", &[1, 2]),
+    ("/mood", "曲の雰囲気を指定する", &[1, 2]),
+    ("/more", "同じ方向で案を増やす", &[1, 2]),
+];
+
 fn main() {
     let screen = match common::argument("--screen").as_deref() {
         Some("compose") => Screen::Compose,
         _ => Screen::Chooser,
     };
-    common::run("Auris Studio", 1320., 860., move |choice, _| AurisScreens {
-        choice,
-        screen,
-        chooser_page: 0,
-        start: 1,
-        playing: Some(0),
-        learn_preferences: true,
-        effort: 1,
-        fast: false,
-        ai_card: Measure::new(),
-        handoff: None,
-        handoffs: 0,
+    common::run("Auris Studio", 1320., 860., move |choice, cx| {
+        // Atelier's own words (tooltips, "Copied", Send) in the application's language.
+        atelier::Strings::japanese().install(cx);
+        AurisScreens {
+            choice,
+            screen,
+            chooser_page: 0,
+            start: 1,
+            playing: Some(0),
+            learn_preferences: true,
+            effort: 1,
+            fast: false,
+            positions: [0.76, 0.],
+            volume: 0.8,
+            muted: false,
+            slash: common::argument("--slash").map(|_| 0),
+            ai_card: Measure::new(),
+            handoff: None,
+            handoffs: 0,
+        }
     });
 }

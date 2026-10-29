@@ -15,7 +15,7 @@ use std::f32::consts::{PI, TAU};
 use std::time::Instant;
 
 use atelier::plot::{
-    Colorbar, FieldPlot, Histogram, LinePlot, Plot3d, Series, SeriesStyle, Shading,
+    Colorbar, FieldPlot, Histogram, LinePlot, Plot3d, PlotPoint, Series, SeriesStyle, Shading,
 };
 use atelier::{
     ActiveTheme, Appearance, Badge, Button, ControlSize, Direction, Divider, Edge, IconName, Knob,
@@ -24,8 +24,8 @@ use atelier::{
 };
 use common::Themed;
 use gpui::{
-    App, Context, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels,
-    Point, Render, SharedString, Styled, Window, div, prelude::*, px,
+    App, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
+    prelude::*, px,
 };
 
 /// How fast the turntable turns, in degrees per second.
@@ -270,7 +270,8 @@ struct PlotLab {
     elevation: f32,
     shading: Shading,
     spin: bool,
-    drag: Option<Point<Pixels>>,
+    /// The point picked in the clusters.
+    picked: Option<PlotPoint>,
     /// Seconds on the simulation clock, which runs only while playing.
     time: f32,
     playing: bool,
@@ -303,7 +304,7 @@ impl PlotLab {
             elevation: VIEWS[0].2,
             shading: Shading::Faceted,
             spin: false,
-            drag: None,
+            picked: None,
             time: 0.,
             playing: true,
             last_frame: None,
@@ -734,7 +735,8 @@ impl PlotLab {
             .child(Self::row(cx).child(self.dipole(cx)).child(self.cuts(cx)))
     }
 
-    /// A 3-D plot in a well that turns when dragged.
+    /// A 3-D plot in a well that turns when dragged: the plot reports the angles and all three
+    /// views follow them.
     fn turnable(
         &self,
         id: &'static str,
@@ -742,32 +744,19 @@ impl PlotLab {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         let plot = plot
-            .view(self.azimuth, self.elevation)
-            .shading(self.shading);
-        Self::well(cx)
             .id(id)
-            .cursor_grab()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseDownEvent, _, _| {
-                    this.drag = Some(event.position);
+            .view(self.azimuth, self.elevation)
+            .shading(self.shading)
+            .on_orbit(
+                cx.listener(|this, &(azimuth, elevation): &(f32, f32), _, cx| {
+                    this.azimuth = (azimuth + 180.).rem_euclid(360.) - 180.;
+                    this.elevation = elevation;
+                    cx.notify();
                 }),
-            )
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _, _, _| this.drag = None),
-            )
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                let Some(last) = this.drag.filter(|_| event.dragging()) else {
-                    return;
-                };
-                let delta = event.position - last;
-                this.azimuth =
-                    (this.azimuth - f32::from(delta.x) * 0.4 + 180.).rem_euclid(360.) - 180.;
-                this.elevation = (this.elevation + f32::from(delta.y) * 0.4).clamp(-90., 90.);
-                this.drag = Some(event.position);
-                cx.notify();
-            }))
+            );
+        Self::well(cx)
+            .id(SharedString::from(format!("well-{id}")))
+            .cursor_grab()
             .child(plot)
     }
 
@@ -782,12 +771,23 @@ impl PlotLab {
             .y_range(-4., 4.)
             .z_range(-2., 3.)
             .labels("x₁", "x₂", "x₃");
+        // Every class in one depth order, each in its category colour.
+        let mut picked = None;
         for (index, offsets) in self.clusters.iter().enumerate() {
-            cloud = cloud.scatter(
-                cluster_at(offsets, index, self.time),
-                Some(theme.colors.series[index]),
-            );
+            let points = cluster_at(offsets, index, self.time);
+            if let Some(hit) = self.picked.filter(|hit| hit.series == index) {
+                picked = points.get(hit.index).copied();
+            }
+            cloud = cloud.scatter(points, Some(theme.categorical(index)));
         }
+        // The picked point, ringed by a larger one in the text colour drawn behind it.
+        if let Some(at) = picked {
+            cloud = cloud.scatter(vec![at], Some(theme.colors.text));
+        }
+        let cloud = cloud.on_pick(cx.listener(|this, hit: &Option<PlotPoint>, _, cx| {
+            this.picked = hit.filter(|hit| hit.series < 3);
+            cx.notify();
+        }));
         // The whole attractor stays faint behind a comet: the last steps in the heat ramp,
         // brightest at the moving point. A swarm of particles leaves the comet's head as a tight
         // ball each cycle and spreads over the whole attractor.
@@ -837,7 +837,7 @@ impl PlotLab {
                     .child(
                         Self::panel(
                             "Clusters",
-                            "scatter3 of three classes drifting and spreading",
+                            "scatter3 of three classes drifting and spreading; click a point to pick it",
                             cx,
                         )
                         .flex_1()

@@ -44,7 +44,8 @@ Surfaces: `background`, `chrome`, `surface`, `elevated`, `overlay`, `sunken`.
 Washes over any surface: `hover`, `pressed`, `selected`.
 Lines: `border`, `border_strong`, `separator`, `highlight` (bezel), `focus_ring` (the keyboard
 focus outline every control draws, 2px, a pixel clear of its edge; `theme.focus_ring()` is the
-halo a focused text field wears instead).
+halo a focused text field wears instead), `selection` (behind selected text: `SelectableText`,
+and the application's own input inside a `TextField`).
 Text: `text`, `text_muted` (≥4.5:1 everywhere), `text_faint`, `text_disabled`.
 Accent: `accent`, `accent_hover`, `accent_text` (readable), `accent_wash`, `on_accent`,
 `solid`, `on_solid`.
@@ -52,6 +53,10 @@ Signals: `success`, `warning`, `danger`, `info`, each with `*_wash`.
 Agent: `agent`, `agent_wash`, `agent_gradient` (3 stops), `user_bubble`, `on_user_bubble`.
 Creator: `record`, `playhead`, `meter` (safe, hot, clip).
 Plots: `series` (4), `heat` (5-stop ramp), `grid`, `grid_faint`.
+Categories: `theme.categorical(index)` — any number of colours for clusters, tags and groups,
+each clearing 3:1 on the surfaces and never the agent's hue (muted under Mono). The same index
+gives the same colour everywhere, so keep one index per thing across screens; add a label or a
+mark beyond a handful. `series` stays for the few fixed roles (left/right, voices).
 Node graphs: `ports` (5), one per data type of a port and its wires; never the agent colour.
 Always label the type too (the port's name, a tooltip, a legend).
 Ornament: `metal` (9 stops at `atelier::metal::STOPS`), the reflection ramp `MetalBackdrop`
@@ -69,7 +74,9 @@ Helpers: `mix`, `lighten`, `contrast`, `ensure_contrast`.
 - `theme.density`: `control_sm/md/lg`, `row`, `control_padding`, `panel_padding`,
   `toolbar`, `title_bar` (the window's title bar, slimmer than a toolbar), `status_bar` (the
   report line along a window's bottom edge), `form_width` (widest a form or preferences column
-  grows: 640 Studio, 720 Glass, 680 Mono).
+  grows: 640 Studio, 720 Glass, 680 Mono), `split_width` (768: two panes side by side from
+  here, stacked below; measure the region they share), `sidebar_width` (720: below this window
+  width the navigation sidebar folds away).
   `ControlSize::height(theme)` maps a component size to these.
 - `theme.spacing`: `xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32` (see rules.md).
 - `theme.shape`: `radius_xs/sm/md/lg/xl`, `capsule_controls`; use `theme.control_radius(h)`
@@ -78,6 +85,7 @@ Helpers: `mix`, `lighten`, `contrast`, `ensure_contrast`.
   `label_weight`. Prefer `Label` with `TextSize`/`TextColor` over raw sizes.
 - `theme.elevation`: `low`, `medium`, `high` shadow lists.
 - `theme.zoomed(factor)` scales type, density, spacing and radii together.
+- `Theme::all()` yields every direction in both appearances; loop a screen test over it.
 
 ## Adding a token
 

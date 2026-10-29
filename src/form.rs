@@ -39,10 +39,14 @@ pub enum LabelPlacement {
 ///     .child(TextField::new().value("~/Auris/Voices"))
 /// FormField::new("Fast mode").beside().child(Switch::new("fast", on))
 /// ```
+///
+/// With the label above, the first control fills the column's width — a field, a picker, a
+/// list — and any after it (a "Browse…" button) keep their own width beside it.
 #[derive(IntoElement)]
 pub struct FormField {
-    label: SharedString,
+    label: Option<SharedString>,
     description: Option<SharedString>,
+    note: Option<SharedString>,
     error: Option<SharedString>,
     placement: LabelPlacement,
     control: Vec<AnyElement>,
@@ -52,12 +56,30 @@ impl FormField {
     /// A field labelled `label`, with its label above the control.
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
-            label: label.into(),
+            label: Some(label.into()),
             description: None,
+            note: None,
             error: None,
             placement: LabelPlacement::Above,
             control: Vec::new(),
         }
+    }
+
+    /// A field without a label of its own, when the [`FormGroup`] title already names it: a
+    /// group holding one setting. Never use it where the group holds several.
+    pub fn unlabelled() -> Self {
+        Self {
+            label: None,
+            ..Self::new("")
+        }
+    }
+
+    /// A second, conditional line under the description: a caution that applies only to the
+    /// current choice ("Clicking now creates notes on the grid"). Leave it out otherwise rather
+    /// than leaving an empty line.
+    pub fn note(mut self, note: impl Into<SharedString>) -> Self {
+        self.note = Some(note.into());
+        self
     }
 
     /// One sentence on what the setting does, in muted text under the label. Say what changes,
@@ -95,11 +117,18 @@ impl ParentElement for FormField {
 impl RenderOnce for FormField {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let label = div()
-            .text_size(theme.typography.size_sm)
-            .font_weight(theme.typography.label_weight)
-            .text_color(theme.colors.text)
-            .child(self.label);
+        let label = self.label.map(|label| {
+            div()
+                .text_size(theme.typography.size_sm)
+                .font_weight(theme.typography.label_weight)
+                .text_color(theme.colors.text)
+                .child(label)
+        });
+        let note = self.note.map(|note| {
+            Label::new(note)
+                .size(TextSize::Small)
+                .color(TextColor::Muted)
+        });
         let description = self.description.map(|description| {
             Label::new(description)
                 .size(TextSize::Small)
@@ -120,20 +149,33 @@ impl RenderOnce for FormField {
                 .child(error)
         });
         match self.placement {
-            LabelPlacement::Above => div()
-                .flex()
-                .flex_col()
-                .gap(theme.spacing.xs)
-                .child(label)
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(theme.spacing.sm)
-                        .children(self.control),
-                )
-                .children(description)
-                .children(error),
+            LabelPlacement::Above => {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.spacing.xs)
+                    .children(label)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .w_full()
+                            .gap(theme.spacing.sm)
+                            .children(self.control.into_iter().enumerate().map(
+                                |(index, control)| {
+                                    // The first control stretches across; the rest keep their width.
+                                    if index == 0 {
+                                        div().flex().flex_col().flex_1().min_w_0().child(control)
+                                    } else {
+                                        div().flex().flex_none().child(control)
+                                    }
+                                },
+                            )),
+                    )
+                    .children(description)
+                    .children(note)
+                    .children(error)
+            }
             LabelPlacement::Beside => div()
                 .flex()
                 .flex_col()
@@ -150,8 +192,9 @@ impl RenderOnce for FormField {
                                 .flex_1()
                                 .min_w_0()
                                 .gap(theme.spacing.xxs)
-                                .child(label)
-                                .children(description),
+                                .children(label)
+                                .children(description)
+                                .children(note),
                         )
                         .child(div().flex().flex_none().children(self.control)),
                 )
