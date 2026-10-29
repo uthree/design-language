@@ -32,6 +32,10 @@ struct Params {
     lines: array<vec4f, 48>,
     strengths: array<vec4f, 12>,
     meteors: array<vec4f, 2>,
+    // Formation's and Garden's pieces (see `figures.rs`): how many of each kind, and each piece
+    // as two vectors.
+    counts: vec4u,
+    figures: array<vec4f, 512>,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;

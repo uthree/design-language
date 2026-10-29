@@ -7,7 +7,7 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use super::{Ambience, Frame, stars};
+use super::{Ambience, Frame, figures, stars};
 
 struct Gpu {
     shared: &'static crate::gpu::Gpu,
@@ -52,6 +52,8 @@ fn source(ambience: Ambience) -> &'static str {
         Ambience::Galaxy => include_str!("galaxy.wgsl"),
         Ambience::Jellyfish => include_str!("jellyfish.wgsl"),
         Ambience::Shoal => include_str!("shoal.wgsl"),
+        Ambience::Formation => include_str!("formation.wgsl"),
+        Ambience::Garden => include_str!("garden.wgsl"),
     }
 }
 
@@ -208,8 +210,11 @@ const STARS: usize = SKY + 4;
 const LINES: usize = STARS + stars::STARS * 4;
 const STRENGTHS: usize = LINES + stars::LINES * 4;
 const METEORS: usize = STRENGTHS + stars::LINES;
+/// Where Formation's and Garden's pieces start: after their four counts.
+const COUNTS: usize = METEORS + stars::METEORS * 4;
+const FIGURES: usize = COUNTS + 4;
 /// The shader's `Params`, in 4-byte words.
-const PARAMS_LEN: usize = METEORS + stars::METEORS * 4;
+const PARAMS_LEN: usize = FIGURES + figures::FIGURES * 8;
 
 /// The shader's `Params` for one frame, laid out as WGSL lays out the struct.
 fn params(frame: &Frame) -> [f32; PARAMS_LEN] {
@@ -244,7 +249,11 @@ fn params(frame: &Frame) -> [f32; PARAMS_LEN] {
     words[STARS..LINES].copy_from_slice(sky.stars.as_flattened());
     words[LINES..STRENGTHS].copy_from_slice(sky.lines.as_flattened());
     words[STRENGTHS..METEORS].copy_from_slice(&sky.strengths);
-    words[METEORS..].copy_from_slice(sky.meteors.as_flattened());
+    words[METEORS..COUNTS].copy_from_slice(sky.meteors.as_flattened());
+    for (word, count) in words[COUNTS..FIGURES].iter_mut().zip(frame.figures.counts) {
+        *word = f32::from_bits(count);
+    }
+    words[FIGURES..].copy_from_slice(frame.figures.items.as_flattened().as_flattened());
     words
 }
 
@@ -264,7 +273,11 @@ mod tests {
                 (Direction::Glass, Appearance::Light),
             ] {
                 let theme = Theme::new(direction, appearance);
-                let frame = Frame::still(1300, 750, 0.12, &theme);
+                let phase = std::env::var("ATELIER_AMBIENT_PHASE")
+                    .ok()
+                    .and_then(|phase| phase.parse().ok())
+                    .unwrap_or(0.12);
+                let frame = Frame::still(ambience, 1300, 750, phase, &theme);
                 let Some(_) = render(ambience, &frame) else {
                     println!("no GPU");
                     return;

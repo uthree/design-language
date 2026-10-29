@@ -9,6 +9,8 @@
 //! - [`Ambience::Galaxy`]: a spiral galaxy turning slowly in deep space.
 //! - [`Ambience::Jellyfish`]: jellyfish drifting up through deep water, lit from within.
 //! - [`Ambience::Shoal`]: schools of small fish wheeling through sunlit shallows.
+//! - [`Ambience::Formation`]: points of light gathering into one turning figure after another.
+//! - [`Ambience::Garden`]: a row of plants growing, blooming and fading over the cycle.
 //!
 //! Every one is drawn from the theme: its background, the agent gradient and the accent, so it
 //! sits with the rest of the screen in each direction and appearance. A [`BackdropPalette`]
@@ -26,8 +28,10 @@
 //!
 //! On the GPU each answers the window (see `sim.rs`): moving or resizing it leaves the scene
 //! behind for a moment and it swings back, nearer layers further, so the window has depth. Most
-//! also answer the pointer, each in its own way (see [`Ambience`]); Bloom, Caustics, Galaxy and
-//! Jellyfish leave ripples as it travels. Aurora's curtains leave it alone, but its brighter stars
+//! also answer the pointer, each in its own way (see [`Ambience`]); Bloom, Caustics, Galaxy,
+//! Jellyfish, Formation and Garden leave ripples as it travels. Formation's points and Garden's
+//! plants are laid out on the CPU each frame and handed to their shaders (see `figures.rs`), as
+//! are Shoal's fish and the food a press scatters for them (see `pond.rs`). Aurora's curtains leave it alone, but its brighter stars
 //! wake as the pointer passes and join into constellations, and lines can be drawn between them
 //! (see `stars.rs`). Dunes leaves it alone, since ripples through a stack of silk would break the
 //! stillness it is there for. Anything laid over a backdrop that takes clicks should `occlude()`,
@@ -49,7 +53,9 @@ use gpui::{
 use image::{Frame as ImageFrame, ImageBuffer};
 
 mod cpu;
+mod figures;
 mod gpu;
+mod pond;
 mod sim;
 mod stars;
 
@@ -98,13 +104,23 @@ pub enum Ambience {
     /// from it; the window leaves them behind.
     Jellyfish,
     /// Two schools of small fish wheeling through sunlit shallows. Fish near the pointer dart away
-    /// from it, and the school closes up behind; the window leaves the schools behind.
+    /// from it, and the school closes up behind; a press scatters food that sinks slowly, and the
+    /// fish nearest it break away to eat it. The window leaves the schools behind.
     Shoal,
+    /// Points of light gathering into one figure after another (a cube, a rippling sheet, a knot,
+    /// a double helix), turning slowly over a floor of faint lines and crossing from one side of
+    /// the frame to the other with each new figure. The pointer scatters the
+    /// points near it; the window swings the figure.
+    Formation,
+    /// A row of plants that grow, leaf and bloom over the cycle, then let their petals go and
+    /// fade, swaying over a dusk of soft lights. They lean away from the pointer; the window leaves
+    /// them behind.
+    Garden,
 }
 
 impl Ambience {
     /// Every scene, in the order a picker should offer them.
-    pub const ALL: [Ambience; 8] = [
+    pub const ALL: [Ambience; 10] = [
         Ambience::Aurora,
         Ambience::Dunes,
         Ambience::Bloom,
@@ -113,6 +129,8 @@ impl Ambience {
         Ambience::Galaxy,
         Ambience::Jellyfish,
         Ambience::Shoal,
+        Ambience::Formation,
+        Ambience::Garden,
     ];
 
     /// The scene's name.
@@ -126,6 +144,8 @@ impl Ambience {
             Ambience::Galaxy => "Galaxy",
             Ambience::Jellyfish => "Jellyfish",
             Ambience::Shoal => "Shoal",
+            Ambience::Formation => "Formation",
+            Ambience::Garden => "Garden",
         }
     }
 
@@ -150,6 +170,8 @@ impl Ambience {
             Ambience::Galaxy => 90,
             Ambience::Jellyfish => 48,
             Ambience::Shoal => 40,
+            Ambience::Formation => 64,
+            Ambience::Garden => 60,
         })
     }
 }
@@ -205,6 +227,8 @@ struct Cache {
     sim: sim::Sim,
     /// Aurora's brighter stars.
     sky: stars::Sky,
+    /// Shoal's fish and the food scattered for them.
+    pond: pond::Pond,
     clock: Option<Clock>,
 }
 
@@ -219,6 +243,8 @@ struct Key {
     lively: Option<u32>,
     /// While Aurora's stars are changing, their own clock, in frames.
     starry: Option<u32>,
+    /// While Shoal's fish are feeding, the water's own clock, in frames.
+    feeding: Option<u32>,
     direction: Direction,
     appearance: Appearance,
 }
@@ -300,6 +326,8 @@ fn paint(
     let phase = frame as f32 / scene.frames;
 
     let starry = scene.ambience == Ambience::Aurora;
+    let fishy = scene.ambience == Ambience::Shoal;
+    let time = phase * std::f32::consts::TAU;
     if scene.interactive {
         let origin = window.bounds().origin;
         let local = move |pointer: Point<Pixels>| {
@@ -333,9 +361,16 @@ fn paint(
                 let sway = cache.sim.response(size).sway;
                 cache.sky.step(now, size, pointer, sway);
             }
+            if fishy {
+                let response = cache.sim.response(size);
+                cache.pond.step(now, time, size, &response);
+            }
         });
         if starry {
             listen(scene, local, bounds, hitbox, window, cx);
+        }
+        if fishy {
+            feed(scene, local, hitbox, window);
         }
     }
 
@@ -351,6 +386,7 @@ fn paint(
             .moving()
             .then(|| (cached.sim.clock() * LIVELY_FPS) as u32),
         starry: (starry && cached.sky.moving()).then(|| (cached.sky.clock() * LIVELY_FPS) as u32),
+        feeding: (fishy && cached.pond.moving()).then(|| (cached.pond.clock() * LIVELY_FPS) as u32),
         direction,
         appearance,
     };
@@ -358,6 +394,11 @@ fn paint(
         (Some(cached_key), Some(image)) if *cached_key == key => image.clone(),
         _ => {
             let response = cached.sim.response(size);
+            let figures = if fishy {
+                cached.pond.figures(time, size, &response)
+            } else {
+                figures::figures(scene.ambience, time, size, &response)
+            };
             let sky = if starry {
                 scene.cache.update(cx, |cache, _| cache.sky.marks(size))
             } else {
@@ -366,8 +407,9 @@ fn paint(
             let frame = Frame {
                 width,
                 height,
-                time: phase * std::f32::consts::TAU,
+                time,
                 palette,
+                figures,
                 response,
                 sky,
             };
@@ -454,8 +496,34 @@ fn listen(
     });
 }
 
+/// Let the person scatter food for Shoal's fish with a press, landing with a splash.
+fn feed(
+    scene: &Scene,
+    local: impl Fn(Point<Pixels>) -> [f32; 2] + 'static,
+    hitbox: &Hitbox,
+    window: &mut Window,
+) {
+    let (cache, hitbox) = (scene.cache.clone(), hitbox.clone());
+    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+        if phase != DispatchPhase::Bubble
+            || event.button != MouseButton::Left
+            || !hitbox.is_hovered(window)
+        {
+            return;
+        }
+        let pointer = local(event.position);
+        cache.update(cx, |cache, _| {
+            cache.pond.feed(pointer);
+            cache.sim.splash(pointer);
+        });
+        cx.stop_propagation();
+        window.refresh();
+    });
+}
+
 /// One frame to shade: its size in pixels, the moment in the cycle (in radians), the colours,
-/// the response to the pointer and the window, and Aurora's stars.
+/// the response to the pointer and the window, Aurora's stars, and Formation's and Garden's
+/// pieces.
 struct Frame {
     width: u32,
     height: u32,
@@ -463,19 +531,24 @@ struct Frame {
     palette: Palette,
     response: sim::Response,
     sky: stars::Marks,
+    figures: figures::Figures,
 }
 
 impl Frame {
-    /// A still frame at `phase` of the cycle, answering nothing.
+    /// A still frame of `ambience` at `phase` of the cycle, answering nothing.
     #[cfg(test)]
-    fn still(width: u32, height: u32, phase: f32, theme: &Theme) -> Self {
+    fn still(ambience: Ambience, width: u32, height: u32, phase: f32, theme: &Theme) -> Self {
+        let size = [width as f32, height as f32];
+        let time = phase * std::f32::consts::TAU;
+        let response = sim::Response::default();
         Self {
             width,
             height,
-            time: phase * std::f32::consts::TAU,
+            time,
             palette: Palette::new(theme, BackdropPalette::Theme),
-            response: Default::default(),
-            sky: stars::Sky::default().marks([width as f32, height as f32]),
+            figures: figures::figures(ambience, time, size, &response),
+            response,
+            sky: stars::Sky::default().marks(size),
         }
     }
 }
@@ -559,6 +632,9 @@ mod tests {
             }
             let mut sim = sim::Sim::default();
             let mut sky = stars::Sky::default();
+            let mut pond = pond::Pond::default();
+            // Where Shoal's food is scattered: a little ahead of a fish and above it.
+            let mut scattered: Option<[f32; 2]> = None;
             // The stars Aurora's pointer joins, in turn.
             let tour = [9, 10, 17, 16, 9].map(|index| sky.star(index, size));
             let start = Instant::now();
@@ -609,6 +685,30 @@ mod tests {
                         sky.press(pointer.unwrap());
                     }
                 }
+                let time = (REST + t / ambience.period().as_secs_f32()) * std::f32::consts::TAU;
+                if ambience == Ambience::Shoal {
+                    // Food scattered by a fish of each school in turn, at 0.8 s, 2.6 s and
+                    // 4.4 s, the pointer showing for a moment over each.
+                    origin = [0., 0.];
+                    pointer = None;
+                    for (when, fish) in [(0.8, 40), (2.6, 12), (4.4, 46)] {
+                        if (t - when).abs() < 0.5 / fps {
+                            let shown = pond.figures(time, size, &sim.response(size));
+                            let [x, y, hx, hy] = shown.items[fish][0];
+                            let unit = size[0].min(size[1]);
+                            let at = [
+                                (x + hx * 0.12) * unit + size[0] * 0.5,
+                                (y + hy * 0.12 - 0.22) * unit + size[1] * 0.5,
+                            ];
+                            pond.feed(at);
+                            sim.splash(at);
+                            scattered = Some(at);
+                        }
+                        if (when..when + 0.4).contains(&t) {
+                            pointer = scattered;
+                        }
+                    }
+                }
                 sim.step(sim::Input {
                     now: start + Duration::from_secs_f32(t),
                     origin,
@@ -621,13 +721,20 @@ mod tests {
                     pointer,
                     sim.response(size).sway,
                 );
-                let phase = REST + t / ambience.period().as_secs_f32();
+                let response = sim.response(size);
+                pond.step(start + Duration::from_secs_f32(t), time, size, &response);
+                let figures = if ambience == Ambience::Shoal {
+                    pond.figures(time, size, &response)
+                } else {
+                    figures::figures(ambience, time, size, &response)
+                };
                 let frame = Frame {
                     width,
                     height,
-                    time: phase * std::f32::consts::TAU,
+                    time,
                     palette: Palette::new(&theme, BackdropPalette::Theme),
-                    response: sim.response(size),
+                    figures,
+                    response,
                     sky: sky.marks(size),
                 };
                 let mut pixels = gpu::render(ambience, &frame).expect("a GPU");
