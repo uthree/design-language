@@ -11,7 +11,9 @@
 
 mod common;
 
-use atelier::agent::{AgentLabel, ApprovalCard, Composer, EffortButton, UsageLimit, UsageMeter};
+use atelier::agent::{
+    AgentLabel, ApprovalCard, Composer, EffortButton, EffortPicker, UsageLimit, UsageMeter,
+};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ButtonVariant, Checkbox, Completion,
     Completions, ControlSize, CopyButton, Direction, Disclosure, Divider, Edge, EmptyState,
@@ -285,8 +287,8 @@ const AMOUNT: [Entry; 5] = [
         sample: Sample::Effort,
         concept: "AIがかける手間",
         examples: "推論の深さ、高速モード",
-        usage: "agent::EffortButton / EffortPicker",
-        avoid: "汎用の Slider",
+        usage: "EffortButton で開く EffortPicker（稲妻が高速モード、段階のスライダー、リセット）",
+        avoid: "汎用の Slider、カードの中のモデル切り替え（モデルは別のボタン）",
     },
 ];
 
@@ -551,6 +553,7 @@ struct Legend {
     start: usize,
     tab: usize,
     place: usize,
+    effort: usize,
     fast: bool,
 }
 
@@ -559,6 +562,9 @@ impl Themed for Legend {
         &mut self.choice
     }
 }
+
+/// The effort levels, lowest first.
+const EFFORT: [&str; 4] = ["軽", "中", "高", "最大"];
 
 const MODELS: [(&str, ProviderLogo); 5] = [
     ("Claude Opus", ProviderLogo::Anthropic),
@@ -867,12 +873,43 @@ impl Legend {
                         .volume(0.8),
                 )
                 .into_any_element(),
-            Sample::Effort => EffortButton::new("effort", "じっくり")
-                .fast(self.fast)
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.fast = !this.fast;
-                    cx.notify();
-                }))
+            // The effort card as it opens over the composer, with its button and, beside it,
+            // the model's own button: switching the model is a separate choice.
+            Sample::Effort => column()
+                .child(
+                    EffortPicker::new("effort-picker", EFFORT, self.effort)
+                        .width(SAMPLE)
+                        .default_level(1)
+                        .fast(self.fast)
+                        .on_select(cx.listener(|this, level: &usize, _, cx| {
+                            this.effort = *level;
+                            cx.notify();
+                        }))
+                        .on_fast(cx.listener(|this, _, _, cx| {
+                            this.fast = !this.fast;
+                            cx.notify();
+                        }))
+                        .on_reset(cx.listener(|this, _, _, cx| {
+                            this.effort = 1;
+                            this.fast = false;
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    line()
+                        .child(
+                            Button::new("effort-model", MODELS[self.model].0)
+                                .ghost()
+                                .icon(MODELS[self.model].1)
+                                .icon_after(IconName::ChevronDown)
+                                .size(ControlSize::Small),
+                        )
+                        .child(
+                            EffortButton::new("effort", EFFORT[self.effort])
+                                .fast(self.fast)
+                                .open(true),
+                        ),
+                )
                 .into_any_element(),
             Sample::Progress => line()
                 .gap(theme.spacing.md)
@@ -1242,6 +1279,7 @@ fn main() {
                 start: 1,
                 tab: 0,
                 place: 1,
+                effort: 1,
                 fast: false,
             }
         },
