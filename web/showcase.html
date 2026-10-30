@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en" data-theme="glass-dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atelier for the web</title>
+    <link rel="stylesheet" href="atelier/atelier.css" />
+    <style>
+      /* Layout of this page only; the components come from atelier.css. */
+      .sidebar { width: 240px; }
+      .sidebar .at-field { margin: 0 var(--at-space-sm); }
+      .sidebar__top { display: flex; flex-direction: column; gap: var(--at-space-sm); padding: var(--at-space-sm) 0; }
+      .sidebar__top > .at-button { margin: 0 var(--at-space-sm); width: calc(100% - 2 * var(--at-space-sm)); }
+      .sidebar__footer { display: flex; align-items: center; gap: var(--at-space-sm); margin-top: auto; padding: var(--at-space-md); }
+      .inspector { width: 340px; }
+      .inspector__body { display: flex; flex-direction: column; gap: var(--at-space-md); padding: var(--at-space-md); }
+      .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--at-space-lg); padding: var(--at-space-xl); }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--at-space-sm); }
+      .stack { display: flex; flex-direction: column; gap: var(--at-space-md); }
+      .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+      .swatches span { height: 22px; border-radius: var(--at-radius-xs); }
+      .meters { display: flex; gap: 3px; height: 64px; }
+      .meters .at-meter > span { --_full: 64px; }
+      .content-tabs { padding: var(--at-space-md) var(--at-space-xl) 0; }
+      #content { display: flex; flex-direction: column; overflow: hidden; }
+      .panel { flex: 1; min-height: 0; overflow: auto; }
+      .panel[hidden] { display: none; }
+      .transcript-pane { display: flex; flex-direction: column; overflow: hidden; }
+      .transcript-pane .at-transcript { flex: 1; overflow: auto; width: 100%; }
+      .composer-wrap { max-width: 760px; width: 100%; margin: 0 auto; padding: 0 var(--at-space-lg) var(--at-space-lg); }
+      .welcome { position: relative; display: grid; place-items: center; }
+      .welcome[hidden] { display: none; }
+      .welcome__card { display: flex; flex-direction: column; align-items: center; gap: var(--at-space-md); max-width: 420px; padding: var(--at-space-xxl); text-align: center; background: var(--at-chrome); border: 1px solid var(--at-border); border-radius: var(--at-radius-xl); box-shadow: var(--at-shadow-high); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6); }
+      .content--clear { background: transparent; }
+      @media (max-width: 1100px) { .inspector { display: none; } }
+      @media (max-width: 760px) { .sidebar { display: none; } }
+    </style>
+  </head>
+  <body class="at-root">
+    <canvas class="at-ambient" id="ambient"></canvas>
+    <div class="at-window">
+      <header class="at-title-bar at-chrome" data-tauri-drag-region>
+        <div class="at-title-bar__side">
+          <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Toggle sidebar"><span data-icon="sidebar-left"></span></button>
+          <span class="at-badge at-badge--warning"><span class="at-status-dot at-status-dot--warning"></span>Needs approval</span>
+        </div>
+        <div class="at-title-bar__title">Fix flaky playback test</div>
+        <div class="at-title-bar__side at-title-bar__side--end">
+          <div class="at-segmented at-segmented--sm" id="direction" role="group" aria-label="Direction">
+            <button value="studio">Studio</button>
+            <button value="glass" aria-pressed="true">Glass</button>
+            <button value="mono">Mono</button>
+          </div>
+          <div class="at-segmented at-segmented--sm" id="appearance" role="group" aria-label="Appearance">
+            <button value="light">Light</button>
+            <button value="dark" aria-pressed="true">Dark</button>
+          </div>
+          <select class="at-select at-select--sm" id="scene" aria-label="Backdrop"></select>
+        </div>
+      </header>
+
+      <div class="at-window__body">
+        <nav class="at-sidebar at-chrome sidebar">
+          <div class="sidebar__top">
+            <button class="at-button"><span data-icon="plus"></span>New session</button>
+            <label class="at-field"><span data-icon="search"></span><input placeholder="Search sessions" /></label>
+          </div>
+          <div class="at-list">
+            <div class="at-caption">Running</div>
+            <button class="at-list-item" aria-current="page">
+              <span class="at-list-item__label">Fix flaky playback test</span>
+              <span class="at-status-dot at-status-dot--warning"></span>
+            </button>
+            <button class="at-list-item">
+              <span class="at-list-item__label">Add stems export to CLI</span>
+              <span class="at-spinner at-spinner--agent"></span>
+            </button>
+            <div class="at-caption">Today</div>
+            <button class="at-list-item"><span class="at-list-item__label">Port mixer graph to Atelier</span><span class="at-list-item__trailing">11:20</span></button>
+            <button class="at-list-item"><span class="at-list-item__label">Profile physical piano</span><span class="at-list-item__trailing">09:05</span></button>
+            <div class="at-caption">Library</div>
+            <button class="at-list-item"><span data-icon="music"></span><span class="at-list-item__label">Instruments</span></button>
+            <button class="at-list-item"><span data-icon="loop"></span><span class="at-list-item__label">Loops</span></button>
+            <button class="at-list-item"><span data-icon="waveform"></span><span class="at-list-item__label">Samples</span><span class="at-badge at-badge--accent">New</span></button>
+          </div>
+          <div class="sidebar__footer">
+            <span class="at-avatar">UT</span>
+            <div style="flex: 1; min-width: 0">
+              <div>uthree</div>
+              <div class="at-small at-faint">auris-studio</div>
+            </div>
+            <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Settings"><span data-icon="settings"></span></button>
+          </div>
+        </nav>
+
+        <main class="at-content" id="content">
+          <div class="content-tabs">
+            <div class="at-tabs" id="views" role="tablist">
+              <button role="tab" aria-selected="true" value="components">Components</button>
+              <button role="tab" value="agent">Agent</button>
+              <button role="tab" value="welcome">Welcome</button>
+            </div>
+          </div>
+
+          <section class="panel" data-view="components">
+            <div class="gallery">
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Buttons</h3></div>
+                <div class="row">
+                  <button class="at-button at-button--primary">Create</button>
+                  <button class="at-button">Cancel</button>
+                  <button class="at-button at-button--ghost">Skip</button>
+                </div>
+                <div class="row">
+                  <button class="at-button at-button--danger"><span data-icon="trash"></span>Delete</button>
+                  <button class="at-button at-button--agent"><span data-icon="sparkles"></span>Ask Assistant</button>
+                  <button class="at-button" disabled>Disabled</button>
+                </div>
+                <div class="row">
+                  <button class="at-button at-button--sm">Small</button>
+                  <button class="at-button at-button--lg at-button--primary">Large</button>
+                  <button class="at-button at-button--sm at-button--icon" aria-pressed="true" data-tooltip="Mute">M</button>
+                  <button class="at-button at-button--sm at-button--icon">S</button>
+                  <button class="at-button at-button--sm at-button--icon">R</button>
+                </div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Transport</h3><span class="at-badge at-badge--success">Live</span></div>
+                <div class="row">
+                  <button class="at-button at-button--ghost at-button--icon" data-tooltip="Back"><span data-icon="skip-back"></span></button>
+                  <button class="at-button at-button--ghost at-button--icon" aria-pressed="true" data-tooltip="Play"><span data-icon="play"></span></button>
+                  <button class="at-button at-button--ghost at-button--icon" data-tooltip="Record" style="color: var(--at-record)"><span data-icon="record"></span></button>
+                  <span class="at-display" style="font-size: var(--at-size-lg)">013.2.1</span>
+                  <span class="at-mono at-muted">120 BPM · 4/4</span>
+                </div>
+                <div class="at-segmented" role="group" aria-label="Snap">
+                  <button aria-pressed="true">Bar</button><button>Beat</button><button>1/8</button><button>1/16</button>
+                </div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Fields</h3></div>
+                <div class="at-form-field">
+                  <label for="name">Project name</label>
+                  <span class="at-field"><input id="name" value="Midnight Drive" /></span>
+                  <span class="at-form-field__help">Shown in the title bar and on export.</span>
+                </div>
+                <span class="at-field at-field--area"><textarea placeholder="Notes for the session…"></textarea></span>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Toggles and sliders</h3></div>
+                <label class="at-switch"><input type="checkbox" role="switch" checked />Input monitoring</label>
+                <label class="at-switch"><input type="checkbox" role="switch" />Count-in</label>
+                <label class="at-checkbox"><input type="checkbox" checked />Snap to grid</label>
+                <div class="row" style="flex-wrap: nowrap">
+                  <span class="at-small at-muted" style="flex: none; width: 56px">Volume</span>
+                  <input class="at-slider" type="range" value="70" />
+                  <span class="at-small at-mono at-muted" style="flex: none; width: 64px; text-align: right">−3.2 dB</span>
+                </div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Progress</h3></div>
+                <div class="at-progress"><span style="width: 62%"></span></div>
+                <div class="at-progress at-progress--agent"><span style="width: 38%"></span></div>
+                <div class="row"><span class="at-spinner"></span><span class="at-muted">Rendering stems…</span></div>
+                <div class="stack" style="gap: 6px"><div class="at-skeleton" style="width: 90%"></div><div class="at-skeleton" style="width: 70%"></div></div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Badges and keys</h3></div>
+                <div class="row">
+                  <span class="at-badge">Draft</span>
+                  <span class="at-badge at-badge--accent">New</span>
+                  <span class="at-badge at-badge--success">Passed</span>
+                  <span class="at-badge at-badge--warning">Queued</span>
+                  <span class="at-badge at-badge--danger">Failed</span>
+                  <span class="at-badge at-badge--agent"><span data-icon="sparkles"></span>AI draft</span>
+                </div>
+                <div class="row at-muted">Search <span class="at-kbd">Ctrl</span><span class="at-kbd">K</span> · Send <span class="at-kbd">Enter</span></div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Options</h3></div>
+                <button class="at-option-card" aria-pressed="true"><strong>Physical model</strong><span class="at-small at-muted">Strings and hammers, simulated.</span></button>
+                <button class="at-option-card at-option-card--agent"><strong>Let the assistant choose</strong><span class="at-small at-muted">Picks per track from the arrangement.</span></button>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Categories and meters</h3></div>
+                <div class="swatches" id="categories"></div>
+                <div class="meters">
+                  <div class="at-meter"><span style="height: 82%; --_full: 64px"></span></div>
+                  <div class="at-meter"><span style="height: 64%; --_full: 64px"></span></div>
+                  <div class="at-meter"><span style="height: 95%; --_full: 64px"></span></div>
+                  <div class="at-meter"><span style="height: 40%; --_full: 64px"></span></div>
+                </div>
+              </div>
+
+              <div class="at-menu">
+                <div class="at-caption">Anthropic</div>
+                <button class="at-menu-item"><span class="at-menu-item__check" data-icon="check"></span><span data-icon="logo-anthropic"></span>Claude Opus 5.5</button>
+                <button class="at-menu-item"><span class="at-menu-item__check"></span><span data-icon="logo-anthropic"></span>Claude Sonnet 5.5</button>
+                <div class="at-menu-separator"></div>
+                <div class="at-caption">Local</div>
+                <button class="at-menu-item"><span class="at-menu-item__check"></span><span data-icon="logo-local"></span>Qwen 4 Coder (Ollama)</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel transcript-pane" data-view="agent" hidden>
+            <div class="at-transcript">
+              <span class="at-context-chip" style="align-self: flex-end"><span data-icon="file"></span>engine/tests/playback.rs</span>
+              <div class="at-user-message">The playback test fails about one run in ten on Windows. Find out why and fix it.</div>
+              <span class="at-thought"><span data-icon="brain"></span>Thought for 9 s<span data-icon="chevron-right"></span></span>
+              <div class="at-tool-group">
+                <div class="at-caption" style="padding: 4px 0">Used 3 tools</div>
+                <div class="at-tool-call"><span data-icon="code"></span>Ran the test 50 times<span class="at-tool-call__name">bash</span><span class="at-tool-call__done" data-icon="check"></span></div>
+                <div class="at-tool-call"><span data-icon="eye"></span>Read engine/src/transport.rs<span class="at-tool-call__name">read</span><span class="at-tool-call__done" data-icon="check"></span></div>
+                <div class="at-tool-call"><span data-icon="file"></span>Edited engine/src/transport.rs<span class="at-tool-call__name">edit</span><span class="at-tool-call__done" data-icon="check"></span></div>
+              </div>
+              <pre class="at-code">test playback::starts_from_zero ... FAILED
+
+assertion `left == right` failed
+  left: 0
+ right: 512</pre>
+              <div class="at-assistant-message">
+                <div class="at-assistant-message__header"><span class="at-avatar at-avatar--agent"><span data-icon="logo-anthropic"></span></span><strong>Assistant</strong><span class="at-faint">Claude Opus 5.5 · 41 s</span></div>
+                <p>Found it. <code class="at-mono">play()</code> returns before the audio thread has taken its first block, so a position read right after it can still be zero.</p>
+              </div>
+              <div class="at-approval">
+                <strong><span data-icon="alert" style="color: var(--at-warning)"></span> Run the workspace tests?</strong>
+                <span class="at-small at-muted">Runs <span class="at-mono">cargo test --workspace</span>. Nothing is pushed.</span>
+                <div class="at-approval__actions"><span class="at-small at-muted">Always allow</span><span class="at-spacer"></span><button class="at-button at-button--sm">Deny</button><button class="at-button at-button--sm at-button--primary">Run</button></div>
+              </div>
+            </div>
+            <div class="composer-wrap">
+              <div class="at-composer at-agent-glow">
+                <span class="at-context-chip"><span data-icon="paperclip"></span>Selection: 2 clips</span>
+                <textarea rows="2" placeholder="Reply, or describe a change…"></textarea>
+                <div class="at-composer__bar">
+                  <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Attach"><span data-icon="paperclip"></span></button>
+                  <button class="at-button at-button--ghost at-button--sm"><span data-icon="logo-anthropic"></span>Claude Opus 5.5<span class="at-button__after" data-icon="chevron-down"></span></button>
+                  <span class="at-spacer"></span>
+                  <span class="at-kbd">Enter</span>
+                  <button class="at-button at-button--primary at-button--icon at-composer__send" data-tooltip="Send"><span data-icon="arrow-up"></span></button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel welcome" data-view="welcome" hidden>
+            <div class="welcome__card">
+              <span class="at-avatar at-avatar--agent" style="width: 44px; height: 44px"><span data-icon="sparkles" style="width: 20px; height: 20px"></span></span>
+              <h2 class="at-title">Welcome to Auris Studio</h2>
+              <p class="at-muted" style="margin: 0">Open a song, or tell the assistant what you'd like to make.</p>
+              <div class="row" style="justify-content: center">
+                <button class="at-button at-button--primary at-button--lg">New song</button>
+                <button class="at-button at-button--lg">Open…</button>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <aside class="at-sidebar at-sidebar--end at-chrome inspector">
+          <div class="at-toolbar" style="border-bottom: 0">
+            <div class="at-tabs"><button aria-selected="true">Changes</button><button>Tasks</button><button>Terminal</button></div>
+          </div>
+          <div class="inspector__body">
+            <div class="at-section-header"><span class="at-caption">3 files changed</span><span class="at-badge"><span data-icon="code"></span>claude/fix-playback</span></div>
+            <div class="at-list" style="padding: 0">
+              <button class="at-list-item"><span data-icon="file"></span><span class="at-list-item__label">engine/src/transport.rs</span><span class="at-mono at-small" style="color: var(--at-success)">+9</span><span class="at-mono at-small" style="color: var(--at-danger)">−1</span></button>
+              <button class="at-list-item"><span data-icon="file"></span><span class="at-list-item__label">engine/tests/playback.rs</span><span class="at-mono at-small" style="color: var(--at-success)">+4</span><span class="at-mono at-small" style="color: var(--at-danger)">−6</span></button>
+            </div>
+            <div class="at-card at-card--padded">
+              <div class="row"><span data-icon="code"></span><strong>Workspace tests</strong><span class="at-spacer"></span><span class="at-small at-faint">Queued</span></div>
+              <span class="at-small at-muted">Starts when you allow it</span>
+              <div class="at-progress"><span style="width: 0%"></span></div>
+            </div>
+            <div class="row"><button class="at-button at-button--full" style="flex: 1">Commit…</button><button class="at-button at-button--primary" style="flex: 1">Create PR…</button></div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="at-status-bar at-chrome">
+        <span>Auto mode</span><span>Context 38 %</span><span class="at-spacer"></span><span class="at-badge at-badge--warning">1 waiting</span>
+      </footer>
+    </div>
+
+    <script type="module">
+      import { hydrate, setTheme, theme } from "./atelier/atelier.js";
+      import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
+
+      const params = new URLSearchParams(location.search);
+      if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
+      const showView = (view) => {
+        for (const panel of document.querySelectorAll(".panel")) panel.hidden = panel.dataset.view !== view;
+        // The welcome screen lets the backdrop show through, as the native welcome screens do.
+        document.getElementById("content").classList.toggle("content--clear", view === "welcome");
+        for (const tab of document.querySelectorAll("#views > button")) tab.setAttribute("aria-selected", String(tab.value === view));
+      };
+
+      const sync = () => {
+        const { direction, appearance } = theme();
+        for (const button of document.querySelectorAll("#direction > button")) button.setAttribute("aria-pressed", String(button.value === direction));
+        for (const button of document.querySelectorAll("#appearance > button")) button.setAttribute("aria-pressed", String(button.value === appearance));
+      };
+      hydrate();
+      sync();
+      document.getElementById("direction").addEventListener("atelier:select", (event) => setTheme({ direction: event.detail.value }));
+      document.getElementById("appearance").addEventListener("atelier:select", (event) => setTheme({ appearance: event.detail.value }));
+      document.getElementById("views").addEventListener("atelier:select", (event) => showView(event.detail.value));
+      if (params.get("view")) showView(params.get("view"));
+
+      const categories = document.getElementById("categories");
+      for (let index = 0; index < 8; index++) {
+        const swatch = document.createElement("span");
+        swatch.style.background = `var(--at-category-${index})`;
+        categories.append(swatch);
+      }
+
+      const select = document.getElementById("scene");
+      const scene = params.get("scene") || "Aurora";
+      for (const name of AMBIENCES) select.append(new Option(name, name, false, name === scene));
+      const backdrop = await AmbientBackdrop.create(document.getElementById("ambient"), { scene });
+      if (backdrop) {
+        select.addEventListener("change", () => backdrop.setScene(select.value));
+        if (params.has("still") || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          backdrop.still(Number(params.get("still")) || 0.12);
+          document.addEventListener("atelier:theme", () => backdrop.still(Number(params.get("still")) || 0.12));
+          select.addEventListener("change", () => backdrop.still(Number(params.get("still")) || 0.12));
+        } else {
+          backdrop.play();
+        }
+      } else {
+        select.disabled = true;
+        select.title = "WebGPU is not available; the backdrop is a still gradient.";
+      }
+      window.atelierBackdrop = backdrop;
+      document.body.dataset.ready = backdrop ? "webgpu" : "css";
+    </script>
+  </body>
+</html>

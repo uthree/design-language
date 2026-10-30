@@ -36,6 +36,7 @@ mod text;
 mod theme;
 mod transport;
 pub mod viz;
+pub mod web;
 mod window;
 
 pub use ambient::{Ambience, AmbientBackdrop};
