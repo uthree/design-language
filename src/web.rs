@@ -453,13 +453,18 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let bless = std::env::var_os("ATELIER_BLESS_WEB").is_some();
         for (path, contents) in files() {
+            // A Windows checkout may turn line ends into CRLF, in the shaders this reads and in
+            // the files it compares with alike.
+            let contents = contents.replace("\r\n", "\n");
             let path = root.join(path);
             if bless {
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, contents).unwrap();
                 continue;
             }
-            let shipped = std::fs::read_to_string(&path).unwrap_or_default();
+            let shipped = std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .replace("\r\n", "\n");
             assert!(
                 shipped == contents,
                 "{} is out of date: run `ATELIER_BLESS_WEB=1 cargo test --lib web`",
