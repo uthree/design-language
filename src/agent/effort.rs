@@ -16,6 +16,7 @@ use crate::controls::on_fill;
 use crate::focus::focusable;
 use crate::icon::{IconName, IconSource};
 use crate::motion::{ease_out, lerp, looping};
+use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -39,8 +40,10 @@ pub struct EffortPicker {
     selected: usize,
     default_level: Option<usize>,
     fast: bool,
+    show_fast: bool,
     model: Option<SharedString>,
     model_icon: Option<IconSource>,
+    note: Option<SharedString>,
     width: Pixels,
     on_select: Option<SelectHandler>,
     on_fast: Option<ClickHandler>,
@@ -62,8 +65,10 @@ impl EffortPicker {
             levels,
             default_level: None,
             fast: false,
+            show_fast: true,
             model: None,
             model_icon: None,
+            note: None,
             width: px(320.),
             on_select: None,
             on_fast: None,
@@ -84,6 +89,13 @@ impl EffortPicker {
         self
     }
 
+    /// Show the fast-mode control. Hide it when the application only offers reasoning effort.
+    /// The header keeps its balanced inset when the control is hidden.
+    pub fn show_fast(mut self, show: bool) -> Self {
+        self.show_fast = show;
+        self
+    }
+
     /// The model the effort applies to, under the level.
     pub fn model(mut self, model: impl Into<SharedString>) -> Self {
         self.model = Some(model.into());
@@ -93,6 +105,13 @@ impl EffortPicker {
     /// The mark before the model's name, usually its provider's.
     pub fn model_icon(mut self, icon: impl Into<IconSource>) -> Self {
         self.model_icon = Some(icon.into());
+        self
+    }
+
+    /// A line under the slider, in muted text: for example that the current model does not
+    /// take an effort level, so the setting is kept for the next one that does.
+    pub fn note(mut self, note: impl Into<SharedString>) -> Self {
+        self.note = Some(note.into());
         self
     }
 
@@ -139,6 +158,7 @@ impl EffortPicker {
 impl RenderOnce for EffortPicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme().clone();
+        let strings = cx.strings().clone();
         let colors = &theme.colors;
         let id = self.id.clone();
         let outer = theme.shape.radius_lg;
@@ -149,9 +169,9 @@ impl RenderOnce for EffortPicker {
             .selected(self.fast)
             .radius(corner.min(theme.density.control_md / 2.))
             .tooltip(if self.fast {
-                "Fast mode: on"
+                strings.fast_mode_on.clone()
             } else {
-                "Fast mode: off"
+                strings.fast_mode_off.clone()
             });
         if let Some(handler) = self.on_fast {
             bolt = bolt.on_click(handler);
@@ -163,7 +183,7 @@ impl RenderOnce for EffortPicker {
         let mut reset = Button::icon_only((id.clone(), "reset"), IconName::Refresh)
             .disabled(at_default)
             .radius(corner.min(theme.density.control_md / 2.))
-            .tooltip("Reset");
+            .tooltip(strings.reset.clone());
         if let Some(handler) = self.on_reset {
             reset = reset.on_click(handler);
         }
@@ -186,7 +206,12 @@ impl RenderOnce for EffortPicker {
             .flex()
             .items_start()
             .gap(theme.spacing.sm)
-            .child(bolt)
+            .child(
+                div()
+                    .w(theme.density.control_md)
+                    .flex_none()
+                    .children(self.show_fast.then_some(bolt)),
+            )
             .child(
                 div()
                     .flex_1()
@@ -227,7 +252,14 @@ impl RenderOnce for EffortPicker {
             .border_color(colors.border)
             .shadow(theme.elevation.medium.clone())
             .child(header)
-            .child(slider);
+            .child(slider)
+            .children(self.note.map(|note| {
+                div()
+                    .text_size(theme.typography.size_xs)
+                    .text_color(colors.text_muted)
+                    .text_center()
+                    .child(note)
+            }));
         crate::motion::appear(surface, id, cx, |surface, delta| {
             surface.opacity(delta).mt(px(lerp(4., 0., delta)))
         })
@@ -523,6 +555,7 @@ pub struct EffortButton {
     level: SharedString,
     fast: bool,
     open: bool,
+    disabled: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -534,6 +567,7 @@ impl EffortButton {
             level: level.into(),
             fast: false,
             open: false,
+            disabled: false,
             on_click: None,
         }
     }
@@ -550,6 +584,13 @@ impl EffortButton {
         self
     }
 
+    /// Greyed and out of the Tab order, for example while a turn runs and the effort cannot
+    /// change. Close the picker too while it is.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
     /// Called on click; open or close the picker there.
     pub fn on_click(
         mut self,
@@ -561,7 +602,7 @@ impl EffortButton {
 }
 
 impl RenderOnce for EffortButton {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         // Fast mode latches the button, bolt and all, the way the bolt in the picker latches.
         let mut button = Button::new(self.id, self.level)
             .ghost()
@@ -572,7 +613,8 @@ impl RenderOnce for EffortButton {
             } else {
                 IconName::ChevronUp
             })
-            .tooltip("Effort and fast mode");
+            .disabled(self.disabled)
+            .tooltip(cx.strings().effort.clone());
         if self.fast {
             button = button.icon(IconName::Bolt);
         }

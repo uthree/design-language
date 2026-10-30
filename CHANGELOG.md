@@ -10,6 +10,37 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — from Auris Studio 0.15 and 0.16
+
+What Auris Studio built for itself between 0.15 and 0.16 that other applications need too.
+
+### Added
+
+- `PianoKeyboard::new(id, low, high)`: a run of piano keys for auditioning a sound. A key sounds
+  on the press, a drag plays each key it reaches, `.pressed(..)` lights the keys that sound, and
+  the keyboard is one tab stop (arrows step a semitone, Home/End, Enter plays again).
+  `note_name(60)` is "C4".
+- `viz::NoteRoll` with `viz::RollNote`: a clip's notes as a small piano roll, for a MIDI
+  attachment or a generated phrase. Parts take `theme.categorical` colours unless given their own.
+- `ReadoutStrip` and `Readout`: the transport's controls and captioned values ("TEMPO" over
+  "120.00 BPM") on one sunken surface, with hairlines between the readouts.
+- `IconName::Menu`, three lines, for an application menu in the title bar.
+- `EffortPicker::show_fast(false)` for reasoning effort without a fast mode,
+  `EffortPicker::note(..)` for a line under the slider ("This model has no effort levels"), and
+  `EffortButton::disabled(bool)`.
+- `Strings::effort`, `fast_mode_on`, `fast_mode_off` and `reset`: the effort picker's tooltips
+  were English only.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A note keyboard laid out by hand from `Button`s with absolute black keys | `PianoKeyboard::new(id, 60, 72).pressed(..).on_press(..)` |
+| A piano-roll preview drawn with absolute `div`s per note | `viz::NoteRoll::new(notes)` |
+| A sunken transport box with readouts bordered by hand | `ReadoutStrip::new().controls(..).readout(Readout::new(..))` |
+| `assets/icons/menu.svg` of your own | `IconName::Menu` |
+| A reasoning popover of your own, rebuilt on gpui-component's `Slider`, to drop the bolt or show "unavailable" | `EffortPicker::show_fast(false).note(..)`, `EffortButton::disabled(..)` |
+
 ## Unreleased — Atelier for the web
 
 ### Added

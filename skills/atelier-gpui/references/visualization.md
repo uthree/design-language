@@ -16,6 +16,7 @@ div().h(px(200.)).rounded(theme.shape.radius_sm).bg(theme.colors.sunken).overflo
 | `Vectorscope::new(points)` | `(left, right)` pairs | Goniometer / stereo image. |
 | `StringLane::new(points)` | displacement along the string; `.trails()`, `.contact()`, `.inactive()` | Physical-model string motion, one lane per voice. |
 | `PeakBars::new(peaks).progress(p)` | `0..1` peaks | A clip's waveform as a scrubber; used by `AudioPlayer`. |
+| `NoteRoll::new(notes)` | `RollNote::new(pitch, start, length).part(n)`; `.progress(p)`, `.colors(..)` | A MIDI clip or generated phrase at a glance: an attachment preview, a candidate card. Fits pitch and time to the notes; parts take `theme.categorical`. |
 | `heat_color(theme, v)` | — | A colour on the heat ramp, for legends and custom painting. |
 
 ## Colours

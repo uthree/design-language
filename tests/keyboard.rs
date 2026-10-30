@@ -443,3 +443,82 @@ mod composer {
         assert!(log.borrow().is_empty(), "a turned-off remove does nothing");
     }
 }
+
+mod piano {
+    use super::*;
+    use atelier::PianoKeyboard;
+
+    /// A keyboard that sounds whichever key it is given, and remembers it as pressed.
+    struct Keys {
+        log: Log,
+        pressed: Rc<RefCell<Option<u8>>>,
+    }
+
+    impl Render for Keys {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let (log, pressed) = (self.log.clone(), self.pressed.clone());
+            let entity = cx.entity();
+            WindowFrame::new()
+                .child(TitleBar::new().title("Keys"))
+                .child(
+                    div().w(px(400.)).child(
+                        PianoKeyboard::octave("keys")
+                            .pressed(*self.pressed.borrow())
+                            .on_press(move |pitch: &u8, _, cx| {
+                                log.borrow_mut().push(format!("key {pitch}"));
+                                *pressed.borrow_mut() = Some(*pitch);
+                                cx.notify(entity.entity_id());
+                            }),
+                    ),
+                )
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Log, &mut VisualTestContext) {
+        cx.update(|cx| atelier::init(cx, Theme::default()));
+        let log = Log::default();
+        let (_, window) = cx.add_window_view({
+            let log = log.clone();
+            |_, _| Keys {
+                log,
+                pressed: Rc::default(),
+            }
+        });
+        window.run_until_parked();
+        (log, window)
+    }
+
+    fn press_key(cx: &mut VisualTestContext, selector: &'static str) {
+        let bounds = cx.debug_bounds(selector).unwrap();
+        // Low on the key, below where black keys reach.
+        let at = point(
+            bounds.center().x,
+            bounds.bottom() - bounds.size.height * 0.1,
+        );
+        cx.simulate_event(MouseDownEvent {
+            position: at,
+            button: MouseButton::Left,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn a_press_sounds_the_key_it_lands_on(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        press_key(cx, "keys-64");
+        press_key(cx, "keys-61");
+        assert_eq!(*log.borrow(), ["key 64", "key 61"]);
+    }
+
+    #[gpui::test]
+    fn arrows_step_a_semitone_and_enter_plays_again(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        press(cx, "tab right");
+        cx.run_until_parked();
+        press(cx, "right enter end");
+        assert_eq!(*log.borrow(), ["key 60", "key 61", "key 61", "key 72"]);
+    }
+}

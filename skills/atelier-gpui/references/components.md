@@ -234,6 +234,16 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
   and `.muted(bool).on_mute(..)` adds a mute button beside it. The player only reports what
   the person asked for; the position stays the playback clock's, so seek and redraw from it.
   The duration may change while it plays (a draft still being written).
+- `PianoKeyboard::new(id, low, high)` (MIDI pitches; `::octave(id)` is C4–C5)
+  `.pressed(Some(pitch)).on_press(cx.listener(|this, pitch: &u8, _, cx| ..))` — auditioning a
+  sound, a scale, a chord. A key sounds on the press, a drag plays each key it reaches, and the
+  keyboard is one tab stop whose arrows step a semitone and whose Enter plays the key again.
+  `.disabled(true)` while nothing is selected to play; `.labels(false)` drops the C names
+  (`note_name(60)` is "C4"). Keys are selectors `{id}-{pitch}`. Don't build one out of buttons.
+- `ReadoutStrip::new().controls(play).controls(loop_button).readout(Readout::new(id, "TEMPO",
+  "120.00").unit("BPM").on_click(..))` — the transport's display: buttons and captioned values on
+  one sunken surface, hairlines between the readouts. Give a changing value `.min_width(..)` so
+  the strip holds still. One strip per window, not a box per readout.
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen. Moving
   from a card to the screen it starts uses the hand-off in [motion.md](motion.md).

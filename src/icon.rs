@@ -77,6 +77,7 @@ icons! {
     Keyboard => "keyboard",
     Knob => "knob",
     Loop => "loop",
+    Menu => "menu",
     Metronome => "metronome",
     Mic => "mic",
     Minus => "minus",
