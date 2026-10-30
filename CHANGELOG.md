@@ -31,6 +31,12 @@ What Auris Studio built for itself between 0.15 and 0.16 that other applications
 - `Strings::effort`, `fast_mode_on`, `fast_mode_off` and `reset`: the effort picker's tooltips
   were English only.
 
+### Deprecated
+
+- `EffortPicker::model`, `model_icon` and `on_model`. The effort card no longer names the model:
+  switching models is its own button in the composer row (`Composer::model`), beside the effort
+  button, as Codex does. The card still draws the line while they are passed.
+
 ### Workarounds you can delete
 
 | Workaround | Use instead |

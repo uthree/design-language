@@ -26,8 +26,9 @@ type SelectHandler = Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
 ///
 /// Fast mode is the bolt in the corner, not a second control in the composer row: it is the
 /// other half of the same trade, speed against thought. The level reads in the accent at the
-/// top, the model it applies to sits under it and opens the model picker, and reset returns
-/// to [`EffortPicker::default_level`]. The slider is a wide stepped track: its filled part
+/// top and reset returns to [`EffortPicker::default_level`]. The model is not part of it:
+/// switching models is a separate choice, made with the composer's own model button
+/// (`Composer::model`). The slider is a wide stepped track: its filled part
 /// sparkles, a dot marks each step still above the thumb, and a click, a drag or the arrow
 /// keys move it from step to step.
 ///
@@ -97,12 +98,18 @@ impl EffortPicker {
     }
 
     /// The model the effort applies to, under the level.
+    #[deprecated(
+        note = "switching models is its own button (`Composer::model`), not a line in the effort card"
+    )]
     pub fn model(mut self, model: impl Into<SharedString>) -> Self {
         self.model = Some(model.into());
         self
     }
 
     /// The mark before the model's name, usually its provider's.
+    #[deprecated(
+        note = "switching models is its own button (`Composer::model_logo`), not a line in the effort card"
+    )]
     pub fn model_icon(mut self, icon: impl Into<IconSource>) -> Self {
         self.model_icon = Some(icon.into());
         self
@@ -137,6 +144,9 @@ impl EffortPicker {
     }
 
     /// Called on the model's name; open the model menu there.
+    #[deprecated(
+        note = "switching models is its own button (`Composer::on_model`), not a line in the effort card"
+    )]
     pub fn on_model(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
