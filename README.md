@@ -23,7 +23,8 @@ cargo run --example showcase -- --direction glass --appearance dark
 
 More examples — a coding-agent app, a physical-model instrument view, an analyser, a node-based
 workflow editor, a MATLAB-style plotting workbench with 3-D views, welcome screens over liquid
-metal and ambient backdrops, two Auris Studio windows redrawn and a preferences window — are in [doc/examples.md](doc/examples.md). Install the Skill: see
+metal and ambient backdrops, two Auris Studio windows redrawn, a preferences window and a legend of which control
+handles which concept — are in [doc/examples.md](doc/examples.md). Install the Skill: see
 [doc/skill.md](doc/skill.md). The candidates are compared in
 [doc/candidates.md](doc/candidates.md); app icons and logos, two-letter element marks such as
 Auris Studio's **Au**, are set out in [doc/app-icons.md](doc/app-icons.md); the rules and API live in

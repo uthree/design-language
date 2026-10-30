@@ -161,7 +161,8 @@ states. Errors say what happened and how to recover. No terminal period on label
 ## Review checklist
 
 1. Is the primary task clear, and does the canvas get the space it deserves?
-2. Does each action keep its promise — label, state, scope, result?
+2. Does each action keep its promise — label, state, scope, result? Does each concept use the
+   control [choosing.md](choosing.md) gives it?
 3. Is emphasis scarce: one primary, few coloured badges, agent colour only for the agent?
 4. Are peers on shared alignment spines, with equal gaps equal?
 5. Do radii nest concentrically and do only floating layers cast shadows?

@@ -19,6 +19,7 @@ Read this page fully, then the reference for the part you touch.
 | Read | When |
 | --- | --- |
 | [references/rules.md](references/rules.md) | Always before writing or reviewing UI. The design rules and the review checklist. |
+| [references/choosing.md](references/choosing.md) | Deciding which control a concept gets: on/off, one of several, an amount, text, a command, a state — and what has no component yet. |
 | [references/tokens.md](references/tokens.md) | Choosing a colour, size, radius, spacing step, font, or a direction. |
 | [references/components.md](references/components.md) | Using buttons, controls, knobs, meters, layout containers, forms and preferences, keyboard focus, menus, node graphs, welcome-screen backdrops. |
 | [references/agent.md](references/agent.md) | Anything that shows the AI: panel, transcript, tool calls, approvals, composer, entry points. |
@@ -37,8 +38,9 @@ dashboard with a Gradio-style inference playground), `ambient` (a welcome screen
 ambient scene: aurora, silk dunes, clouds of colour, caustics, a low sun, a galaxy, jellyfish,
 a shoal of fish, a formation of light points or a growing garden) and
 `auris_screens` (Auris's project chooser and AI compose
-window, with the hand-off between them) and `preferences` (a settings window: pages, forms,
-status bar, keyboard navigation).
+window, with the hand-off between them) `preferences` (a settings window: pages, forms,
+status bar, keyboard navigation) and `control_legend` (every concept beside the control that
+handles it, as in [references/choosing.md](references/choosing.md)).
 Do not invent a builder method because its name seems plausible: check the source.
 
 ## Non-negotiables
