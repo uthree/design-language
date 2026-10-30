@@ -8,7 +8,7 @@
 //! it diverges part way through. The title bar pauses the clock, restarts it and sets its speed.
 //!
 //! ```text
-//! cargo run --example training_dashboard -- [--page scalars|distributions|runs|inference] [--direction glass|studio|mono] [--appearance dark|light]
+//! cargo run --example training_dashboard -- [--page scalars|distributions|runs|inference] [--step N] [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
 
 mod common;
