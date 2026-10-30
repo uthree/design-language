@@ -39,6 +39,7 @@ pub struct EffortPicker {
     selected: usize,
     default_level: Option<usize>,
     fast: bool,
+    show_fast: bool,
     model: Option<SharedString>,
     model_icon: Option<IconSource>,
     width: Pixels,
@@ -62,6 +63,7 @@ impl EffortPicker {
             levels,
             default_level: None,
             fast: false,
+            show_fast: true,
             model: None,
             model_icon: None,
             width: px(320.),
@@ -81,6 +83,13 @@ impl EffortPicker {
     /// Whether fast mode is on: the bolt latches in the accent.
     pub fn fast(mut self, fast: bool) -> Self {
         self.fast = fast;
+        self
+    }
+
+    /// Show the fast-mode control. Hide it when the application only offers reasoning effort.
+    /// The header keeps its balanced inset when the control is hidden.
+    pub fn show_fast(mut self, show: bool) -> Self {
+        self.show_fast = show;
         self
     }
 
@@ -186,7 +195,12 @@ impl RenderOnce for EffortPicker {
             .flex()
             .items_start()
             .gap(theme.spacing.sm)
-            .child(bolt)
+            .child(
+                div()
+                    .w(theme.density.control_md)
+                    .flex_none()
+                    .children(self.show_fast.then_some(bolt)),
+            )
             .child(
                 div()
                     .flex_1()

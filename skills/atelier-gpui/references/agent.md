@@ -102,6 +102,9 @@ a click, a drag or the arrow keys, Home and End move it a step; the thumb glides
 picker on a press outside it (`on_mouse_down_out`), leaving presses on the button to toggle it.
 `examples/auris_screens.rs` (`--screen compose --effort`) wires it up.
 
+Use `.show_fast(false)` when the application offers reasoning effort without a fast mode.
+The header keeps the level and model centred while leaving out the fast-mode control.
+
 ## Entry points
 
 - `AgentToggle::new(id, open, status)` in the title bar; while the panel is hidden it shows the
