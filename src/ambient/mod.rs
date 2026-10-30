@@ -596,6 +596,59 @@ impl Palette {
     }
 }
 
+/// For the web kit (see [`crate::web`]): each scene drawn by its shader alone, without a CPU
+/// simulation feeding it, with its period in seconds. Shoal, Formation and Garden are left out,
+/// as their pieces are.
+#[cfg(test)]
+pub(crate) fn web_scenes() -> Vec<(Ambience, &'static str, f32)> {
+    Ambience::ALL
+        .into_iter()
+        .filter(|ambience| {
+            !matches!(
+                ambience,
+                Ambience::Shoal | Ambience::Formation | Ambience::Garden
+            )
+        })
+        .map(|ambience| {
+            (
+                ambience,
+                gpu::source(ambience),
+                ambience.period().as_secs_f32(),
+            )
+        })
+        .collect()
+}
+
+/// For the web kit: what every scene's shader starts with.
+#[cfg(test)]
+pub(crate) fn web_common() -> &'static str {
+    include_str!("common.wgsl")
+}
+
+/// For the web kit: where the shaders' `Params` keep what, in 4-byte words.
+#[cfg(test)]
+pub(crate) fn web_layout() -> [(&'static str, usize); 9] {
+    [
+        ("waves", 12 + 4 + 4 + 4 * 4),
+        ("waveCount", sim::WAVES),
+        ("sky", gpu::SKY),
+        ("stars", gpu::STARS),
+        ("lines", gpu::LINES),
+        ("strengths", gpu::STRENGTHS),
+        ("meteors", gpu::METEORS),
+        ("counts", gpu::COUNTS),
+        ("length", gpu::PARAMS_LEN),
+    ]
+}
+
+/// For the web kit: a theme's backdrop colours — base, deep and the four hues.
+#[cfg(test)]
+pub(crate) fn web_palette(theme: &Theme) -> [[f32; 3]; 6] {
+    let palette = Palette::new(theme, BackdropPalette::Theme);
+    let [a, b, c, d] = palette.hues;
+    [palette.base, palette.deep, a, b, c, d]
+}
+
 fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     [
         a[0] + (b[0] - a[0]) * t,

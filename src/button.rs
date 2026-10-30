@@ -203,14 +203,19 @@ impl Button {
 }
 
 /// Fill, hover fill, text colour and border of one button state.
-struct Paint {
-    fill: Hsla,
-    hover: Hsla,
-    text: Hsla,
-    border: Option<Hsla>,
+pub(crate) struct Paint {
+    pub(crate) fill: Hsla,
+    pub(crate) hover: Hsla,
+    pub(crate) text: Hsla,
+    pub(crate) border: Option<Hsla>,
 }
 
-fn paint(theme: &Theme, variant: ButtonVariant, selected: bool, tint: Option<Hsla>) -> Paint {
+pub(crate) fn paint(
+    theme: &Theme,
+    variant: ButtonVariant,
+    selected: bool,
+    tint: Option<Hsla>,
+) -> Paint {
     let colors = &theme.colors;
     let tone = if theme.appearance.is_dark() {
         gpui::white()
