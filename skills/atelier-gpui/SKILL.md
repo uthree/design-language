@@ -32,7 +32,8 @@ Before writing code, look at the crate itself (`src/` of the `atelier` dependenc
 repository) and at the examples that compose it into whole screens: `showcase` (a DAW and the
 component catalogue), `agent_desktop` (a coding-agent app), `instrument_lab` (physical-model
 views), `visualizer` (analysers), `node_editor` (a ComfyUI-style node graph), `plot_lab`
-(MATLAB-style 2-D and 3-D plots), `ambient` (a welcome screen over liquid metal or an
+(MATLAB-style 2-D and 3-D plots), `training_dashboard` (a TensorBoard-style training
+dashboard with a Gradio-style inference playground), `ambient` (a welcome screen over liquid metal or an
 ambient scene: aurora, silk dunes, clouds of colour, caustics, a low sun, a galaxy, jellyfish,
 a shoal of fish, a formation of light points or a growing garden) and
 `auris_screens` (Auris's project chooser and AI compose

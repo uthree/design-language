@@ -102,6 +102,33 @@ These two screenshots were captured on Linux under Xvfb.
 
 ![Plot lab, 3-D](images/plot-lab-3d.png)
 
+## training_dashboard — a training dashboard with an inference playground
+
+```bash
+cargo run --example training_dashboard
+cargo run --example training_dashboard -- --page inference --step 1000
+```
+
+A machine-learning dashboard in the manner of TensorBoard, with a playground for the model after
+Gradio. Four runs of a small classifier (three AdamW learning rates and SGD with momentum) train
+side by side on a synthetic dataset of eight shapes, logging every step as the clock runs; the
+title bar pauses it, restarts every run and sets the speed (1×, 4×, 16×). Scalars groups the tags
+under disclosures — training and validation loss, validation accuracy, the warm-up and cosine
+learning-rate schedule, the gradient norm — with TensorBoard's debiased moving-average smoothing,
+the raw values faint behind it, a log scale for the loss and a row of figures over them (step,
+epoch, throughput, time left, the best accuracy). The highest learning rate diverges part way
+through: its loss runs off the top, the run is marked NaN and the status bar says where.
+Distributions shows each layer's weights now and as a field over every summary, Runs compares the
+runs in a table. Inference runs an example image (or a random one, with noise if asked) through
+any run's latest checkpoint and shows the top five labels; with Live on it asks again at every new
+checkpoint, so the answer can be watched getting surer as the run trains, and a plot follows the
+true class's probability across checkpoints. `--step N` starts with every run trained that far.
+Captured on Linux under Weston.
+
+![Training dashboard, Scalars](images/training-dashboard-scalars.png)
+
+![Training dashboard, Inference](images/training-dashboard-inference.png)
+
 ## ambient — a welcome screen over liquid metal or an ambient scene
 
 ```bash
