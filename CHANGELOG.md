@@ -10,6 +10,39 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## 0.2.0 — Auris feedback, fourth round
+
+Also in 0.2.0, on top of the third round below.
+
+### Added
+
+- `Composer::queue(bool)`: while `busy`, Send stays beside Stop for an agent that takes the next
+  message during a turn. Stop comes first so Send keeps the corner; its tooltip is the new
+  `Strings::queue` ("Queue message", 「予約して送る」).
+- `ContextChip::max_width(..)` and `ContextChip::remove_disabled(bool)`. The remove button can be
+  turned off (greyed, out of the Tab order) while the message waits.
+- `ListItem::description_agent(bool)`: a description the agent wrote ends in its sparkle, as an
+  `AgentLabel` would.
+- `TextField::input_inset(..)`: the left padding an application's input keeps, so the
+  placeholder starts where its first character does. The doc now says the text area has no
+  padding of its own.
+- `Composer` and `ContextChip` ids are test selectors, like the other components'
+  (`composer-send`, `composer-stop`, `chip-remove`).
+
+### Changed
+
+- `ContextChip` shrinks: its label is cut with an ellipsis at 240 px (or `max_width`) or at the
+  composer's width, and the whole label shows on hover. It no longer pushes past the input.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| `composer_frame` kept for Stop and a queueing Send side by side | `Composer::busy(..).queue(true)` |
+| Cutting a chip's label by hand, or leaving removal live while a message waits | `ContextChip` cuts itself; `.remove_disabled(true)` |
+| A list row redrawn to mark an AI-written description | `ListItem::description_agent(true)` |
+| A placeholder drawn by hand because the input keeps its own left padding | `TextField::placeholder(..).input_inset(px(..))`, or no padding on the input |
+
 ## 0.2.0 — Auris feedback, third round
 
 Also in 0.2.0, on top of the second round below.

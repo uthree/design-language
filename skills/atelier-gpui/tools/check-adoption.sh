@@ -99,7 +99,7 @@ check error 'fn [a-z_]*copy_button\b' \
     "use CopyButton: it copies, says Copied for a moment and moves the label to its tooltip."
 
 check error 'fn [a-z_]*composer_frame\b' \
-    "use Composer: .tone(..) for a warning frame with its mark, .notice(..) for a row inside the frame, .attach_disabled(..), .control(..)."
+    "use Composer: .tone(..) for a warning frame with its mark, .notice(..) for a row inside the frame, .attach_disabled(..), .control(..), and .busy(..).queue(true) for Stop beside a queueing Send."
 check error '(punch|notes)\.svg' \
     "use IconName::Punch / IconName::Notes."
 check warn 'motion\.enabled *= *false' \

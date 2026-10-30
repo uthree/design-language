@@ -367,3 +367,79 @@ mod chat {
         cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
     }
 }
+
+mod composer {
+    use super::*;
+    use atelier::IconName;
+    use atelier::agent::{Composer, ContextChip};
+
+    /// A narrow composer while a turn runs, queueing the next message, with a long attachment
+    /// that cannot be removed until the message goes.
+    struct Queue {
+        log: Log,
+    }
+
+    impl Render for Queue {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let log = &self.log;
+            div().w(px(320.)).child(
+                Composer::new("composer")
+                    .value("Next, the bridge")
+                    .busy(true)
+                    .queue(true)
+                    .on_send(note(log, "send"))
+                    .on_stop(note(log, "stop"))
+                    .context(
+                        ContextChip::new(
+                            "chip",
+                            IconName::File,
+                            "a_reference_mix_with_a_very_long_name_indeed_final_v3.wav",
+                        )
+                        .on_remove(note(log, "remove"))
+                        .remove_disabled(true),
+                    ),
+            )
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Log, &mut VisualTestContext) {
+        cx.update(|cx| {
+            atelier::init(cx, Theme::default());
+            atelier::motion::reduce_motion(cx);
+        });
+        let log = Log::default();
+        let (_, window) = cx.add_window_view({
+            let log = log.clone();
+            |_, _| Queue { log }
+        });
+        window.run_until_parked();
+        (log, window)
+    }
+
+    #[gpui::test]
+    fn a_queueing_composer_keeps_send_beside_stop(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        let stop = cx.debug_bounds("composer-stop").expect("stop");
+        let send = cx.debug_bounds("composer-send").expect("send");
+        assert!(stop.right() <= send.left(), "Stop comes before Send");
+        cx.simulate_click(send.center(), Modifiers::default());
+        cx.simulate_click(stop.center(), Modifiers::default());
+        assert_eq!(*log.borrow(), ["send", "stop"]);
+    }
+
+    #[gpui::test]
+    fn a_long_chip_is_cut_and_its_remove_can_be_turned_off(cx: &mut TestAppContext) {
+        let (log, cx) = open(cx);
+        let composer = cx.debug_bounds("composer").unwrap();
+        let chip = cx.debug_bounds("chip").unwrap();
+        assert!(chip.size.width <= px(240.), "cut at the default width");
+        assert!(chip.right() <= composer.right());
+        let remove = cx.debug_bounds("chip-remove").unwrap();
+        assert!(
+            remove.right() <= chip.right(),
+            "remove stays inside the chip"
+        );
+        cx.simulate_click(remove.center(), Modifiers::default());
+        assert!(log.borrow().is_empty(), "a turned-off remove does nothing");
+    }
+}
