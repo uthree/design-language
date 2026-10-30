@@ -6,6 +6,9 @@ settling: it names the neighbour that is easy to pick by mistake. The `control_l
 draws every row live (`cargo run --example control_legend`); its pages follow the sections
 below. API details are in [components.md](components.md), the reasons in [rules.md](rules.md).
 
+The same choices hold in the web kit (`web/`): its `.at-*` classes follow the Rust names
+(see `web/README.md`), and what it has not ported yet is listed under "Not yet" there.
+
 Ask in this order:
 
 1. **Is it a command or a value?** A command does something once (Button, MenuItem). A value is
