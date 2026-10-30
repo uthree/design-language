@@ -22,6 +22,7 @@ mod form;
 mod frame;
 mod gpu;
 mod icon;
+mod keyboard;
 mod layout;
 mod media;
 pub mod metal;
@@ -33,6 +34,7 @@ mod selectable;
 mod strings;
 mod text;
 mod theme;
+mod transport;
 pub mod viz;
 mod window;
 
@@ -48,6 +50,7 @@ pub use focus::{
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
 pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
+pub use keyboard::{PianoKeyboard, note_name};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
@@ -66,6 +69,7 @@ pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,
     Spacing, Theme, Typography, contrast, ensure_contrast, lighten, mix, mono_font, ui_font,
 };
+pub use transport::{Readout, ReadoutStrip};
 pub use window::set_window_background;
 
 /// Install `theme`, bind Tab and Shift-Tab to move keyboard focus, and keep Enter and Space

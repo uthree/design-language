@@ -64,6 +64,14 @@ pub struct Strings {
     pub usage_resets: SharedString,
     /// A spent limit whose reset time is not known.
     pub usage_reached: SharedString,
+    /// The effort button's tooltip, and the effort picker's name.
+    pub effort: SharedString,
+    /// The bolt's tooltip while fast mode is on.
+    pub fast_mode_on: SharedString,
+    /// The bolt's tooltip while fast mode is off.
+    pub fast_mode_off: SharedString,
+    /// The effort picker's reset button.
+    pub reset: SharedString,
 }
 
 impl Default for Strings {
@@ -115,6 +123,10 @@ impl Strings {
             usage_used: "{} % used".into(),
             usage_resets: "Resets {}".into(),
             usage_reached: "Limit reached".into(),
+            effort: "Effort and fast mode".into(),
+            fast_mode_on: "Fast mode: on".into(),
+            fast_mode_off: "Fast mode: off".into(),
+            reset: "Reset".into(),
         }
     }
 
@@ -158,6 +170,10 @@ impl Strings {
             usage_used: "{}%使用".into(),
             usage_resets: "{}にリセット".into(),
             usage_reached: "上限に達しました".into(),
+            effort: "推論の深さと高速モード".into(),
+            fast_mode_on: "高速モード: オン".into(),
+            fast_mode_off: "高速モード: オフ".into(),
+            reset: "リセット".into(),
         }
     }
 

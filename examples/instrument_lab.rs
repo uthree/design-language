@@ -1,6 +1,7 @@
 //! A mock of Auris Studio's physical-instrument view: the strings' motion, the partials they
 //! produce, the body that filters them, and the parameters that shape them. The motion is a
 //! sum of string modes computed on the fly, slowed down so it can be seen; nothing is synthesised.
+//! Below them, a keyboard auditions the model and a note roll shows the phrase it is playing.
 //!
 //! ```text
 //! cargo run --example instrument_lab -- [--direction glass|studio|mono] [--appearance dark|light]
@@ -12,11 +13,12 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use atelier::agent::AskBar;
-use atelier::viz::{Heatmap, Spectrum, SpectrumStyle, StringLane};
+use atelier::viz::{Heatmap, NoteRoll, RollNote, Spectrum, SpectrumStyle, StringLane};
 use atelier::{
     ActiveTheme, Appearance, Badge, Button, Card, ControlSize, Direction, Divider, Edge, IconName,
-    Knob, Label, LevelMeter, ListItem, SectionHeader, Segment, SegmentedControl, Sidebar,
-    StatusDot, TaskProgress, TextColor, TextSize, TitleBar, Tone, WindowFrame,
+    Knob, Label, LevelMeter, ListItem, PianoKeyboard, Readout, ReadoutStrip, SectionHeader,
+    Segment, SegmentedControl, Sidebar, StatusDot, TaskProgress, TextColor, TextSize, TitleBar,
+    Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -146,11 +148,31 @@ fn membrane(phase: f32, size: usize) -> Vec<f32> {
     values
 }
 
+/// The phrase the preview plays: a bass line under a melody, (pitch, start, length) in beats.
+const PHRASE: [(u8, f32, f32, usize); 14] = [
+    (48, 0., 2., 1),
+    (55, 2., 2., 1),
+    (53, 4., 2., 1),
+    (52, 6., 2., 1),
+    (67, 0., 1., 0),
+    (69, 1., 0.5, 0),
+    (71, 1.5, 0.5, 0),
+    (72, 2., 1.5, 0),
+    (71, 3.5, 0.5, 0),
+    (69, 4., 1., 0),
+    (67, 5., 1., 0),
+    (65, 6., 0.5, 0),
+    (64, 6.5, 0.5, 0),
+    (62, 7., 1., 0),
+];
+
 struct InstrumentLab {
     choice: (Direction, Appearance),
     model: usize,
     exciter: usize,
     speed: usize,
+    /// The key the keyboard last played.
+    key: Option<u8>,
 }
 
 impl Themed for InstrumentLab {
@@ -388,6 +410,82 @@ impl InstrumentLab {
             )
     }
 
+    fn audition(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let played = self.key.map(atelier::note_name);
+        let strip = ReadoutStrip::new()
+            .controls(
+                Button::icon_only("preview-play", IconName::Play)
+                    .ghost()
+                    .size(ControlSize::Small)
+                    .selected(true)
+                    .tooltip("Preview"),
+            )
+            .controls(
+                Button::icon_only("preview-loop", IconName::Loop)
+                    .ghost()
+                    .size(ControlSize::Small)
+                    .tooltip("Loop"),
+            )
+            .readout(
+                Readout::new("tempo", "TEMPO", "96.00")
+                    .unit("BPM")
+                    .on_click(|_, _, _| {}),
+            )
+            .readout(Readout::new("position", "BAR", "3.2.1").min_width(px(64.)))
+            .readout(
+                Readout::new("note", "NOTE", played.unwrap_or_else(|| "—".into()))
+                    .min_width(px(56.)),
+            );
+        let phrase = PHRASE
+            .iter()
+            .map(|&(pitch, start, length, part)| RollNote::new(pitch, start, length).part(part))
+            .collect();
+        Card::new()
+            .p(theme.spacing.lg)
+            .gap(theme.spacing.md)
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(theme.spacing.md)
+                    .child(
+                        SectionHeader::new("Audition")
+                            .description("Play the model from the keyboard"),
+                    )
+                    .child(div().flex_1())
+                    .child(strip),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(theme.spacing.lg)
+                    .child(
+                        div().flex_1().min_w(px(320.)).child(
+                            PianoKeyboard::new("keys", 48, 72)
+                                .pressed(self.key)
+                                .on_press(cx.listener(|this, pitch: &u8, _, cx| {
+                                    this.key = Some(*pitch);
+                                    cx.notify();
+                                })),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(240.))
+                            .h(theme.density.control_md * 4.)
+                            .rounded(theme.shape.radius_sm)
+                            .bg(theme.colors.sunken)
+                            .overflow_hidden()
+                            .p(theme.spacing.xs)
+                            .child(NoteRoll::new(phrase).progress(0.4)),
+                    ),
+            )
+    }
+
     fn inspector(&self, width: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let group = |title: &'static str| {
@@ -537,7 +635,8 @@ impl Render for InstrumentLab {
                             .overflow_y_scroll()
                             .bg(theme.colors.surface)
                             .child(self.string_motion(cx))
-                            .child(self.analysis_row(cx)),
+                            .child(self.analysis_row(cx))
+                            .child(self.audition(cx)),
                     )
                     .child(self.inspector(inspector_width, cx)),
             )
@@ -555,5 +654,6 @@ fn main() {
         model: 0,
         exciter: 0,
         speed: 0,
+        key: Some(60),
     });
 }
