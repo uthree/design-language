@@ -30,6 +30,10 @@ handles which concept — are in [doc/examples.md](doc/examples.md). Install the
 Auris Studio's **Au**, are set out in [doc/app-icons.md](doc/app-icons.md); the rules and API live in
 [skills/atelier-gpui](skills/atelier-gpui/SKILL.md).
 
+For a browser or a Tauri webview, [`web/`](web/README.md) carries the same themes, components and
+ambient backdrops as CSS, a little JavaScript and WebGPU, with the tokens written from the Rust
+theme.
+
 ## License
 
 Apache-2.0

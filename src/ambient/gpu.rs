@@ -42,7 +42,7 @@ pub(super) fn render(ambience: Ambience, frame: &Frame) -> Option<Vec<u8>> {
     gpu()?.render(ambience, frame)
 }
 
-fn source(ambience: Ambience) -> &'static str {
+pub(super) fn source(ambience: Ambience) -> &'static str {
     match ambience {
         Ambience::Aurora => include_str!("aurora.wgsl"),
         Ambience::Dunes => include_str!("dunes.wgsl"),
@@ -204,17 +204,17 @@ impl Gpu {
 
 /// Where Aurora's sky starts in the shader's `Params`, in 4-byte words: after the frame, the
 /// colours and the ripples.
-const SKY: usize = 12 + 4 + 4 + 4 * 4 + super::sim::WAVES * 4;
+pub(super) const SKY: usize = 12 + 4 + 4 + 4 * 4 + super::sim::WAVES * 4;
 /// Where the stars start: after the two counts, padded to a whole vector.
-const STARS: usize = SKY + 4;
-const LINES: usize = STARS + stars::STARS * 4;
-const STRENGTHS: usize = LINES + stars::LINES * 4;
-const METEORS: usize = STRENGTHS + stars::LINES;
+pub(super) const STARS: usize = SKY + 4;
+pub(super) const LINES: usize = STARS + stars::STARS * 4;
+pub(super) const STRENGTHS: usize = LINES + stars::LINES * 4;
+pub(super) const METEORS: usize = STRENGTHS + stars::LINES;
 /// Where Formation's and Garden's pieces start: after their four counts.
-const COUNTS: usize = METEORS + stars::METEORS * 4;
-const FIGURES: usize = COUNTS + 4;
+pub(super) const COUNTS: usize = METEORS + stars::METEORS * 4;
+pub(super) const FIGURES: usize = COUNTS + 4;
 /// The shader's `Params`, in 4-byte words.
-const PARAMS_LEN: usize = FIGURES + figures::FIGURES * 8;
+pub(super) const PARAMS_LEN: usize = FIGURES + figures::FIGURES * 8;
 
 /// The shader's `Params` for one frame, laid out as WGSL lays out the struct.
 fn params(frame: &Frame) -> [f32; PARAMS_LEN] {
