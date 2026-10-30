@@ -10,6 +10,22 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — Atelier for the web
+
+### Added
+
+- `web/`: the design language for a browser or a Tauri webview, in the same style rather than the
+  same pixels. `atelier.css` draws the core components (buttons, segmented controls, tabs, fields,
+  switches, checkboxes, sliders, cards, lists, menus, badges, progress, the window frame, and the
+  agent transcript and composer) from CSS custom properties; `atelier.js` picks themes, draws
+  icons and wires the controls; `ambient.js` runs seven of the ambient backdrops' own WGSL shaders
+  on WebGPU, with a CSS gradient where there is none. `web/showcase.html` shows them all. See
+  [web/README.md](web/README.md), which also covers Tauri's window vibrancy.
+- `atelier::web::{stylesheet, theme_css, theme_id}`: a theme's tokens as CSS custom properties.
+  `web/atelier/generated/` is written from them, the shaders and the icons;
+  `ATELIER_BLESS_WEB=1 cargo test --lib web` writes it again, and `cargo test` fails while it
+  is out of date.
+
 ## 0.2.0 — Auris feedback, fourth round
 
 Also in 0.2.0, on top of the third round below.
