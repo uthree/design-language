@@ -120,6 +120,8 @@ check warn 'Theme::new\(Direction::(Studio|Glass|Mono), Appearance::(Light|Dark)
     "if this is a test looping over every theme, use Theme::all()."
 check warn '\bselection\b.*gpui_component|gpui_component.*\bselection\b' \
     "selected text uses theme.colors.selection."
+check warn 'colors\.highlight *= *' \
+    "Button no longer reads colors.highlight to decide on a bezel; theme.shape.bezel_controls does, and only Studio sets it. Drop the override, or set bezel_controls instead."
 
 # Plots and media.
 check error 'scatter_batches|fn [a-z_]*project[a-z_]*\(.*azimuth' \
