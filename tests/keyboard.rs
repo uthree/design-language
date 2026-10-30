@@ -458,17 +458,19 @@ mod piano {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let (log, pressed) = (self.log.clone(), self.pressed.clone());
             let entity = cx.entity();
-            WindowFrame::new().child(TitleBar::new().title("Keys")).child(
-                div().w(px(400.)).child(
-                    PianoKeyboard::octave("keys")
-                        .pressed(*self.pressed.borrow())
-                        .on_press(move |pitch: &u8, _, cx| {
-                            log.borrow_mut().push(format!("key {pitch}"));
-                            *pressed.borrow_mut() = Some(*pitch);
-                            cx.notify(entity.entity_id());
-                        }),
-                ),
-            )
+            WindowFrame::new()
+                .child(TitleBar::new().title("Keys"))
+                .child(
+                    div().w(px(400.)).child(
+                        PianoKeyboard::octave("keys")
+                            .pressed(*self.pressed.borrow())
+                            .on_press(move |pitch: &u8, _, cx| {
+                                log.borrow_mut().push(format!("key {pitch}"));
+                                *pressed.borrow_mut() = Some(*pitch);
+                                cx.notify(entity.entity_id());
+                            }),
+                    ),
+                )
         }
     }
 
