@@ -8,7 +8,8 @@
 # Each finding names the file and line and what replaces the workaround; CHANGELOG.md in the
 # Atelier repository lists the release each replacement arrived in. Errors fail the run;
 # warnings fail it only with --strict. To keep a line on purpose, end it with the comment
-# `// atelier: allow` and say why on the line above.
+# `// atelier: allow` (or put it on the next line, where rustfmt moves a comment written after
+# `fn name(`) and say why on the line above.
 
 set -u
 
@@ -18,7 +19,7 @@ for arg in "$@"; do
     case "$arg" in
         --strict) strict=1 ;;
         -h | --help)
-            sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *) dirs+=("$arg") ;;
@@ -33,13 +34,16 @@ warnings=0
 check() {
     local level=$1 pattern=$2 message=$3
     local hits
-    hits=$(grep -rnE --include='*.rs' -e "$pattern" "${dirs[@]}" 2>/dev/null |
-        grep -v 'atelier: allow' || true)
+    hits=$(grep -rnE --include='*.rs' -e "$pattern" "${dirs[@]}" 2>/dev/null || true)
     [ -z "$hits" ] && return
     while IFS= read -r hit; do
         local place=${hit%%:*}
         local rest=${hit#*:}
         local line=${rest%%:*}
+        [[ "$hit" == *'atelier: allow'* ]] && continue
+        # rustfmt moves a comment after `fn name(` onto the first parameter's line, so a marker
+        # on the line straight after the match counts as well.
+        sed -n "$((line + 1))p" "$place" | grep -q 'atelier: allow' && continue
         echo "$level: $place:$line: $message"
         if [ "$level" = error ]; then
             errors=$((errors + 1))

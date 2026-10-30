@@ -66,7 +66,7 @@ components (`nav_item`, `assistant_message`, `selectable_text`, a `*_copy_button
 area by area, re-implemented `Plot3d` projections, hand-made category colours and colour
 literals, each with what replaces it. Add it to the application's CI next to `cargo clippy` so
 code written later — by people or agents copying nearby code — cannot bring a workaround back.
-Mark a line you keep on purpose with `// atelier: allow`.
+Mark a line you keep on purpose with `// atelier: allow`; on a function signature it may sit on the line after the match, where rustfmt puts a comment written after `fn name(`.
 
 ## Testing
 
