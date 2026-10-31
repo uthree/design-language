@@ -102,6 +102,14 @@ a click, a drag or the arrow keys, Home and End move it a step; the thumb glides
 picker on a press outside it (`on_mouse_down_out`), leaving presses on the button to toggle it.
 `examples/auris_screens.rs` (`--screen compose --effort`) wires it up.
 
+Use `.show_fast(false)` when the application offers reasoning effort without a fast mode.
+The header keeps the level and model centred while leaving out the fast-mode control.
+`.note("This model has no effort levels")` adds a muted line under the slider, for a model that
+ignores the setting. `EffortButton::disabled(true)` greys the button while the effort cannot
+change; close the picker then too. The tooltips come from `Strings` (`effort`, `fast_mode_on`,
+`fast_mode_off`, `reset`). A short level name on the button ("Med") is the application's to
+pass; the picker keeps the full one.
+
 ## Entry points
 
 - `AgentToggle::new(id, open, status)` in the title bar; while the panel is hidden it shows the

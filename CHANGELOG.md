@@ -25,12 +25,61 @@ merge it shipped in.
 - Secondary buttons under Glass no longer carry a bezel and a shadow. `Button` decided by
   `colors.highlight.a > 0`, which Glass also sets; it now asks `shape.bezel_controls`, so
   `highlight` is free for other uses.
+- The web kit follows: `--at-control` is the new token, and `.at-button` secondary is flat and
+  see-through under Glass (`--at-raised-shadow: none`), lifted only under Studio.
 
 ### Workarounds you can delete
 
 | Workaround | Use instead |
 | --- | --- |
 | `colors.highlight` made transparent so Glass buttons lie flat | Nothing: only Studio bezels its buttons now |
+
+## Unreleased — from Auris Studio 0.15 and 0.16
+
+What Auris Studio built for itself between 0.15 and 0.16 that other applications need too.
+
+### Added
+
+- `PianoKeyboard::new(id, low, high)`: a run of piano keys for auditioning a sound. A key sounds
+  on the press, a drag plays each key it reaches, `.pressed(..)` lights the keys that sound, and
+  the keyboard is one tab stop (arrows step a semitone, Home/End, Enter plays again).
+  `note_name(60)` is "C4".
+- `viz::NoteRoll` with `viz::RollNote`: a clip's notes as a small piano roll, for a MIDI
+  attachment or a generated phrase. Parts take `theme.categorical` colours unless given their own.
+- `ReadoutStrip` and `Readout`: the transport's controls and captioned values ("TEMPO" over
+  "120.00 BPM") on one sunken surface, with hairlines between the readouts.
+- `IconName::Menu`, three lines, for an application menu in the title bar.
+- `EffortPicker::show_fast(false)` for reasoning effort without a fast mode,
+  `EffortPicker::note(..)` for a line under the slider ("This model has no effort levels"), and
+  `EffortButton::disabled(bool)`.
+- `Strings::effort`, `fast_mode_on`, `fast_mode_off` and `reset`: the effort picker's tooltips
+  were English only.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A note keyboard laid out by hand from `Button`s with absolute black keys | `PianoKeyboard::new(id, 60, 72).pressed(..).on_press(..)` |
+| A piano-roll preview drawn with absolute `div`s per note | `viz::NoteRoll::new(notes)` |
+| A sunken transport box with readouts bordered by hand | `ReadoutStrip::new().controls(..).readout(Readout::new(..))` |
+| `assets/icons/menu.svg` of your own | `IconName::Menu` |
+| A reasoning popover of your own, rebuilt on gpui-component's `Slider`, to drop the bolt or show "unavailable" | `EffortPicker::show_fast(false).note(..)`, `EffortButton::disabled(..)` |
+
+## Unreleased — Atelier for the web
+
+### Added
+
+- `web/`: the design language for a browser or a Tauri webview, in the same style rather than the
+  same pixels. `atelier.css` draws the core components (buttons, segmented controls, tabs, fields,
+  switches, checkboxes, sliders, cards, lists, menus, badges, progress, the window frame, and the
+  agent transcript and composer) from CSS custom properties; `atelier.js` picks themes, draws
+  icons and wires the controls; `ambient.js` runs seven of the ambient backdrops' own WGSL shaders
+  on WebGPU, with a CSS gradient where there is none. `web/showcase.html` shows them all. See
+  [web/README.md](web/README.md), which also covers Tauri's window vibrancy.
+- `atelier::web::{stylesheet, theme_css, theme_id}`: a theme's tokens as CSS custom properties.
+  `web/atelier/generated/` is written from them, the shaders and the icons;
+  `ATELIER_BLESS_WEB=1 cargo test --lib web` writes it again, and `cargo test` fails while it
+  is out of date.
 
 ## 0.2.0 — Auris feedback, fourth round
 

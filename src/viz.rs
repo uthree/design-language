@@ -1,4 +1,4 @@
-//! Plots for sound: waveforms, spectra, heat maps, vectorscopes and vibrating strings.
+//! Plots for sound: waveforms, spectra, heat maps, vectorscopes, vibrating strings and note rolls.
 //!
 //! Each plot paints into whatever box its parent gives it — wrap it in a sized `div` — and takes
 //! its data as plain numbers, so it can draw a live analyser, a captured physical-model frame or
@@ -710,6 +710,152 @@ impl RenderOnce for PeakBars {
                         )
                         .corner_radii(bar / 2.),
                     );
+                }
+            },
+        )
+        .size_full()
+    }
+}
+
+/// One note of a [`NoteRoll`]: its MIDI pitch, where it starts and how long it lasts (in any
+/// unit, beats or ticks, as long as every note uses the same), and the part it belongs to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RollNote {
+    /// MIDI pitch, 60 being middle C.
+    pub pitch: u8,
+    /// Where the note starts.
+    pub start: f32,
+    /// How long it lasts.
+    pub length: f32,
+    /// The part, track or voice: notes of one part share a categorical colour.
+    pub part: usize,
+}
+
+impl RollNote {
+    /// A note of the first part.
+    pub fn new(pitch: u8, start: f32, length: f32) -> Self {
+        Self {
+            pitch,
+            start,
+            length,
+            part: 0,
+        }
+    }
+
+    /// The part it belongs to.
+    pub fn part(mut self, part: usize) -> Self {
+        self.part = part;
+        self
+    }
+}
+
+/// A clip's notes at a glance, as a piano roll draws them: time across, pitch up, one bar per
+/// note in its part's [`Theme::categorical`] colour. It fits the pitch range to the notes, a
+/// semitone of air above and below, and the time to the last note's end, so a MIDI attachment
+/// or a generated phrase can be previewed without an editor.
+#[derive(IntoElement)]
+pub struct NoteRoll {
+    notes: Vec<RollNote>,
+    progress: Option<f32>,
+    colors: Option<Vec<Hsla>>,
+}
+
+impl NoteRoll {
+    /// A roll of `notes`.
+    pub fn new(notes: Vec<RollNote>) -> Self {
+        Self {
+            notes,
+            progress: None,
+            colors: None,
+        }
+    }
+
+    /// A playhead, from 0 to 1 of the clip.
+    pub fn progress(mut self, progress: f32) -> Self {
+        self.progress = Some(progress.clamp(0., 1.));
+        self
+    }
+
+    /// The parts' colours, in place of the categorical ones: for example the tracks' own.
+    pub fn colors(mut self, colors: Vec<Hsla>) -> Self {
+        self.colors = Some(colors);
+        self
+    }
+}
+
+impl RenderOnce for NoteRoll {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let parts = self
+            .notes
+            .iter()
+            .map(|note| note.part)
+            .max()
+            .map_or(0, |p| p + 1);
+        let colors: Vec<Hsla> = (0..parts)
+            .map(|part| {
+                self.colors
+                    .as_ref()
+                    .and_then(|colors| colors.get(part).copied())
+                    .unwrap_or_else(|| theme.categorical(part))
+            })
+            .collect();
+        let faint = theme.colors.grid_faint;
+        let playhead = theme.colors.playhead;
+        let Self {
+            notes, progress, ..
+        } = self;
+        canvas(
+            |_, _, _| {},
+            move |bounds: Bounds<Pixels>, _, window, _| {
+                let (Some(low), Some(high)) = (
+                    notes.iter().map(|note| note.pitch).min(),
+                    notes.iter().map(|note| note.pitch).max(),
+                ) else {
+                    return;
+                };
+                let (low, high) = (low.saturating_sub(1), high.saturating_add(1));
+                let rows = f32::from(high - low) + 1.;
+                let end = notes
+                    .iter()
+                    .map(|note| note.start + note.length)
+                    .fold(0., f32::max)
+                    .max(f32::EPSILON);
+                let row = bounds.size.height / rows;
+                // A faint line at every C, the roll's octave marks.
+                for pitch in low..=high {
+                    if pitch % 12 == 0 {
+                        let y = bounds.top() + row * f32::from(high - pitch) + row;
+                        window.paint_quad(fill(
+                            Bounds::new(point(bounds.left(), y), size(bounds.size.width, px(1.))),
+                            faint,
+                        ));
+                    }
+                }
+                let radius = (row * 0.3).min(px(2.));
+                for note in &notes {
+                    let x = bounds.left() + bounds.size.width * (note.start / end);
+                    let width = (bounds.size.width * (note.length / end)).max(px(2.));
+                    let y = bounds.top() + row * f32::from(high - note.pitch);
+                    // A hair of space between neighbours keeps repeated notes apart.
+                    let gap = if width > px(4.) { px(1.) } else { px(0.) };
+                    window.paint_quad(
+                        fill(
+                            Bounds::new(
+                                point(x, y + row * 0.1),
+                                size(width - gap, (row * 0.8).max(px(1.))),
+                            ),
+                            colors[note.part],
+                        )
+                        .corner_radii(radius),
+                    );
+                }
+                if let Some(progress) = progress {
+                    let x = bounds.left() + bounds.size.width * progress;
+                    window.paint_quad(fill(
+                        Bounds::new(point(x, bounds.top()), size(px(1.), bounds.size.height)),
+                        playhead,
+                    ));
                 }
             },
         )
