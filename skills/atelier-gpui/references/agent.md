@@ -90,7 +90,6 @@ the level (and the bolt, latched, while fast mode is on), and opens an
 EffortPicker::new("effort", ["Low", "Medium", "High", "Max"], effort)
     .default_level(1)            // reset returns here; disabled while already there
     .fast(fast)                  // the bolt, top left, latches in the accent
-    .model("GPT-6.1 Sol")        // under the level; .on_model opens the model menu
     .on_select(cx.listener(|this, level: &usize, _, cx| { this.effort = *level; cx.notify() }))
     .on_fast(cx.listener(|this, _, _, cx| { this.fast = !this.fast; cx.notify() }))
     .on_reset(cx.listener(|this, _, _, cx| { this.effort = 1; this.fast = false; cx.notify() }))
@@ -100,10 +99,19 @@ The level reads in the accent at the top. The slider is a wide stepped track: th
 sparkles (still when `theme.motion.enabled` is off), a dot marks each step above the thumb, and
 a click, a drag or the arrow keys, Home and End move it a step; the thumb glides there. Close the
 picker on a press outside it (`on_mouse_down_out`), leaving presses on the button to toggle it.
+The top level is a small treat: as the thumb glides onto it the fill runs from the accent into
+`colors.agent_gradient`, the sparkles twinkle faster, the thumb glows in the agent's colour, the
+level reads in `colors.agent`, and on landing a few sparks fly off the thumb (not when the
+picker opens already there, and none with motion off). There is nothing to wire up.
 `examples/auris_screens.rs` (`--screen compose --effort`) wires it up.
 
+The model is not in the card. Switching models is its own choice, made with the composer's
+model button (`Composer::model`, `.model_logo`, `.on_model`) beside the effort button, as in
+Codex; the effort card only says how hard and how fast. `EffortPicker::model`, `model_icon` and
+`on_model` are deprecated.
+
 Use `.show_fast(false)` when the application offers reasoning effort without a fast mode.
-The header keeps the level and model centred while leaving out the fast-mode control.
+The header keeps the level centred while leaving out the fast-mode control.
 `.note("This model has no effort levels")` adds a muted line under the slider, for a model that
 ignores the setting. `EffortButton::disabled(true)` greys the button while the effort cannot
 change; close the picker then too. The tooltips come from `Strings` (`effort`, `fast_mode_on`,

@@ -1,5 +1,8 @@
 # Components
 
+Which of these a concept gets (a switch or a checkbox, segments or a menu, a slider or a
+knob) is decided in [choosing.md](choosing.md); this page is how to use each one.
+
 All are builders implementing `RenderOnce`; pass them to `.child(...)`. Interactive ones take an
 id and optional `on_click` / `on_select` / `on_toggle` callbacks; they draw a value but do not
 own it — the view keeps the state and calls `cx.notify()`. With `cx.listener` a select handler

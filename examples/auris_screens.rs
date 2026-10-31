@@ -459,7 +459,6 @@ impl AurisScreens {
             let picker = EffortPicker::new("effort-picker", LEVELS, self.effort)
                 .default_level(1)
                 .fast(self.fast)
-                .model("GPT-6-Sol (Codex)")
                 .on_select(cx.listener(|this, index: &usize, _, cx| {
                     this.effort = *index;
                     cx.notify();

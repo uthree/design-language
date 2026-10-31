@@ -283,3 +283,22 @@ outline sits on the "クラウド" segment after tabbing to it. Captured on Linu
 ![Preferences, voice synthesis, keyboard focus on a segment](images/preferences.png)
 
 ![Preferences, voice synthesis, with a field error](images/preferences-voice.png)
+
+## control_legend — which control for which concept
+
+```bash
+cargo run --example control_legend -- --page toggle|choose|amount|report|text|act|state|missing
+```
+
+A legend of what a person handles and the control that handles it, in eight pages: turning
+something on or off, choosing one of several, setting an amount, reporting one, entering text,
+doing something, showing a state, and the concepts Atelier has no component for yet with their
+stand-ins. Each row names the concept and everyday examples, draws the control live, and says
+what to use and which neighbour to avoid. `--menu` opens the model menu on the "choose" page.
+The same table for agents is
+[skills/atelier-gpui/references/choosing.md](../skills/atelier-gpui/references/choosing.md).
+Captured on Linux under Weston.
+
+![Control legend, on/off](images/control-legend.png)
+
+![Control legend, choosing one of several, Studio light, with the menu open](images/control-legend-choose.png)
