@@ -24,7 +24,7 @@ use atelier::{
 };
 use common::Themed;
 use gpui::{
-    AnyElement, Context, Corner, IntoElement, MouseDownEvent, ParentElement, Render, Styled,
+    Anchor, AnyElement, Context, IntoElement, MouseDownEvent, ParentElement, Render, Styled,
     Window, anchored, deferred, div, point, prelude::*, px,
 };
 
@@ -484,7 +484,7 @@ impl AurisScreens {
             deferred(
                 anchored()
                     .position(at)
-                    .anchor(Corner::BottomLeft)
+                    .anchor(Anchor::BottomLeft)
                     .snap_to_window_with_margin(px(8.))
                     .child(div().occlude().child(picker).on_mouse_down_out(cx.listener(
                         move |this, event: &MouseDownEvent, _, cx| {

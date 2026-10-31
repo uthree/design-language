@@ -107,9 +107,9 @@ check warn 'motion\.enabled *= *false' \
 
 # Keyboard.
 check error 'Claim[A-Za-z]*Activation' \
-    "Atelier controls claim Enter and Space themselves (key context AtelierControl). Drop the claiming action; to keep a shortcut off focused controls entirely, bind it with Some(\"!AtelierControl\")."
-check warn 'KeyBinding::new\("(space|enter)",[^)]*None\)' \
-    "a global single-key shortcut. It already yields to focused Atelier controls; scope it with Some(\"!AtelierControl\") if it must also stay out of your own focusable views."
+    "drop the claiming action and bind the shortcut with Some(\"!AtelierControl\"), which keeps it off focused Atelier controls."
+check error 'KeyBinding::new\("(space|enter)",[^)]*None\)' \
+    "a global single-key shortcut takes the key from a focused Atelier control, which is then not pressed. Scope it with Some(\"!AtelierControl\")."
 
 # Theme.
 check error 'has_global::<atelier::Theme>' \

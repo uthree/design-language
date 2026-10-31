@@ -432,7 +432,7 @@ fn paint(
         }
     };
     window
-        .paint_image(bounds, Default::default(), image, 0, false)
+        .paint_image(bounds, bounds, Default::default(), image, 0, false)
         .ok();
 }
 

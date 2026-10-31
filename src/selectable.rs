@@ -206,7 +206,7 @@ impl RenderOnce for SelectableText {
                 let state = state.clone();
                 move |event: &MouseDownEvent, window, cx| {
                     let focus = state.read(cx).focus.clone();
-                    window.focus(&focus);
+                    window.focus(&focus, cx);
                     state.update(cx, |selection, cx| {
                         let Some(index) = selection.index_at(event.position) else {
                             return;

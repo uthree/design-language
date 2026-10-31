@@ -141,7 +141,9 @@ impl Text {
 
     /// Paint with the box's top-left at `origin`.
     fn paint(&self, origin: Point<Pixels>, window: &mut Window, cx: &mut App) {
-        self.line.paint(origin, self.height, window, cx).ok();
+        self.line
+            .paint(origin, self.height, gpui::TextAlign::Left, None, window, cx)
+            .ok();
     }
 
     /// Paint centred on `at`.
@@ -1705,7 +1707,7 @@ fn paint_on_gpu(
         return false;
     };
     window
-        .paint_image(bounds, Default::default(), image, 0, false)
+        .paint_image(bounds, bounds, Default::default(), image, 0, false)
         .is_ok()
 }
 
@@ -1927,7 +1929,7 @@ impl RenderOnce for Plot3d {
         // Where the view was last drawn and what a press is doing, for the pointer.
         let pointer = interactive.then(|| {
             window.use_keyed_state(
-                gpui::ElementId::NamedChild(Box::new(id.clone()), "pointer".into()),
+                gpui::ElementId::NamedChild(std::sync::Arc::new(id.clone()), "pointer".into()),
                 cx,
                 |_, _| Pointer::default(),
             )

@@ -14,14 +14,15 @@
 //! A component given an id also uses it as its `debug_selector`, so a test can find it with
 //! `VisualTestContext::debug_bounds` (enable gpui's `test-support` feature in the test build).
 //!
-//! Every tab stop carries the key context [`CONTROL_CONTEXT`] (`AtelierControl`). While one
-//! holds focus, Atelier takes Enter and Space before any key binding sees them, so a
-//! single-key shortcut such as Space for play never fires there: the key presses the control
-//! (gpui presses it on the key's release). A track — [`crate::AudioPlayer`]'s scrubber and
-//! volume — also carries [`TRACK_CONTEXT`] and takes the arrows, Home and End the same way.
-//! An application can also keep a binding off controls outright with
-//! `Some("!AtelierControl")`. Arrow keys show the ring only while a control already holds
-//! focus, so arrows that move a playhead or a note leave no ring behind.
+//! Every tab stop carries the key context [`CONTROL_CONTEXT`] (`AtelierControl`). Enter and
+//! Space press the focused control on the key's release, which gpui does only when the press
+//! reached the control as well. A binding that matches first takes the press, so a single-key
+//! shortcut such as Space for play has to keep off controls with `Some("!AtelierControl")`.
+//! Atelier cannot take the key first on its own: an interceptor that stops the press stops it
+//! for the control too. A track — [`crate::AudioPlayer`]'s scrubber and volume — also carries
+//! [`TRACK_CONTEXT`] and takes the arrows, Home and End before any binding sees them, since a
+//! step is an action rather than a press. Arrow keys show the ring only while a control
+//! already holds focus, so arrows that move a playhead or a note leave no ring behind.
 //!
 use gpui::{
     App, BoxShadow, Div, ElementId, FocusHandle, Global, InteractiveElement, KeyBinding,
@@ -49,9 +50,9 @@ actions!(
     ]
 );
 
-/// The key context of every Atelier tab stop. While the focused element carries it, Enter and
-/// Space go to the control and no binding sees them. Scope a binding away from controls
-/// altogether with `KeyBinding::new("x", Mute, Some("!AtelierControl"))`.
+/// The key context of every Atelier tab stop. Enter and Space press the focused control unless
+/// a binding takes them first, so scope a single-key binding away from controls with
+/// `KeyBinding::new("space", Play, Some("!AtelierControl"))`.
 pub const CONTROL_CONTEXT: &str = "AtelierControl";
 
 /// The key context of a focused track that arrow keys move, inside [`CONTROL_CONTEXT`].
@@ -92,10 +93,9 @@ pub(crate) fn init(cx: &mut App) {
         if keystroke.modifiers.modified() {
             return;
         }
-        if matches!(key, "enter" | "space") && on(CONTROL_CONTEXT) {
-            // Left for the control, which gpui presses on the key's release.
-            cx.stop_propagation();
-        } else if on(TRACK_CONTEXT) {
+        // Enter and Space are left alone: stopping the press here would also keep it from the
+        // control, and gpui presses a control on the release only after seeing the press.
+        if on(TRACK_CONTEXT) {
             let step: Option<Box<dyn gpui::Action>> = match key {
                 "left" | "down" => Some(Box::new(StepBackward)),
                 "right" | "up" => Some(Box::new(StepForward)),
@@ -139,8 +139,8 @@ pub fn set_focus_visible(visible: bool, cx: &mut App) {
 
 /// Handle [`FocusNext`] and [`FocusPrevious`] on `root`, the element at the top of a window.
 pub fn tab_navigation<E: InteractiveElement>(root: E) -> E {
-    root.on_action(|_: &FocusNext, window: &mut Window, _: &mut App| window.focus_next())
-        .on_action(|_: &FocusPrevious, window: &mut Window, _: &mut App| window.focus_prev())
+    root.on_action(|_: &FocusNext, window: &mut Window, cx: &mut App| window.focus_next(cx))
+        .on_action(|_: &FocusPrevious, window: &mut Window, cx: &mut App| window.focus_prev(cx))
 }
 
 impl Theme {
@@ -155,6 +155,7 @@ impl Theme {
             offset: point(px(0.), px(0.)),
             blur_radius: blur,
             spread_radius: spread,
+            inset: false,
         };
         vec![
             ring(self.colors.focus_ring.opacity(0.4), px(3.), px(2.)),
@@ -187,7 +188,7 @@ pub(crate) fn focusable(
         return element;
     }
     let handle = window.with_global_id(
-        ElementId::NamedChild(Box::new(id.clone()), "focus".into()),
+        ElementId::NamedChild(std::sync::Arc::new(id.clone()), "focus".into()),
         |global_id, window| {
             window.with_element_state(global_id, |handle: Option<FocusHandle>, _| {
                 let handle =

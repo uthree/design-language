@@ -6,9 +6,10 @@ edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.95"
 
-# Pinned to the release Auris Studio builds against, so both can share one gpui in a workspace.
+# Pinned to the snapshot Auris Studio builds against, so both can share one gpui in a workspace.
+# gpui-pre is the Zed snapshot gpui-component's author publishes; the crate is still `gpui`.
 [dependencies]
-gpui = "=0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.10" }
 unicode-segmentation = "1.10"
 # The welcome-screen backdrops and the 3-D plots hand gpui their frames as images, in gpui's own
 # image type.
@@ -30,11 +31,12 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "windows")'.dependencies]
 raw-window-handle = "0.6"
 
+# The gallery examples open real windows, which gpui-pre does through its platform crate.
 # `runtime_shaders` compiles the Metal shaders at start-up, so the gallery builds on a Mac with
-# only the Command Line Tools installed. Feature unification applies it to the library as well
-# whenever the examples are built.
+# only the Command Line Tools installed; `wayland` and `x11` give Linux a windowing backend.
 [dev-dependencies]
-gpui = { version = "=0.2.2", features = ["runtime_shaders", "test-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.10", features = ["test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["runtime_shaders", "wayland", "x11"] }
 # Checks the ambient backdrops' shaders without a GPU; the naga wgpu 25 uses.
 naga = { version = "25", features = ["wgsl-in"] }
 

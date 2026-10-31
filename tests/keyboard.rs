@@ -83,7 +83,7 @@ impl Render for Screen {
 }
 
 /// Press and release each key in turn: gpui presses a focused control on the key's release.
-fn press(cx: &mut VisualTestContext, keys: &str) {
+fn press(cx: &mut VisualTestContext, keys: &'static str) {
     for key in keys.split(' ') {
         cx.simulate_keystrokes(key);
         cx.simulate_event(KeyUpEvent {
@@ -205,8 +205,11 @@ mod shortcuts {
                         move |to: &f32, _, _| seek.borrow_mut().push(format!("seek {to:.2}")),
                     ))
                     .child(SelectableText::new("quote", "let a = <b> **c**;"));
+            // A predicate matches nothing in a window with no key context at all, so the
+            // transport names one, as an application's root does.
             div()
                 .size_full()
+                .key_context("Transport")
                 .on_action(move |_: &TogglePlay, _, _| play.borrow_mut().push("play".into()))
                 .on_action(move |_: &MovePlayhead, _, _| {
                     playhead.borrow_mut().push("playhead".into())
@@ -221,7 +224,8 @@ mod shortcuts {
             // A second call must not bind anything twice.
             atelier::init(cx, Theme::default());
             cx.bind_keys([
-                KeyBinding::new("space", TogglePlay, None),
+                // A single-key shortcut keeps off controls, which own Enter and Space.
+                KeyBinding::new("space", TogglePlay, Some("!AtelierControl")),
                 KeyBinding::new("right", MovePlayhead, None),
             ]);
         });

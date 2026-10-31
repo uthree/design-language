@@ -326,7 +326,7 @@ impl StepSlider {
 
         // The thumb glides to a new step; the glide is kept per slider, not per frame.
         let glide = window.with_global_id(
-            ElementId::NamedChild(Box::new(self.id.clone()), "glide".into()),
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "glide".into()),
             |global_id, window| {
                 window.with_element_state(global_id, |glide: Option<Glide>, _| {
                     let now = Instant::now();

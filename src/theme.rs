@@ -990,6 +990,7 @@ fn elevation(direction: Direction, appearance: Appearance) -> Elevation {
         offset: point(px(0.), px(y)),
         blur_radius: px(blur),
         spread_radius: px(0.),
+        inset: false,
     };
     Elevation {
         low: vec![shadow(1., 2., 0.6)],

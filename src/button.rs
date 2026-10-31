@@ -447,7 +447,7 @@ impl CopyButton {
 impl RenderOnce for CopyButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "copied".into()),
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "copied".into()),
             cx,
             |_, _| Copied::default(),
         );
@@ -485,15 +485,13 @@ impl RenderOnce for CopyButton {
                 let state = state.clone();
                 cx.spawn(async move |cx| {
                     cx.background_executor().timer(COPIED_FOR).await;
-                    state
-                        .update(cx, |copied, cx| {
-                            // A later press keeps it showing for its own full moment.
-                            if copied.press == press {
-                                copied.shown = false;
-                                cx.notify();
-                            }
-                        })
-                        .ok();
+                    state.update(cx, |copied, cx| {
+                        // A later press keeps it showing for its own full moment.
+                        if copied.press == press {
+                            copied.shown = false;
+                            cx.notify();
+                        }
+                    });
                 })
                 .detach();
             })

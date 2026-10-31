@@ -24,8 +24,8 @@ use atelier::{
 use common::Themed;
 use gpui::{
     Bounds, Context, Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, PathBuilder, Pixels, Point, Render, ScrollWheelEvent, SharedString, Styled,
-    Task, Window, canvas, div, fill, point, prelude::*, px, relative, size,
+    ParentElement, PathBuilder, Pixels, Point, Render, ScrollEvent, SharedString, Styled, Task,
+    Window, canvas, div, fill, point, prelude::*, px, relative, size,
 };
 
 /// How long one simulated unit of work takes.
@@ -735,7 +735,7 @@ impl NodeEditor {
         cx.notify();
     }
 
-    fn canvas_scroll(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
+    fn canvas_scroll(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
         self.pan += event.delta.pixel_delta(px(20.));
         cx.notify();
     }
@@ -1404,7 +1404,7 @@ impl NodeEditor {
                 MouseButton::Middle,
                 cx.listener(|this, _, _, cx| this.canvas_mouse_up(cx)),
             )
-            .on_scroll_wheel(cx.listener(|this, event, _, cx| this.canvas_scroll(event, cx)))
+            .on_scroll(cx.listener(|this, event, _, cx| this.canvas_scroll(event, cx)))
             .child(div().absolute().inset_0().child(self.wires(cx)))
             .children(nodes)
             .child(self.legend(cx))
