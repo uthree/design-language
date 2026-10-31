@@ -522,3 +522,116 @@ mod piano {
         assert_eq!(*log.borrow(), ["key 60", "key 61", "key 61", "key 72"]);
     }
 }
+
+mod handed_focus {
+    use super::*;
+    use atelier::agent::{EffortButton, EffortPicker};
+    use atelier::{Readout, ReadoutStrip};
+    use gpui::FocusHandle;
+
+    /// An effort button whose focus the application holds, and the picker it opens.
+    struct Effort {
+        log: Log,
+        button: FocusHandle,
+        open: bool,
+        level: usize,
+    }
+
+    impl Render for Effort {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let log = self.log.clone();
+            let picker = self.open.then(|| {
+                div()
+                    .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "escape" {
+                            this.open = false;
+                            window.focus(&this.button);
+                            cx.notify();
+                        }
+                    }))
+                    .child(
+                        EffortPicker::new("picker", ["Low", "Medium", "High"], self.level)
+                            .autofocus(true)
+                            .on_select(cx.listener(move |this, level: &usize, _, cx| {
+                                log.borrow_mut().push(format!("level {level}"));
+                                this.level = *level;
+                                cx.notify();
+                            })),
+                    )
+            });
+            WindowFrame::new()
+                .child(TitleBar::new().title("Effort"))
+                .child(
+                    ReadoutStrip::new()
+                        .id("strip")
+                        .readout(Readout::new("tempo", "Tempo", "120")),
+                )
+                .child(
+                    EffortButton::new("effort", "Medium")
+                        .track_focus(&self.button)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.open = !this.open;
+                            cx.notify();
+                        })),
+                )
+                .children(picker)
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (Log, gpui::Entity<Effort>, &mut VisualTestContext) {
+        cx.update(|cx| {
+            atelier::init(cx, Theme::default());
+            atelier::motion::reduce_motion(cx);
+        });
+        let log = Log::default();
+        let (view, window) = cx.add_window_view({
+            let log = log.clone();
+            |_, cx| Effort {
+                log,
+                button: cx.focus_handle(),
+                open: false,
+                level: 1,
+            }
+        });
+        window.run_until_parked();
+        (log, view, window)
+    }
+
+    #[gpui::test]
+    fn the_application_can_focus_a_button_it_handed_a_handle(cx: &mut TestAppContext) {
+        let (_, view, cx) = open(cx);
+        let handle = view.read_with(cx, |view, _| view.button.clone());
+        cx.update(|window, _| window.focus(&handle));
+        cx.run_until_parked();
+        assert!(cx.update(|window, _| handle.is_focused(window)));
+        // Enter presses the button through the handed handle, and it stays a tab stop.
+        press(cx, "enter");
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |view, _| view.open));
+    }
+
+    #[gpui::test]
+    fn an_autofocused_picker_takes_the_arrows_at_once_and_escape_goes_back(
+        cx: &mut TestAppContext,
+    ) {
+        let (log, view, cx) = open(cx);
+        let button = cx.debug_bounds("effort").unwrap();
+        cx.simulate_click(button.center(), Modifiers::default());
+        cx.run_until_parked();
+        press(cx, "right");
+        cx.run_until_parked();
+        press(cx, "home");
+        assert_eq!(*log.borrow(), ["level 2", "level 0"]);
+        press(cx, "escape");
+        cx.run_until_parked();
+        let handle = view.read_with(cx, |view, _| view.button.clone());
+        assert!(!view.read_with(cx, |view, _| view.open));
+        assert!(cx.update(|window, _| handle.is_focused(window)));
+    }
+
+    #[gpui::test]
+    fn a_readout_strip_is_found_by_id(cx: &mut TestAppContext) {
+        let (_, _, cx) = open(cx);
+        assert!(cx.debug_bounds("strip").is_some());
+    }
+}

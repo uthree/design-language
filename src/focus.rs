@@ -182,20 +182,29 @@ pub(crate) fn focusable(
     window: &mut Window,
     cx: &App,
 ) -> Stateful<Div> {
+    focusable_with(element, id, disabled, radius, None, window, cx)
+}
+
+/// [`focusable`], tracking `handle` when the application passed one, so it can move focus there
+/// itself, for example back to the button that opened a popover once Escape closes it. The
+/// handle becomes a tab stop and keeps the tab index it was given.
+pub(crate) fn focusable_with(
+    element: Stateful<Div>,
+    id: &ElementId,
+    disabled: bool,
+    radius: Pixels,
+    handle: Option<&FocusHandle>,
+    window: &mut Window,
+    cx: &App,
+) -> Stateful<Div> {
     let element = selector(element, id);
     if disabled {
         return element;
     }
-    let handle = window.with_global_id(
-        ElementId::NamedChild(Box::new(id.clone()), "focus".into()),
-        |global_id, window| {
-            window.with_element_state(global_id, |handle: Option<FocusHandle>, _| {
-                let handle =
-                    handle.unwrap_or_else(|| cx.focus_handle().tab_index(0).tab_stop(true));
-                (handle.clone(), handle)
-            })
-        },
-    );
+    let handle = match handle {
+        Some(handle) => handle.clone().tab_stop(true),
+        None => own_handle(id, window, cx),
+    };
     let ring = handle.is_focused(window) && focus_visible(cx);
     let element = element
         .track_focus(&handle)
@@ -215,6 +224,20 @@ pub(crate) fn focusable(
             .rounded(radius + outset)
             .border(px(RING_WIDTH))
             .border_color(cx.theme().colors.focus_ring),
+    )
+}
+
+/// The focus handle a component with `id` keeps for itself between frames.
+pub(crate) fn own_handle(id: &ElementId, window: &mut Window, cx: &App) -> FocusHandle {
+    window.with_global_id(
+        ElementId::NamedChild(Box::new(id.clone()), "focus".into()),
+        |global_id, window| {
+            window.with_element_state(global_id, |handle: Option<FocusHandle>, _| {
+                let handle =
+                    handle.unwrap_or_else(|| cx.focus_handle().tab_index(0).tab_stop(true));
+                (handle.clone(), handle)
+            })
+        },
     )
 }
 

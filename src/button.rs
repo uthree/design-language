@@ -3,12 +3,12 @@
 use std::time::Duration;
 
 use gpui::{
-    AnyView, App, ClickEvent, ClipboardItem, ElementId, Hsla, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    linear_color_stop, linear_gradient, px,
+    AnyView, App, ClickEvent, ClipboardItem, ElementId, FocusHandle, Hsla, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, linear_color_stop, linear_gradient, px,
 };
 
-use crate::focus::focusable;
+use crate::focus::focusable_with;
 use crate::icon::{Icon, IconName, IconSource};
 use crate::overlay::Tooltip;
 use crate::strings::ActiveStrings;
@@ -79,6 +79,7 @@ pub struct Button {
     square: bool,
     radius: Option<gpui::Pixels>,
     tooltip: Option<SharedString>,
+    focus: Option<FocusHandle>,
     on_click: Option<ClickHandler>,
 }
 
@@ -116,8 +117,17 @@ impl Button {
             square: false,
             radius: None,
             tooltip: None,
+            focus: None,
             on_click: None,
         }
+    }
+
+    /// Track keyboard focus with `handle` instead of a handle of the button's own, so the
+    /// application can move focus to it: for example back to the button that opened a popover
+    /// once Escape closes it, with `window.focus(&handle)`. The button makes it a tab stop.
+    pub fn track_focus(mut self, handle: &FocusHandle) -> Self {
+        self.focus = Some(handle.clone());
+        self
     }
 
     /// What the button means.
@@ -281,11 +291,12 @@ impl RenderOnce for Button {
         let paint = paint(theme, self.variant, self.selected, self.tint);
         let raised = matches!(self.variant, ButtonVariant::Secondary) && !self.selected;
 
-        let mut button = focusable(
+        let mut button = focusable_with(
             div().id(id.clone()),
             &id,
             self.disabled,
             self.radius.unwrap_or(theme.control_radius(height)),
+            self.focus.as_ref(),
             window,
             cx,
         )

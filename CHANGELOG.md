@@ -10,6 +10,30 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — focus handed in (Auris feedback round 6)
+
+### Added
+
+- `Button::track_focus(&FocusHandle)` and `EffortButton::track_focus(..)`: the button tracks
+  the application's handle instead of one of its own, so `window.focus(&handle)` can move focus
+  there, for example back to the effort button once Escape closes its picker. The handle
+  becomes a tab stop.
+- `EffortPicker::autofocus(true)`: the slider takes focus once each time the picker appears,
+  so the arrows, Home and End change the level at once and the focus ring sits on the slider.
+  `EffortPicker::slider_focus(&FocusHandle)` hands the slider a handle of the application's.
+- `ReadoutStrip::id(..)`: its test selector, like every other component's id.
+- `check-adoption.sh` reports a `debug_selector` wrapped around a `ReadoutStrip`.
+- Web kit: nothing to port. Its buttons are DOM buttons that `element.focus()` reaches, and the
+  effort picker and `ReadoutStrip` are not in the web kit yet.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A `menu_picker` of your own as the effort button, so focus can return to it on Escape | `EffortButton::new(..).track_focus(&handle)` and `window.focus(&handle)` |
+| An outer frame around `EffortPicker` that holds focus and handles the arrows, Home and End | `EffortPicker::autofocus(true)` |
+| `div().debug_selector("transport-primary").child(ReadoutStrip::new()..)` | `ReadoutStrip::new().id("transport-primary")` |
+
 ## Unreleased — flat buttons under Glass
 
 ### Added

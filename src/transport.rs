@@ -132,6 +132,7 @@ impl RenderOnce for Readout {
 /// in its own frame read as parts bolted together; on one surface they read as one instrument.
 #[derive(IntoElement)]
 pub struct ReadoutStrip {
+    id: Option<ElementId>,
     controls: Vec<AnyElement>,
     readouts: Vec<AnyElement>,
     height: Option<Pixels>,
@@ -141,10 +142,18 @@ impl ReadoutStrip {
     /// An empty strip.
     pub fn new() -> Self {
         Self {
+            id: None,
             controls: Vec::new(),
             readouts: Vec::new(),
             height: None,
         }
+    }
+
+    /// The strip's test selector, so a test can find it with `VisualTestContext::debug_bounds`
+    /// as it finds any other component by its id.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Controls at the leading end, usually small ghost buttons: play, stop, record, loop.
@@ -182,7 +191,11 @@ impl RenderOnce for ReadoutStrip {
             .unwrap_or(theme.density.control_lg + theme.spacing.sm);
         let separator = colors.separator;
         let has_controls = !self.controls.is_empty();
-        div()
+        let strip = match &self.id {
+            Some(id) => crate::focus::selector(div(), id),
+            None => div(),
+        };
+        strip
             .flex()
             .flex_none()
             .items_center()

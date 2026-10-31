@@ -66,7 +66,7 @@ wrapped=$(find "${dirs[@]}" -name '*.rs' -print0 2>/dev/null | xargs -0 -r awk '
         $0 = substr($0, index($0, ".debug_selector("))
     }
     pending > 0 {
-        if (match($0, /(Button|ListItem|Switch|Checkbox|MenuItem|SegmentedControl|TextField|Slider)::[a-z_]+\(/)) {
+        if (match($0, /(Button|ListItem|Switch|Checkbox|MenuItem|SegmentedControl|TextField|Slider|ReadoutStrip)::[a-z_]+\(/)) {
             name = substr($0, RSTART, RLENGTH)
             sub(/::.*/, "", name)
             print place ": " name
