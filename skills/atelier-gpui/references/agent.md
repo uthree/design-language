@@ -93,7 +93,13 @@ EffortPicker::new("effort", ["Low", "Medium", "High", "Max"], effort)
     .on_select(cx.listener(|this, level: &usize, _, cx| { this.effort = *level; cx.notify() }))
     .on_fast(cx.listener(|this, _, _, cx| { this.fast = !this.fast; cx.notify() }))
     .on_reset(cx.listener(|this, _, _, cx| { this.effort = 1; this.fast = false; cx.notify() }))
+    .autofocus(true)             // the arrows change the level as soon as it opens
 ```
+
+Give the `EffortButton` a focus handle of the application's (`.track_focus(&handle)`) and close
+the picker on Escape with `window.focus(&handle)`, so focus returns to the button the way a
+menu's does. `EffortPicker::slider_focus(&handle)` hands the slider one too, for focusing it at
+some other moment.
 
 The level reads in the accent at the top. The slider is a wide stepped track: the filled part
 sparkles (still when `theme.motion.enabled` is off), a dot marks each step above the thumb, and

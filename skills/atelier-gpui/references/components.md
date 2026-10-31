@@ -50,7 +50,11 @@ handler is not a stop. Nothing to wire up beyond:
   `VisualTestContext::debug_bounds("export")` (enable gpui's `test-support` in the test build).
   Do not wrap components in `div().debug_selector(..)`. `tests/keyboard.rs` shows how to drive
   Tab, Enter and Space in a test (gpui presses a control on the key's release, so simulate the
-  `KeyUpEvent` too).
+  `KeyUpEvent` too). `ReadoutStrip`, which is no control, takes `.id(..)` for the same reason.
+- A component keeps its own focus handle. When the application must move focus to it, hand it
+  one: `Button::track_focus(&handle)` (and `EffortButton::track_focus`), then
+  `window.focus(&handle)`, for example to give focus back to the button that opened a popover
+  once Escape closes it. The handle becomes a tab stop and keeps its tab index.
 
 ## Text
 

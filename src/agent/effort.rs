@@ -6,15 +6,15 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ClickEvent, ElementId, Hsla, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels,
-    RenderOnce, SharedString, Styled, Window, canvas, div, fill, linear_color_stop,
-    linear_gradient, point, px, relative, size,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, ElementId, FocusHandle, Hsla,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    ParentElement, Pixels, RenderOnce, SharedString, Styled, Window, canvas, div, fill,
+    linear_color_stop, linear_gradient, point, px, relative, size,
 };
 
 use crate::button::{Button, ControlSize};
 use crate::controls::on_fill;
-use crate::focus::focusable;
+use crate::focus::{focusable_with, own_handle};
 use crate::icon::{IconName, IconSource};
 use crate::motion::{ease_out, lerp, looping};
 use crate::strings::ActiveStrings;
@@ -48,6 +48,8 @@ pub struct EffortPicker {
     model_icon: Option<IconSource>,
     note: Option<SharedString>,
     width: Pixels,
+    autofocus: bool,
+    slider_focus: Option<FocusHandle>,
     on_select: Option<SelectHandler>,
     on_fast: Option<ClickHandler>,
     on_model: Option<ClickHandler>,
@@ -73,6 +75,8 @@ impl EffortPicker {
             model_icon: None,
             note: None,
             width: px(320.),
+            autofocus: false,
+            slider_focus: None,
             on_select: None,
             on_fast: None,
             on_model: None,
@@ -127,6 +131,23 @@ impl EffortPicker {
     /// The card's width. The slider takes all of it.
     pub fn width(mut self, width: Pixels) -> Self {
         self.width = width;
+        self
+    }
+
+    /// Move keyboard focus to the slider when the picker opens, so the arrow keys, Home and End
+    /// change the level straight away. Focus moves once each time the picker appears; give
+    /// it back to the [`EffortButton`] that opened it (see [`EffortButton::track_focus`]) when
+    /// Escape closes it.
+    pub fn autofocus(mut self, autofocus: bool) -> Self {
+        self.autofocus = autofocus;
+        self
+    }
+
+    /// Track the slider's keyboard focus with `handle`, so the application can move focus to
+    /// it whenever it likes. [`EffortPicker::autofocus`] covers the usual case of focusing it
+    /// on open.
+    pub fn slider_focus(mut self, handle: &FocusHandle) -> Self {
+        self.slider_focus = Some(handle.clone());
         self
     }
 
@@ -253,6 +274,8 @@ impl RenderOnce for EffortPicker {
             id: (id.clone(), "steps").into(),
             steps: self.levels.len(),
             selected: self.selected,
+            autofocus: self.autofocus,
+            focus: self.slider_focus,
             on_select: self.on_select,
         }
         .render(window, cx);
@@ -297,6 +320,8 @@ struct StepSlider {
     id: ElementId,
     steps: usize,
     selected: usize,
+    autofocus: bool,
+    focus: Option<FocusHandle>,
     on_select: Option<SelectHandler>,
 }
 
@@ -574,11 +599,32 @@ impl StepSlider {
         };
         let nearest = Rc::new(nearest);
         let selected = self.selected;
-        let mut slider = focusable(
+        let disabled = self.on_select.is_none();
+        let handle = self
+            .focus
+            .clone()
+            .unwrap_or_else(|| own_handle(&self.id, window, cx));
+        if self.autofocus && !disabled {
+            // Once per appearance: the flag lives in element state, which gpui drops in the
+            // first frame the picker is not drawn, so the next opening focuses again.
+            let first = window.with_global_id(
+                ElementId::NamedChild(Box::new(self.id.clone()), "autofocus".into()),
+                |global_id, window| {
+                    window.with_element_state(global_id, |done: Option<bool>, _| {
+                        (done.is_none(), true)
+                    })
+                },
+            );
+            if first {
+                window.focus(&handle);
+            }
+        }
+        let mut slider = focusable_with(
             div().id(self.id.clone()),
             &self.id,
-            self.on_select.is_none(),
+            disabled,
             thumb / 2.,
+            Some(&handle),
             window,
             cx,
         )
@@ -645,6 +691,7 @@ pub struct EffortButton {
     fast: bool,
     open: bool,
     disabled: bool,
+    focus: Option<FocusHandle>,
     on_click: Option<ClickHandler>,
 }
 
@@ -657,6 +704,7 @@ impl EffortButton {
             fast: false,
             open: false,
             disabled: false,
+            focus: None,
             on_click: None,
         }
     }
@@ -677,6 +725,13 @@ impl EffortButton {
     /// change. Close the picker too while it is.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Track keyboard focus with `handle`, so focus can go back to the button once Escape
+    /// closes the picker. See [`Button::track_focus`].
+    pub fn track_focus(mut self, handle: &FocusHandle) -> Self {
+        self.focus = Some(handle.clone());
         self
     }
 
@@ -706,6 +761,9 @@ impl RenderOnce for EffortButton {
             .tooltip(cx.strings().effort.clone());
         if self.fast {
             button = button.icon(IconName::Bolt);
+        }
+        if let Some(handle) = &self.focus {
+            button = button.track_focus(handle);
         }
         if let Some(handler) = self.on_click {
             button = button.on_click(handler);

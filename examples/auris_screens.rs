@@ -24,8 +24,8 @@ use atelier::{
 };
 use common::Themed;
 use gpui::{
-    AnyElement, Context, Corner, IntoElement, MouseDownEvent, ParentElement, Render, Styled,
-    Window, anchored, deferred, div, point, prelude::*, px,
+    AnyElement, Context, Corner, FocusHandle, IntoElement, KeyDownEvent, MouseDownEvent,
+    ParentElement, Render, Styled, Window, anchored, deferred, div, point, prelude::*, px,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,6 +52,8 @@ struct AurisScreens {
     effort_open: bool,
     /// Where the effort button was laid out, so a press on it does not count as outside.
     effort_button: Measure,
+    /// The effort button's focus, which Escape gives back to after closing the picker.
+    effort_focus: FocusHandle,
     /// Where the composer was laid out, for the effort picker to open over.
     composer: Measure,
     /// Compose: where each take's scrubber is, the preview volume, and whether it is muted.
@@ -450,6 +452,7 @@ impl AurisScreens {
         let button = EffortButton::new("effort", LEVELS[self.effort])
             .fast(self.fast)
             .open(self.effort_open)
+            .track_focus(&self.effort_focus)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.effort_open = !this.effort_open;
                 cx.notify();
@@ -458,6 +461,8 @@ impl AurisScreens {
             let button = self.effort_button.clone();
             let picker = EffortPicker::new("effort-picker", LEVELS, self.effort)
                 .default_level(1)
+                // The arrows change the level as soon as it opens.
+                .autofocus(true)
                 .fast(self.fast)
                 .on_select(cx.listener(|this, index: &usize, _, cx| {
                     this.effort = *index;
@@ -485,14 +490,29 @@ impl AurisScreens {
                     .position(at)
                     .anchor(Corner::BottomLeft)
                     .snap_to_window_with_margin(px(8.))
-                    .child(div().occlude().child(picker).on_mouse_down_out(cx.listener(
-                        move |this, event: &MouseDownEvent, _, cx| {
-                            if !button.bounds().is_some_and(|b| b.contains(&event.position)) {
-                                this.effort_open = false;
-                                cx.notify();
-                            }
-                        },
-                    ))),
+                    .child(
+                        div()
+                            .occlude()
+                            .child(picker)
+                            // Escape closes it and gives focus back to the button.
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                if event.keystroke.key == "escape" {
+                                    this.effort_open = false;
+                                    window.focus(&this.effort_focus);
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }
+                            }))
+                            .on_mouse_down_out(cx.listener(
+                                move |this, event: &MouseDownEvent, _, cx| {
+                                    if !button.bounds().is_some_and(|b| b.contains(&event.position))
+                                    {
+                                        this.effort_open = false;
+                                        cx.notify();
+                                    }
+                                },
+                            )),
+                    ),
             )
         });
         div()
@@ -771,6 +791,7 @@ fn main() {
             slash: common::argument("--slash").map(|_| 0),
             effort_open: std::env::args().any(|arg| arg == "--effort"),
             effort_button: Measure::new(),
+            effort_focus: cx.focus_handle(),
             composer: Measure::new(),
             ai_card: Measure::new(),
             handoff: None,
