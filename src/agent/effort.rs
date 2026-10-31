@@ -6,9 +6,10 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, ElementId, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, RenderOnce, SharedString,
-    Styled, Window, canvas, div, fill, point, px, relative, size,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, ElementId, Hsla, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels,
+    RenderOnce, SharedString, Styled, Window, canvas, div, fill, linear_color_stop,
+    linear_gradient, point, px, relative, size,
 };
 
 use crate::button::{Button, ControlSize};
@@ -30,7 +31,8 @@ type SelectHandler = Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
 /// switching models is a separate choice, made with the composer's own model button
 /// (`Composer::model`). The slider is a wide stepped track: its filled part
 /// sparkles, a dot marks each step still above the thumb, and a click, a drag or the arrow
-/// keys move it from step to step.
+/// keys move it from step to step. The top step is a small treat: the fill runs into the
+/// agent's gradient, the thumb glows and a few sparks fly when it lands there.
 ///
 /// Open it from an [`EffortButton`] in the composer row, placed with gpui's `anchored` and
 /// `deferred`, like any popover.
@@ -211,6 +213,7 @@ impl RenderOnce for EffortPicker {
             button
         });
         let level = self.levels.get(self.selected).cloned().unwrap_or_default();
+        let at_top = self.levels.len() > 1 && self.selected + 1 == self.levels.len();
 
         let header = div()
             .flex()
@@ -234,7 +237,12 @@ impl RenderOnce for EffortPicker {
                         div()
                             .text_size(theme.typography.size_xl)
                             .font_weight(theme.typography.heading_weight)
-                            .text_color(colors.accent_text)
+                            // The top level reads in the agent's colour, like the fill.
+                            .text_color(if at_top {
+                                colors.agent
+                            } else {
+                                colors.accent_text
+                            })
                             .child(level),
                     )
                     .children(model),
@@ -375,6 +383,10 @@ impl StepSlider {
             },
         );
         let dot_color = colors.text_faint;
+        // At the top step the fill runs from the accent into the agent's own gradient: the
+        // agent is about to think as hard as it can.
+        let peak: [Hsla; 3] = colors.agent_gradient;
+        let burst_on = theme.motion.enabled;
         let field = Rc::new(sparkles());
         let elevation = theme.elevation.medium.clone();
         let painted = bounds.clone();
@@ -387,7 +399,34 @@ impl StepSlider {
             0.,
             cx,
             move |body, phase| {
-                let at = position(glide, Instant::now(), duration);
+                let now = Instant::now();
+                let at = position(glide, now, duration);
+                // How far the thumb is into the last step: 0 below it, 1 on it, so the colour
+                // comes and goes with the glide.
+                let boost = if steps > 1 {
+                    (at * last - (last - 1.)).clamp(0., 1.)
+                } else {
+                    0.
+                };
+                // A burst of sparks once the thumb lands on the top step, never on opening
+                // the picker there.
+                let burst = (burst_on && steps > 1 && glide.to >= 1. && glide.from < glide.to)
+                    .then(|| {
+                        let landed = glide.start + duration;
+                        now.checked_duration_since(landed)
+                            .map(|since| since.as_secs_f32() / BURST.as_secs_f32())
+                            .filter(|t| *t < 1.)
+                    })
+                    .flatten();
+                let mut shadow = elevation.clone();
+                if boost > 0. {
+                    shadow.push(BoxShadow {
+                        color: peak[1].opacity(0.55 * boost),
+                        offset: point(px(0.), px(0.)),
+                        blur_radius: px(14.),
+                        spread_radius: px(1.),
+                    });
+                }
                 let field = field.clone();
                 let painted = painted.clone();
                 body.child(
@@ -411,13 +450,19 @@ impl StepSlider {
                                 .corner_radii(radius),
                             );
                             let filled = centre(at);
+                            let start = mix(fill_color, peak[2], 0.35 * boost);
+                            let end = mix(fill_color, peak[1], boost);
                             window.paint_quad(
                                 fill(
                                     Bounds::new(
                                         point(bounds.origin.x, top),
                                         size(px(filled), track),
                                     ),
-                                    fill_color,
+                                    linear_gradient(
+                                        90.,
+                                        linear_color_stop(start, 0.),
+                                        linear_color_stop(end, 1.),
+                                    ),
                                 )
                                 .corner_radii(radius),
                             );
@@ -428,11 +473,15 @@ impl StepSlider {
                                 if x > filled - half * 0.6 {
                                     continue;
                                 }
+                                // At the top they twinkle twice as fast and a little bigger.
+                                let rate = spark.rate * (1. + boost);
                                 let twinkle =
-                                    (TAU * (phase * spark.rate + spark.phase)).sin() * 0.5 + 0.5;
+                                    (TAU * (phase * rate + spark.phase)).sin() * 0.5 + 0.5;
                                 let edge = ((filled - x) / half).clamp(0., 1.);
-                                let alpha = (0.25 + 0.75 * twinkle * twinkle) * edge;
-                                let r = spark.radius * (0.7 + 0.3 * twinkle);
+                                let alpha =
+                                    ((0.25 + 0.75 * twinkle * twinkle) * edge * (1. + 0.4 * boost))
+                                        .min(1.);
+                                let r = spark.radius * (0.7 + 0.3 * twinkle) * (1. + 0.3 * boost);
                                 let centre_y = f32::from(top) + spark.y * height;
                                 window.paint_quad(
                                     fill(
@@ -466,6 +515,31 @@ impl StepSlider {
                                     .corner_radii(dot / 2.),
                                 );
                             }
+                            // Sparks thrown out from the thumb, fading as they fly.
+                            if let Some(t) = burst {
+                                let eased = ease_out(t);
+                                let origin_x = f32::from(bounds.origin.x) + filled;
+                                let origin_y = f32::from(top) + height / 2.;
+                                for i in 0..BURST_SPARKS {
+                                    let angle = TAU * (i as f32 + 0.5 * (i % 2) as f32)
+                                        / BURST_SPARKS as f32;
+                                    let reach = half * (1. + (1.1 + 0.5 * (i % 3) as f32) * eased);
+                                    let r = (2.6 - 0.6 * (i % 2) as f32) * (1. - t);
+                                    let x = origin_x + angle.cos() * reach;
+                                    let y = origin_y + angle.sin() * reach;
+                                    let color = if i % 3 == 0 { spark_color } else { peak[i % 3] };
+                                    window.paint_quad(
+                                        fill(
+                                            Bounds::new(
+                                                point(px(x - r), px(y - r)),
+                                                size(px(r * 2.), px(r * 2.)),
+                                            ),
+                                            color.opacity(1. - t),
+                                        )
+                                        .corner_radii(px(r)),
+                                    );
+                                }
+                            }
                         },
                     )
                     .absolute()
@@ -485,7 +559,7 @@ impl StepSlider {
                         .bg(gpui::white())
                         .border_1()
                         .border_color(gpui::black().opacity(0.1))
-                        .shadow(elevation.clone()),
+                        .shadow(shadow),
                 )
             },
         );
@@ -550,6 +624,11 @@ impl StepSlider {
         slider.into_any_element()
     }
 }
+
+/// How long the sparks fly after the thumb lands on the top step.
+const BURST: Duration = Duration::from_millis(700);
+/// How many sparks it throws.
+const BURST_SPARKS: usize = 12;
 
 /// Where a glide has the thumb at `now`, from 0 to 1.
 fn position(glide: Glide, now: Instant, duration: Duration) -> f32 {

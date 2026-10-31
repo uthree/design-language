@@ -6,6 +6,7 @@
 //!
 //! ```text
 //! cargo run --example control_legend -- [--page toggle|choose|amount|report|text|act|state|missing]
+//!                                        [--effort 0..3] [--menu]
 //!                                        [--direction glass|studio|mono] [--appearance dark|light]
 //! ```
 
@@ -1279,7 +1280,9 @@ fn main() {
                 start: 1,
                 tab: 0,
                 place: 1,
-                effort: 1,
+                effort: common::argument("--effort")
+                    .and_then(|level| level.parse().ok())
+                    .map_or(1, |level: usize| level.min(EFFORT.len() - 1)),
                 fast: false,
             }
         },

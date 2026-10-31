@@ -99,6 +99,10 @@ The level reads in the accent at the top. The slider is a wide stepped track: th
 sparkles (still when `theme.motion.enabled` is off), a dot marks each step above the thumb, and
 a click, a drag or the arrow keys, Home and End move it a step; the thumb glides there. Close the
 picker on a press outside it (`on_mouse_down_out`), leaving presses on the button to toggle it.
+The top level is a small treat: as the thumb glides onto it the fill runs from the accent into
+`colors.agent_gradient`, the sparkles twinkle faster, the thumb glows in the agent's colour, the
+level reads in `colors.agent`, and on landing a few sparks fly off the thumb (not when the
+picker opens already there, and none with motion off). There is nothing to wire up.
 `examples/auris_screens.rs` (`--screen compose --effort`) wires it up.
 
 The model is not in the card. Switching models is its own choice, made with the composer's

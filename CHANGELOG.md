@@ -31,6 +31,13 @@ What Auris Studio built for itself between 0.15 and 0.16 that other applications
 - `Strings::effort`, `fast_mode_on`, `fast_mode_off` and `reset`: the effort picker's tooltips
   were English only.
 
+### Changed
+
+- The effort picker's top level is a small treat: as the thumb glides onto it the fill runs from
+  the accent into `colors.agent_gradient`, the sparkles twinkle faster, the thumb glows, the level
+  reads in the agent's colour, and a few sparks fly off the thumb when it lands. Not when the
+  picker opens already at the top, and no sparks with motion off.
+
 ### Deprecated
 
 - `EffortPicker::model`, `model_icon` and `on_model`. The effort card no longer names the model:
