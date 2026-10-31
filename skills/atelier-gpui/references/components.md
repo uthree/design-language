@@ -5,7 +5,7 @@ id and optional `on_click` / `on_select` / `on_toggle` callbacks; they draw a va
 own it — the view keeps the state and calls `cx.notify()`. With `cx.listener` a select handler
 receives `&usize`.
 
-Assets: start the app with `Application::new().with_assets(atelier::Assets::default())`, or
+Assets: start the app with `gpui_platform::application().with_assets(atelier::Assets::default())`, or
 `Assets::with_fallback(your_source)` to serve your own files too. Icons are `IconName::*`
 drawn with `Icon::new(name).size(px).color(c)`.
 
@@ -26,10 +26,9 @@ order they are drawn, Enter and Space press the focused one (its `on_click`, `on
 handler is not a stop. Nothing to wire up beyond:
 
 - `atelier::init` binds Tab and Shift-Tab (`FocusNext`, `FocusPrevious`). Every tab stop
-  carries the key context `AtelierControl` (`atelier::CONTROL_CONTEXT`); while one holds focus,
-  Atelier takes Enter and Space before any binding is matched, so an application's Space for
-  play does not fire there. Bind other keys with `Some("!AtelierControl")` to keep them off
-  controls. Tracks (the `AudioPlayer` scrubber and volume) add `AtelierTrack`, where the
+  carries the key context `AtelierControl` (`atelier::CONTROL_CONTEXT`). Bind every single-key
+  shortcut with `Some("!AtelierControl")`: a binding that matches Enter or Space first takes the
+  press, and the focused control is not pressed. Tracks (the `AudioPlayer` scrubber and volume) add `AtelierTrack`, where the
   arrows, Home and End step them (`StepBackward`, `StepForward`, `StepToStart`, `StepToEnd`)
   ahead of the application's own arrow bindings. A focusable element of your own placed
   inside an Atelier control gives itself a key context, so the keys stay its own. Arrow keys show the focus ring only while a control holds focus.
@@ -46,8 +45,8 @@ handler is not a stop. Nothing to wire up beyond:
 - Every component given an id uses it as its `debug_selector`, so a test finds it with
   `VisualTestContext::debug_bounds("export")` (enable gpui's `test-support` in the test build).
   Do not wrap components in `div().debug_selector(..)`. `tests/keyboard.rs` shows how to drive
-  Tab, Enter and Space in a test (gpui presses a control on the key's release, so simulate the
-  `KeyUpEvent` too).
+  Tab, Enter and Space in a test (gpui presses a control on the key's release, and only after it
+  saw the press, so simulate the key down and then the `KeyUpEvent`).
 
 ## Text
 

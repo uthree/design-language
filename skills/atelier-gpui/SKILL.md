@@ -11,7 +11,7 @@ description: Design language and component kit for gpui (Rust) creator tools wit
 > Use the component and its hook, and check with `tools/check-adoption.sh` (see
 > [references/adopting.md](references/adopting.md)).
 
-Atelier is a Rust crate (`atelier`, gpui `=0.2.2`) that supplies one design language in three
+Atelier is a Rust crate (`atelier`, gpui-pre `=0.3.10` as `gpui`) that supplies one design language in three
 candidate **directions** and the components that draw it. **Glass is the adopted direction** and
 the default; Studio and Mono remain as alternatives, so never assume one look — read the tokens.
 Read this page fully, then the reference for the part you touch.

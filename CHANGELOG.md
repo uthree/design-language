@@ -10,6 +10,32 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — gpui-pre
+
+Atelier moves from the released gpui 0.2.2 to the gpui-pre snapshot `=0.3.10`, the Zed snapshot
+gpui-component's author publishes, with Auris Studio. The released gpui left Windows IME
+composition broken, and crates.io has nothing later.
+
+### Changed
+
+- The dependency is `gpui = { package = "gpui-pre", version = "=0.3.10" }`; the crate is still
+  `gpui`. An application opens its windows through `gpui_platform::application()`
+  (`gpui-pre-platform`), which also carries `runtime_shaders`.
+- Atelier no longer takes Enter and Space from the bindings while a control holds focus. gpui-pre
+  presses a focused control on the key's release only when the press reached the control too,
+  and stopping the press before the bindings stopped it for the control as well, so no control
+  could be pressed from the keyboard at all. A single-key shortcut now keeps off controls only
+  when bound with `Some("!AtelierControl")`, and the adoption check fails on one bound with
+  `None`.
+- A test presses a control with the key down and then the `KeyUpEvent`; the release alone no
+  longer presses it.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| `libc` held at 0.2.189 for gpui 0.2.2's `xattr` on Linux | Nothing: gpui-pre does not depend on it |
+
 ## Unreleased — from Auris Studio 0.15 and 0.16
 
 What Auris Studio built for itself between 0.15 and 0.16 that other applications need too.

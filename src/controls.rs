@@ -382,8 +382,10 @@ impl RenderOnce for SegmentedControl {
                     } else {
                         theme.colors.text_muted
                     };
-                    let item_id =
-                        ElementId::NamedChild(Box::new(id.clone()), index.to_string().into());
+                    let item_id = ElementId::NamedChild(
+                        std::sync::Arc::new(id.clone()),
+                        index.to_string().into(),
+                    );
                     let mut item = focusable(
                         div().id(item_id.clone()),
                         &item_id,
@@ -423,7 +425,10 @@ impl RenderOnce for SegmentedControl {
                     // The chosen segment's fill fades in as the old one's fades out.
                     items.push(transition(
                         item,
-                        ElementId::NamedChild(Box::new(id.clone()), format!("fill-{index}").into()),
+                        ElementId::NamedChild(
+                            std::sync::Arc::new(id.clone()),
+                            format!("fill-{index}").into(),
+                        ),
                         &selected,
                         theme.motion.fast,
                         window,

@@ -8,8 +8,8 @@
 
 use atelier::{Appearance, Assets, ControlSize, Direction, Segment, SegmentedControl, Theme};
 use gpui::{
-    App, AppContext, Application, Bounds, Context, IntoElement, ParentElement, Render, Styled,
-    TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Bounds, Context, IntoElement, ParentElement, Render, Styled, TitlebarOptions,
+    Window, WindowBounds, WindowOptions, div, px, size,
 };
 
 /// The smallest window every example lays out without overlapping or cutting off its controls.
@@ -108,7 +108,7 @@ pub fn run<V: Themed>(
 ) {
     let choice = choice_from_args();
     let (width, height) = size_from_args(width, height);
-    Application::new()
+    gpui_platform::application()
         .with_assets(Assets::default())
         .run(move |cx: &mut App| {
             let theme = Theme::new(choice.0, choice.1);

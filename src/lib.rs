@@ -4,7 +4,7 @@
 //! derived from a [`Direction`] — one of the design candidates — and an [`Appearance`]:
 //!
 //! ```ignore
-//! Application::new().with_assets(atelier::Assets::default()).run(|cx| {
+//! gpui_platform::application().with_assets(atelier::Assets::default()).run(|cx| {
 //!     atelier::init(cx, Theme::new(Direction::Studio, Appearance::Dark));
 //!     // open windows; read the theme with `cx.theme()`
 //! });

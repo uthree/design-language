@@ -179,9 +179,9 @@ impl From<ProviderLogo> for IconSource {
 /// Serves the embedded icons, then defers to an application's own source for anything else.
 ///
 /// ```ignore
-/// Application::new().with_assets(atelier::Assets::default())
+/// gpui_platform::application().with_assets(atelier::Assets::default())
 /// // or, with assets of your own:
-/// Application::new().with_assets(atelier::Assets::with_fallback(MyAssets))
+/// gpui_platform::application().with_assets(atelier::Assets::with_fallback(MyAssets))
 /// ```
 #[derive(Default)]
 pub struct Assets {

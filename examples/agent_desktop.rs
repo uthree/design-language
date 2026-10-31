@@ -464,7 +464,7 @@ impl AgentDesktop {
 impl Render for AgentDesktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.autofocus) {
-            window.focus(&self.input);
+            window.focus(&self.input, cx);
         }
         let theme = cx.theme().clone();
         // The session list goes first when the window narrows, so the conversation keeps room
@@ -622,7 +622,7 @@ impl AgentDesktop {
             // Tab accepts a suggestion while the list is open, and moves focus on otherwise.
             .on_action(cx.listener(|this, _: &FocusNext, window, cx| {
                 if this.emoji_matches().is_empty() {
-                    window.focus_next();
+                    window.focus_next(cx);
                 } else {
                     this.accept_emoji(this.emoji_selected);
                     cx.notify();
@@ -653,7 +653,7 @@ impl AgentDesktop {
                 .selected(Some(self.emoji_selected))
                 .on_select(cx.listener(|this, index: &usize, window, cx| {
                     this.accept_emoji(*index);
-                    window.focus(&this.input);
+                    window.focus(&this.input, cx);
                     cx.notify();
                 }))
         })
