@@ -259,8 +259,8 @@ pub(crate) fn paint(
             border: Some(colors.agent.opacity(0.35)),
         },
         ButtonVariant::Secondary => Paint {
-            fill: colors.elevated,
-            hover: mix(colors.elevated, tone, 0.06),
+            fill: colors.control,
+            hover: mix(colors.control, tone, 0.06),
             text: colors.text,
             border: Some(colors.border_strong),
         },
@@ -322,7 +322,8 @@ impl RenderOnce for Button {
 
         // Studio draws raised controls with a top-lit gradient, the way Logic's buttons catch
         // the light; the flatter directions use the plain fill.
-        button = if raised && theme.colors.highlight.a > 0. && !self.disabled {
+        let bezel = raised && theme.shape.bezel_controls;
+        button = if bezel && !self.disabled {
             let top = mix(
                 paint.fill,
                 gpui::white(),
@@ -344,7 +345,7 @@ impl RenderOnce for Button {
             button = button.border_1().border_color(border);
         }
         // Only the bezelled direction lifts its controls; elsewhere a hairline is enough.
-        if raised && theme.colors.highlight.a > 0. {
+        if bezel {
             button = button.shadow(theme.elevation.low.clone());
         }
 

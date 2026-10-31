@@ -40,7 +40,9 @@ that genuinely draws differently; application code should read the resolved toke
 
 ## Colours (`theme.colors`)
 
-Surfaces: `background`, `chrome`, `surface`, `elevated`, `overlay`, `sunken`.
+Surfaces: `background`, `chrome`, `surface`, `elevated`, `overlay`, `sunken`, and `control`
+(an ordinary button's fill: `elevated`, or a see-through tone under Glass's translucent
+material).
 Washes over any surface: `hover`, `pressed`, `selected`.
 Lines: `border`, `border_strong`, `separator`, `highlight` (bezel), `focus_ring` (the keyboard
 focus outline every control draws, 2px, a pixel clear of its edge; `theme.focus_ring()` is the
@@ -79,7 +81,8 @@ Helpers: `mix`, `lighten`, `contrast`, `ensure_contrast`.
   width the navigation sidebar folds away).
   `ControlSize::height(theme)` maps a component size to these.
 - `theme.spacing`: `xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32` (see rules.md).
-- `theme.shape`: `radius_xs/sm/md/lg/xl`, `capsule_controls`; use `theme.control_radius(h)`
+- `theme.shape`: `radius_xs/sm/md/lg/xl`, `capsule_controls`, `bezel_controls` (Studio only:
+  secondary buttons get a top-lit gradient and a low shadow; elsewhere they lie flat); use `theme.control_radius(h)`
   for controls and `Theme::concentric(outer, inset)` for nested surfaces.
 - `theme.typography`: `ui`, `mono`, `size_xs/sm/md/lg/xl/display`, `heading_weight`,
   `label_weight`. Prefer `Label` with `TextSize`/`TextColor` over raw sizes.

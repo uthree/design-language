@@ -10,6 +10,30 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — flat buttons under Glass
+
+### Added
+
+- `Shape::bezel_controls`: whether a secondary `Button` is lifted with a top-lit gradient and
+  `elevation.low`. Only Studio sets it.
+- `Colors::control`: the secondary `Button` fill. It is `elevated` except under Glass with
+  `Material::Translucent`, where it is a see-through tone (white 10 % dark, black 5 % light) so
+  the glass behind shows, as Liquid Glass's buttons do. Cards and menus keep `elevated`.
+
+### Fixed
+
+- Secondary buttons under Glass no longer carry a bezel and a shadow. `Button` decided by
+  `colors.highlight.a > 0`, which Glass also sets; it now asks `shape.bezel_controls`, so
+  `highlight` is free for other uses.
+- The web kit follows: `--at-control` is the new token, and `.at-button` secondary is flat and
+  see-through under Glass (`--at-raised-shadow: none`), lifted only under Studio.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| `colors.highlight` made transparent so Glass buttons lie flat | Nothing: only Studio bezels its buttons now |
+
 ## Unreleased — from Auris Studio 0.15 and 0.16
 
 What Auris Studio built for itself between 0.15 and 0.16 that other applications need too.

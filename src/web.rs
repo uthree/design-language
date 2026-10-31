@@ -86,6 +86,7 @@ pub fn theme_css(theme: &Theme) -> String {
         ("elevated", colors.elevated),
         ("overlay", colors.overlay),
         ("sunken", colors.sunken),
+        ("control", colors.control),
         ("hover", colors.hover),
         ("pressed", colors.pressed),
         ("selected", colors.selected),
@@ -194,7 +195,7 @@ pub fn theme_css(theme: &Theme) -> String {
         )),
     );
     // Raised controls catch the light from above where the direction has a bezel.
-    let bezel = colors.highlight.a > 0.;
+    let bezel = theme.shape.bezel_controls;
     let raised = paint(theme, ButtonVariant::Secondary, false, None).fill;
     put(
         "raised-top",

@@ -119,6 +119,10 @@ pub struct Colors {
     pub overlay: Hsla,
     /// Recessed wells: text fields, meters, slider tracks, lanes.
     pub sunken: Hsla,
+    /// Fill of an ordinary (secondary) button. Opaque `elevated` in most themes; under Glass's
+    /// translucent material a light tone instead, so the glass behind shows through, as
+    /// Liquid Glass's buttons do.
+    pub control: Hsla,
     /// Translucent wash laid over a control under the pointer.
     pub hover: Hsla,
     /// Translucent wash laid over a control while pressed.
@@ -131,7 +135,8 @@ pub struct Colors {
     pub border_strong: Hsla,
     /// Divider between sections inside a panel.
     pub separator: Hsla,
-    /// One-pixel highlight on the top edge of raised controls (the "bezel").
+    /// One-pixel highlight on the top edge of raised controls (the "bezel"). Whether controls
+    /// wear a bezel at all is [`Shape::bezel_controls`], not this colour's alpha.
     pub highlight: Hsla,
     /// Keyboard focus ring.
     pub focus_ring: Hsla,
@@ -236,6 +241,10 @@ pub struct Shape {
     pub radius_xl: Pixels,
     /// Draw buttons and segmented controls as capsules instead of [`Shape::radius_sm`].
     pub capsule_controls: bool,
+    /// Lift raised controls off the surface with a top-lit bezel and a low shadow, the way
+    /// Logic's buttons sit on its graphite. Only Studio does; elsewhere a control lies flat in
+    /// its layer, and only the layers floating above (popovers, sheets) cast shadows.
+    pub bezel_controls: bool,
 }
 
 /// Control sizes and row heights.
@@ -724,6 +733,10 @@ fn colors(
     } else {
         mix(surface, gpui::black(), 0.045)
     };
+    let control = match (direction, material) {
+        (Direction::Glass, Material::Translucent) => tone.opacity(if dark { 0.10 } else { 0.05 }),
+        _ => elevated,
+    };
 
     let surfaces = [background, surface, elevated, overlay];
     let muted = surfaces.iter().fold(c(seeds.muted), |color, &fill| {
@@ -772,6 +785,7 @@ fn colors(
         elevated,
         overlay,
         sunken,
+        control,
         hover: tone.opacity(if dark { 0.08 } else { 0.05 }),
         pressed: tone.opacity(if dark { 0.14 } else { 0.10 }),
         selected: match direction {
@@ -888,6 +902,7 @@ fn shape(direction: Direction) -> Shape {
             radius_lg: px(9.),
             radius_xl: px(12.),
             capsule_controls: false,
+            bezel_controls: true,
         },
         Direction::Glass => Shape {
             radius_xs: px(5.),
@@ -896,6 +911,7 @@ fn shape(direction: Direction) -> Shape {
             radius_lg: px(20.),
             radius_xl: px(26.),
             capsule_controls: true,
+            bezel_controls: false,
         },
         Direction::Mono => Shape {
             radius_xs: px(4.),
@@ -904,6 +920,7 @@ fn shape(direction: Direction) -> Shape {
             radius_lg: px(14.),
             radius_xl: px(18.),
             capsule_controls: false,
+            bezel_controls: false,
         },
     }
 }
@@ -1256,6 +1273,21 @@ mod tests {
     fn direction_ids_round_trip() {
         for direction in Direction::ALL {
             assert_eq!(Direction::from_id(direction.id()), Some(direction));
+        }
+    }
+
+    #[test]
+    fn only_studio_bezels_its_controls() {
+        for theme in Theme::all() {
+            assert_eq!(
+                theme.shape.bezel_controls,
+                theme.direction == Direction::Studio,
+                "{}",
+                theme.name()
+            );
+            // Under translucent glass a button lets the glass through; elsewhere it is solid.
+            let see_through = theme.material == Material::Translucent;
+            assert_eq!(theme.colors.control.a < 1., see_through, "{}", theme.name());
         }
     }
 }
