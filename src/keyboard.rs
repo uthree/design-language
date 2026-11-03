@@ -148,8 +148,12 @@ impl RenderOnce for PianoKeyboard {
             .max(1);
         let pressed = self.pressed.clone();
         let current = pressed.first().copied();
-        let key_id =
-            |pitch: u8| ElementId::NamedChild(Box::new(self.id.clone()), pitch.to_string().into());
+        let key_id = |pitch: u8| {
+            ElementId::NamedChild(
+                std::sync::Arc::new(self.id.clone()),
+                pitch.to_string().into(),
+            )
+        };
         let selector = {
             let id = self.id.clone();
             move |pitch: u8| -> SharedString { format!("{id}-{pitch}").into() }

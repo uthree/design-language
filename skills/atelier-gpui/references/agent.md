@@ -97,7 +97,7 @@ EffortPicker::new("effort", ["Low", "Medium", "High", "Max"], effort)
 ```
 
 Give the `EffortButton` a focus handle of the application's (`.track_focus(&handle)`) and close
-the picker on Escape with `window.focus(&handle)`, so focus returns to the button the way a
+the picker on Escape with `window.focus(&handle, cx)`, so focus returns to the button the way a
 menu's does. `EffortPicker::slider_focus(&handle)` hands the slider one too, for focusing it at
 some other moment.
 

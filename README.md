@@ -11,7 +11,8 @@ plots, welcome-screen backdrops, and the agent side panel, transcript and compos
 
 ```toml
 [dependencies]
-gpui = "=0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.10" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10" }
 atelier = { git = "https://github.com/uthree/design-language" }
 ```
 

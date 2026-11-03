@@ -83,7 +83,7 @@ impl Render for Screen {
 }
 
 /// Press and release each key in turn: gpui presses a focused control on the key's release.
-fn press(cx: &mut VisualTestContext, keys: &str) {
+fn press(cx: &mut VisualTestContext, keys: &'static str) {
     for key in keys.split(' ') {
         cx.simulate_keystrokes(key);
         cx.simulate_event(KeyUpEvent {
@@ -205,8 +205,11 @@ mod shortcuts {
                         move |to: &f32, _, _| seek.borrow_mut().push(format!("seek {to:.2}")),
                     ))
                     .child(SelectableText::new("quote", "let a = <b> **c**;"));
+            // A predicate matches nothing in a window with no key context at all, so the
+            // transport names one, as an application's root does.
             div()
                 .size_full()
+                .key_context("Transport")
                 .on_action(move |_: &TogglePlay, _, _| play.borrow_mut().push("play".into()))
                 .on_action(move |_: &MovePlayhead, _, _| {
                     playhead.borrow_mut().push("playhead".into())
@@ -221,7 +224,8 @@ mod shortcuts {
             // A second call must not bind anything twice.
             atelier::init(cx, Theme::default());
             cx.bind_keys([
-                KeyBinding::new("space", TogglePlay, None),
+                // A single-key shortcut keeps off controls, which own Enter and Space.
+                KeyBinding::new("space", TogglePlay, Some("!AtelierControl")),
                 KeyBinding::new("right", MovePlayhead, None),
             ]);
         });
@@ -545,7 +549,7 @@ mod handed_focus {
                     .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
                         if event.keystroke.key == "escape" {
                             this.open = false;
-                            window.focus(&this.button);
+                            window.focus(&this.button, cx);
                             cx.notify();
                         }
                     }))
@@ -601,7 +605,7 @@ mod handed_focus {
     fn the_application_can_focus_a_button_it_handed_a_handle(cx: &mut TestAppContext) {
         let (_, view, cx) = open(cx);
         let handle = view.read_with(cx, |view, _| view.button.clone());
-        cx.update(|window, _| window.focus(&handle));
+        cx.update(|window, cx| window.focus(&handle, cx));
         cx.run_until_parked();
         assert!(cx.update(|window, _| handle.is_focused(window)));
         // Enter presses the button through the handed handle, and it stays a tab stop.

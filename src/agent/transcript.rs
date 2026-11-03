@@ -266,8 +266,10 @@ fn prose(text: &str, id: Option<&ElementId>, theme: &Theme) -> Vec<AnyElement> {
         count += 1;
         match id {
             Some(id) => {
-                let id =
-                    ElementId::NamedChild(Box::new(id.clone()), format!("block-{count}").into());
+                let id = ElementId::NamedChild(
+                    std::sync::Arc::new(id.clone()),
+                    format!("block-{count}").into(),
+                );
                 SelectableText::new(id, text)
                     .when(mono, |text| text.mono().size(TextSize::Small))
                     .into_any_element()

@@ -369,7 +369,7 @@ impl StepSlider {
 
         // The thumb glides to a new step; the glide is kept per slider, not per frame.
         let glide = window.with_global_id(
-            ElementId::NamedChild(Box::new(self.id.clone()), "glide".into()),
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "glide".into()),
             |global_id, window| {
                 window.with_element_state(global_id, |glide: Option<Glide>, _| {
                     let now = Instant::now();
@@ -450,6 +450,7 @@ impl StepSlider {
                         offset: point(px(0.), px(0.)),
                         blur_radius: px(14.),
                         spread_radius: px(1.),
+                        inset: false,
                     });
                 }
                 let field = field.clone();
@@ -608,7 +609,7 @@ impl StepSlider {
             // Once per appearance: the flag lives in element state, which gpui drops in the
             // first frame the picker is not drawn, so the next opening focuses again.
             let first = window.with_global_id(
-                ElementId::NamedChild(Box::new(self.id.clone()), "autofocus".into()),
+                ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "autofocus".into()),
                 |global_id, window| {
                     window.with_element_state(global_id, |done: Option<bool>, _| {
                         (done.is_none(), true)
@@ -616,7 +617,7 @@ impl StepSlider {
                 },
             );
             if first {
-                window.focus(&handle);
+                window.focus(&handle, cx);
             }
         }
         let mut slider = focusable_with(

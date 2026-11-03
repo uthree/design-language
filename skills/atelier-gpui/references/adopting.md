@@ -4,23 +4,25 @@
 
 ```toml
 [dependencies]
-gpui = "=0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.10" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10" }
 atelier = { git = "https://github.com/uthree/design-language" }   # or { path = "../design-language" }
 ```
 
-Atelier pins gpui `=0.2.2`, the release Auris Studio uses, so both resolve to one gpui. When the
-app moves to a newer gpui, move Atelier in the same change.
+Atelier pins gpui to the gpui-pre snapshot `=0.3.10`, the one Auris Studio uses, so both resolve
+to one gpui. gpui-pre is the Zed snapshot gpui-component's author publishes; the crate is still
+called `gpui`. Its windows come from `gpui_platform` (`gpui_platform::application()`), which also
+carries `runtime_shaders` for a Mac with only the Command Line Tools, and `wayland` and `x11` for
+Linux. When the app moves to a newer snapshot, move Atelier in the same change.
 
-On Linux, gpui 0.2.2 pulls in `xattr` 0.2, which does not build against `libc` 0.2.190 or later
-(`libc::ENOATTR` is gone). Keep `libc` at 0.2.189 in the app's lockfile —
-`cargo update -p libc --precise 0.2.189` — until gpui drops it. Building also needs the
-system's xkbcommon, Wayland, Vulkan and fontconfig headers (`libxkbcommon-x11-dev`,
-`libwayland-dev`, `libvulkan-dev`, `libfontconfig-dev` on Debian and Ubuntu).
+On Linux, building needs the system's xkbcommon, Wayland, Vulkan and fontconfig headers
+(`libxkbcommon-x11-dev`, `libwayland-dev`, `libvulkan-dev`, `libfontconfig-dev` on Debian and
+Ubuntu).
 
 ```rust
 use atelier::{ActiveTheme, Appearance, Assets, Direction, Theme};
 
-Application::new().with_assets(Assets::with_fallback(AppAssets)).run(|cx| {
+gpui_platform::application().with_assets(Assets::with_fallback(AppAssets)).run(|cx| {
     let theme = Theme::new(Direction::Glass, Appearance::Dark);
     let background = theme.window_background();
     atelier::init(cx, theme);
@@ -46,10 +48,12 @@ them; an app whose window root is not a `WindowFrame` wraps its root in
 "Keyboard"). If the app binds Tab itself in a context (a code editor inserting a tab), its
 binding wins there.
 
-Application shortcuts on a single key need nothing more: every Atelier tab stop carries the key
-context `AtelierControl`, and Atelier takes Enter and Space there before any binding, so Space
-for play does not fire while a button holds focus. Bind letter keys and anything your own focusable views must not see with
-`Some("!AtelierControl")` (see [rules.md](rules.md), "Components and states").
+Every Atelier tab stop carries the key context `AtelierControl`. Bind every single-key shortcut —
+Space for play, Enter, letter keys — with `Some("!AtelierControl")` (see [rules.md](rules.md),
+"Components and states"). A binding without it takes the key from a focused control: gpui
+presses a control on the key's release only when the press reached it too, and the binding
+matches the press first. Atelier cannot take the keys for the control itself, since stopping the
+press before the bindings stops it for the control as well.
 
 ## Keep up with releases
 
@@ -71,7 +75,7 @@ Mark a line you keep on purpose with `// atelier: allow`; on a function signatur
 ## Testing
 
 Components use their id as gpui's `debug_selector`, so with gpui's `test-support` feature on in
-the test build (`[dev-dependencies] gpui = { version = "=0.2.2", features = ["test-support"] }`)
+the test build (`[dev-dependencies] gpui = { package = "gpui-pre", version = "=0.3.10", features = ["test-support"] }`)
 a `VisualTestContext` finds them directly:
 
 Loop a screen test over every theme with `for theme in Theme::all() { ... }`.

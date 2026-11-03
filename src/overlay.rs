@@ -407,7 +407,7 @@ impl RenderOnce for Completions {
         let row = theme.density.row;
         let inset = theme.spacing.xxs;
         let scroll = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "scroll".into()),
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "scroll".into()),
             cx,
             |_, _| CompletionsScroll::default(),
         );
@@ -439,7 +439,7 @@ impl RenderOnce for Completions {
                 .collect::<Vec<_>>();
             let mut entry = div()
                 .id(ElementId::NamedChild(
-                    Box::new(self.id.clone()),
+                    std::sync::Arc::new(self.id.clone()),
                     format!("item-{index}").into(),
                 ))
                 .flex()
@@ -506,7 +506,10 @@ impl RenderOnce for Completions {
             .shadow(theme.elevation.medium.clone())
             .child(
                 div()
-                    .id(ElementId::NamedChild(Box::new(self.id), "rows".into()))
+                    .id(ElementId::NamedChild(
+                        std::sync::Arc::new(self.id),
+                        "rows".into(),
+                    ))
                     .flex()
                     .flex_col()
                     .max_h((row - px(2.)) * self.rows as f32)

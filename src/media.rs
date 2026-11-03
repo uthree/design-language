@@ -379,7 +379,7 @@ fn track(
         return element;
     };
     let state = window.use_keyed_state(
-        ElementId::NamedChild(Box::new(id), "track".into()),
+        ElementId::NamedChild(std::sync::Arc::new(id), "track".into()),
         cx,
         |_, _| Track::default(),
     );

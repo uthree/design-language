@@ -26,9 +26,9 @@ use atelier::{
     TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Hsla, IntoElement,
-    ParentElement, Render, SharedString, Styled, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, div, prelude::*, px, relative, rgb, size,
+    Animation, AnimationExt, AnyElement, App, Bounds, Context, Hsla, IntoElement, ParentElement,
+    Render, SharedString, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, div,
+    prelude::*, px, relative, rgb, size,
 };
 
 use common::argument;
@@ -1404,7 +1404,7 @@ fn main() {
     let agent_open = !std::env::args().any(|arg| arg == "--agent-closed");
     let (width, height) = common::size_from_args(1480., 920.);
 
-    Application::new()
+    gpui_platform::application()
         .with_assets(Assets::default())
         .run(move |cx: &mut App| {
             let theme = Theme::new(direction, appearance);

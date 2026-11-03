@@ -140,7 +140,7 @@ impl RenderOnce for WindowFrame {
             .clone();
         if window.focused(cx).is_none() {
             let root = root.clone();
-            window.defer(cx, move |window, _| window.focus(&root));
+            window.defer(cx, move |window, cx| window.focus(&root, cx));
         }
         let theme = cx.theme();
         // The root focus sits on an empty child rather than on the surface itself: an element
@@ -151,9 +151,9 @@ impl RenderOnce for WindowFrame {
         let anchor = div().absolute().size_0().track_focus(&root);
         let surface = tab_navigation(self.base)
             .capture_any_mouse_down(|_, _, cx| set_focus_visible(false, cx))
-            .on_any_mouse_down(move |_, window, _| {
+            .on_any_mouse_down(move |_, window, cx| {
                 if !window.default_prevented() {
-                    window.focus(&root);
+                    window.focus(&root, cx);
                 }
             })
             .child(anchor)
@@ -172,6 +172,7 @@ impl RenderOnce for WindowFrame {
             offset: point(px(0.), px(1.)),
             blur_radius: inset / 2.,
             spread_radius: px(0.),
+            inset: false,
         };
 
         div()
@@ -418,7 +419,7 @@ impl RenderOnce for TitleBar {
             // One line, truncating down to a few characters when the bar runs out of room.
             crate::focus::selector(div().id(title_id.clone()), &title_id)
                 .flex()
-                .flex_shrink()
+                .flex_shrink_1()
                 .min_w(px(MIN_TITLE_WIDTH))
                 .overflow_hidden()
                 .child(
@@ -454,7 +455,7 @@ impl RenderOnce for TitleBar {
         }
         let leading_side = leading_side
             .flex()
-            .flex_grow()
+            .flex_grow_1()
             .flex_basis((trailing_edge - leading_edge).max(px(0.)))
             .h_full()
             .items_center()
@@ -472,7 +473,7 @@ impl RenderOnce for TitleBar {
             );
         let trailing_side = trailing_side
             .flex()
-            .flex_grow()
+            .flex_grow_1()
             .flex_basis((leading_edge - trailing_edge).max(px(0.)))
             .h_full()
             .items_center()

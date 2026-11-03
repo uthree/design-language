@@ -654,7 +654,10 @@ impl RenderOnce for StepList {
             .into_iter()
             .enumerate()
             .map(|(index, step)| {
-                let id = ElementId::NamedChild(Box::new(self.id.clone()), index.to_string().into());
+                let id = ElementId::NamedChild(
+                    std::sync::Arc::new(self.id.clone()),
+                    index.to_string().into(),
+                );
                 let dot = match step.state {
                     StepState::Pending | StepState::Skipped => div()
                         .size(marker - px(4.))

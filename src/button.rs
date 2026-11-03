@@ -124,7 +124,7 @@ impl Button {
 
     /// Track keyboard focus with `handle` instead of a handle of the button's own, so the
     /// application can move focus to it: for example back to the button that opened a popover
-    /// once Escape closes it, with `window.focus(&handle)`. The button makes it a tab stop.
+    /// once Escape closes it, with `window.focus(&handle, cx)`. The button makes it a tab stop.
     pub fn track_focus(mut self, handle: &FocusHandle) -> Self {
         self.focus = Some(handle.clone());
         self
@@ -459,7 +459,7 @@ impl CopyButton {
 impl RenderOnce for CopyButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "copied".into()),
+            ElementId::NamedChild(std::sync::Arc::new(self.id.clone()), "copied".into()),
             cx,
             |_, _| Copied::default(),
         );
@@ -497,15 +497,13 @@ impl RenderOnce for CopyButton {
                 let state = state.clone();
                 cx.spawn(async move |cx| {
                     cx.background_executor().timer(COPIED_FOR).await;
-                    state
-                        .update(cx, |copied, cx| {
-                            // A later press keeps it showing for its own full moment.
-                            if copied.press == press {
-                                copied.shown = false;
-                                cx.notify();
-                            }
-                        })
-                        .ok();
+                    state.update(cx, |copied, cx| {
+                        // A later press keeps it showing for its own full moment.
+                        if copied.press == press {
+                            copied.shown = false;
+                            cx.notify();
+                        }
+                    });
                 })
                 .detach();
             })

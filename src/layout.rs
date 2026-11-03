@@ -568,7 +568,10 @@ impl RenderOnce for Tabs {
             .children(self.labels.into_iter().enumerate().map(|(index, label)| {
                 let selected = index == self.selected;
                 let hover = colors.hover;
-                let tab_id = ElementId::NamedChild(Box::new(id.clone()), index.to_string().into());
+                let tab_id = ElementId::NamedChild(
+                    std::sync::Arc::new(id.clone()),
+                    index.to_string().into(),
+                );
                 let mut tab = focusable(
                     div().id(tab_id.clone()),
                     &tab_id,
@@ -837,6 +840,7 @@ impl RenderOnce for OptionCard {
                 // A shadow with no blur is not drawn.
                 blur_radius: px(1.),
                 spread_radius: px(3.),
+                inset: false,
             }])
         })
         .when(!self.selected, |card| {

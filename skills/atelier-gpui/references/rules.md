@@ -72,10 +72,9 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   Atelier's and shows only after keyboard navigation.
 - **Single-key shortcuts yield to a focused control.** Space, Enter and letter keys bound
   across the window (Space for play) must not fire while a control holds focus: there the key
-  belongs to the control. Atelier does this for Enter and Space by itself — every tab stop has
-  the key context `AtelierControl`, and Atelier takes the two keys there before any binding.
-  Bind letter keys, and any single key your own focusable views must not see, with the
-  context `!AtelierControl`:
+  belongs to the control. Every tab stop has the key context `AtelierControl`; bind every
+  single-key shortcut, Enter and Space included, with the context `!AtelierControl`. A binding
+  without it takes the press, and gpui then does not press the control on the release:
   `KeyBinding::new("space", TogglePlay, Some("!AtelierControl"))`. Never claim the keys area by
   area with a no-op action.
 - **Arrows belong to what has focus.** On a track (the `AudioPlayer` scrubber, its volume) they

@@ -552,7 +552,7 @@ impl RenderOnce for ContextChip {
         selector(div(), &self.id)
             .id(self.id)
             .flex()
-            .flex_shrink()
+            .flex_shrink_1()
             .min_w_0()
             .max_w(self.max_width.unwrap_or(px(240.)))
             .items_center()

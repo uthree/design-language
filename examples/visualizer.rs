@@ -480,7 +480,7 @@ impl Visualizer {
             "Two cycles of the bass, triggered on its rising edge",
             cx,
         )
-        .flex_grow()
+        .flex_grow_1()
         .child(
             Self::plot(cx)
                 .relative()
@@ -553,7 +553,7 @@ impl Render for Visualizer {
                     .child(
                         div()
                             .flex()
-                            .flex_grow()
+                            .flex_grow_1()
                             .gap(theme.spacing.lg)
                             .child(self.spectrum(cx))
                             .child(self.loudness(cx)),
@@ -561,7 +561,7 @@ impl Render for Visualizer {
                     .child(
                         div()
                             .flex()
-                            .flex_grow()
+                            .flex_grow_1()
                             .gap(theme.spacing.lg)
                             .child(self.spectrogram(cx))
                             .child(self.stereo(cx)),

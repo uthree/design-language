@@ -50,8 +50,13 @@ pub fn set_window_background(window: &mut Window, theme: &Theme) {
         background = WindowBackgroundAppearance::Transparent;
     }
     #[cfg(target_os = "windows")]
-    let background = windows::apply_system_backdrop(window, background, theme.appearance.is_dark());
+    let (background, system_backdrop) =
+        windows::apply_system_backdrop(window, background, theme.appearance.is_dark());
     window.set_background_appearance(background);
+    #[cfg(target_os = "windows")]
+    if system_backdrop {
+        windows::disable_accent(window);
+    }
     #[cfg(target_os = "macos")]
     macos::restore_blur_material(window);
 }
@@ -233,22 +238,26 @@ mod windows {
     /// Put DWM's acrylic system backdrop behind a blurred window, or take it away, and return the
     /// background gpui should still be asked for.
     ///
-    /// With the system backdrop in place gpui is asked for an opaque window, which only turns its
-    /// accent policy off: the transparent pixels gpui renders then show the backdrop. `dark`
-    /// picks the backdrop's tint, to match the theme rather than the system.
+    /// With the system backdrop in place gpui is asked for a transparent window, so it clears each
+    /// frame to nothing and the backdrop shows through, and the caller then turns gpui's accent
+    /// policy off with [`disable_accent`], which the backdrop needs. An opaque window would keep
+    /// the accent off by itself, but gpui-pre clears an opaque window to white, and the white
+    /// showed through the translucent chrome instead of the backdrop. `dark` picks the
+    /// backdrop's tint, to match the theme rather than the system. The flag says whether the
+    /// accent has to be turned off.
     pub(super) fn apply_system_backdrop(
         window: &Window,
         background: WindowBackgroundAppearance,
         dark: bool,
-    ) -> WindowBackgroundAppearance {
+    ) -> (WindowBackgroundAppearance, bool) {
         if !has_system_backdrop() {
-            return background;
+            return (background, false);
         }
         let Ok(handle) = HasWindowHandle::window_handle(window) else {
-            return background;
+            return (background, false);
         };
         let RawWindowHandle::Win32(handle) = handle.as_raw() else {
-            return background;
+            return (background, false);
         };
         let hwnd = handle.hwnd.get();
         let blurred = background == WindowBackgroundAppearance::Blurred;
@@ -279,9 +288,73 @@ mod windows {
         );
 
         if blurred {
-            WindowBackgroundAppearance::Opaque
+            (WindowBackgroundAppearance::Transparent, true)
         } else {
-            background
+            (background, false)
+        }
+    }
+
+    #[repr(C)]
+    struct AccentPolicy {
+        state: u32,
+        flags: u32,
+        gradient: u32,
+        animation: u32,
+    }
+
+    #[repr(C)]
+    struct CompositionAttribute {
+        attribute: u32,
+        data: *mut c_void,
+        size: usize,
+    }
+
+    /// `WCA_ACCENT_POLICY`.
+    const ACCENT_POLICY: u32 = 0x13;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetModuleHandleA(name: *const u8) -> isize;
+        fn GetProcAddress(module: isize, name: *const u8) -> *const c_void;
+    }
+
+    /// Turn the window's accent policy off (`ACCENT_DISABLED`), as gpui does for an opaque
+    /// window.
+    ///
+    /// gpui gives a transparent window the transparent-gradient accent, which would paint over
+    /// the system backdrop. `SetWindowCompositionAttribute` is undocumented and not in the import
+    /// library, so it is looked up in `user32.dll` the way gpui itself does.
+    pub(super) fn disable_accent(window: &Window) {
+        let Ok(handle) = HasWindowHandle::window_handle(window) else {
+            return;
+        };
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return;
+        };
+        type SetWindowCompositionAttribute =
+            unsafe extern "system" fn(isize, *mut CompositionAttribute) -> i32;
+        unsafe {
+            let user32 = GetModuleHandleA(c"user32.dll".as_ptr().cast());
+            if user32 == 0 {
+                return;
+            }
+            let function = GetProcAddress(user32, c"SetWindowCompositionAttribute".as_ptr().cast());
+            if function.is_null() {
+                return;
+            }
+            let set: SetWindowCompositionAttribute = std::mem::transmute(function);
+            let mut accent = AccentPolicy {
+                state: 0,
+                flags: 0,
+                gradient: 0,
+                animation: 0,
+            };
+            let mut data = CompositionAttribute {
+                attribute: ACCENT_POLICY,
+                data: (&raw mut accent).cast(),
+                size: size_of::<AccentPolicy>(),
+            };
+            set(handle.hwnd.get(), &mut data);
         }
     }
 }

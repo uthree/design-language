@@ -329,7 +329,7 @@ impl InstrumentLab {
         });
         // A taller window gives the lanes the extra height, so the strings' motion reads larger.
         Card::new()
-            .flex_grow()
+            .flex_grow_1()
             .p(theme.spacing.lg)
             .gap(theme.spacing.md)
             .child(header)
@@ -361,7 +361,7 @@ impl InstrumentLab {
         div()
             .flex()
             .flex_wrap()
-            .flex_grow()
+            .flex_grow_1()
             .gap(theme.spacing.lg)
             .child(
                 panel(

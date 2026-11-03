@@ -77,7 +77,7 @@ pub fn change<T: PartialEq + Clone + 'static>(
     window: &mut Window,
     cx: &mut App,
 ) -> Change<T> {
-    let id = ElementId::NamedChild(Box::new(id.into()), "change".into());
+    let id = ElementId::NamedChild(std::sync::Arc::new(id.into()), "change".into());
     let state = window.use_keyed_state(id, cx, |_, _| {
         (
             value.clone(),
@@ -125,7 +125,7 @@ where
     let key: SharedString = format!("transition-{count}").into();
     element
         .with_animation(
-            ElementId::NamedChild(Box::new(id), key),
+            ElementId::NamedChild(std::sync::Arc::new(id), key),
             Animation::new(duration).with_easing(ease_out),
             animator,
         )
@@ -152,7 +152,7 @@ pub fn tween<E: IntoElement + 'static>(
     let key: SharedString = format!("tween-{}", change.count).into();
     element
         .with_animation(
-            ElementId::NamedChild(Box::new(id), key),
+            ElementId::NamedChild(std::sync::Arc::new(id), key),
             Animation::new(duration).with_easing(ease_out),
             move |element, delta| animator(element, lerp(from, value, delta)),
         )
@@ -173,7 +173,7 @@ pub fn appear<E: IntoElement + 'static>(
     }
     element
         .with_animation(
-            ElementId::NamedChild(Box::new(id.into()), "appear".into()),
+            ElementId::NamedChild(std::sync::Arc::new(id.into()), "appear".into()),
             Animation::new(motion.normal).with_easing(ease_out),
             animator,
         )
@@ -363,7 +363,7 @@ impl RenderOnce for Morph {
         let to_radius = self.to_radius;
         let started = window
             .use_keyed_state(
-                ElementId::NamedChild(Box::new(self.id), "morph".into()),
+                ElementId::NamedChild(std::sync::Arc::new(self.id), "morph".into()),
                 cx,
                 |_, _| Instant::now(),
             )

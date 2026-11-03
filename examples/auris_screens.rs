@@ -24,7 +24,7 @@ use atelier::{
 };
 use common::Themed;
 use gpui::{
-    AnyElement, Context, Corner, FocusHandle, IntoElement, KeyDownEvent, MouseDownEvent,
+    Anchor, AnyElement, Context, FocusHandle, IntoElement, KeyDownEvent, MouseDownEvent,
     ParentElement, Render, Styled, Window, anchored, deferred, div, point, prelude::*, px,
 };
 
@@ -488,7 +488,7 @@ impl AurisScreens {
             deferred(
                 anchored()
                     .position(at)
-                    .anchor(Corner::BottomLeft)
+                    .anchor(Anchor::BottomLeft)
                     .snap_to_window_with_margin(px(8.))
                     .child(
                         div()
@@ -498,7 +498,7 @@ impl AurisScreens {
                             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                                 if event.keystroke.key == "escape" {
                                     this.effort_open = false;
-                                    window.focus(&this.effort_focus);
+                                    window.focus(&this.effort_focus, cx);
                                     cx.stop_propagation();
                                     cx.notify();
                                 }
