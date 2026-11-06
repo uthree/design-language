@@ -245,14 +245,41 @@ their own width. `.note(..)` is a second, conditional line ("Clicking now create
 grid"), shown only while it applies. `FormField::unlabelled()` is for a group holding a single
 setting that its `FormGroup` title already names. `FormGroup::new(title)
 .description(..)` holds fields on one surface; `FormGroup::untitled()` for a single group.
-A preferences window, as `examples/preferences.rs` builds it:
+A preferences window is `PreferencesWindow`, which draws that whole shape:
 
-- a `Sidebar(Edge::Left)` of `ListItem` pages (search field first, a setup or help link last);
-- per page a `SectionHeader::new(title).description(..)`, then `FormGroup`s in a column of at
-  most `theme.density.form_width`, on `colors.surface`;
-- the page's actions at its foot, the primary at the trailing end, a reset as a ghost at the
-  leading end;
-- a `StatusBar` along the window's bottom edge.
+```rust
+PreferencesWindow::new("prefs")
+    .search(self.query.clone(), my_search_field)   // gpui has no text input: you bring the field
+    .page(
+        SettingsPage::new("Audio").icon(IconName::Mic).description("Devices and recording.")
+            .group(SettingsGroup::new("Devices")
+                .setting(Setting::new("Microphone").keywords(["input"]).child(mic_select))
+                .setting(Setting::new("Count-in").description("One bar first.").beside().child(switch))),
+    )
+    .page(SettingsPage::new("Keyboard").icon(IconName::Keyboard).keywords(["shortcuts"]).child(key_list))
+    .selected(self.page).on_select(cx.listener(|this, page: &usize, _, cx| { this.page = *page; cx.notify() }))
+    .action(Button::new("reset", "Reset").ghost())
+    .action(Button::new("save", "Save").primary())   // the last action is the primary, at the trailing end
+    .status(StatusBar::new().message(..))
+```
+
+- the sidebar holds the search field, then a `ListItem` per page ("id-page-N"), then
+  `.sidebar_footer(..)` (a setup or help link);
+- each page is a `SectionHeader` and its `SettingsGroup`s (`FormGroup`s) in a column of at most
+  `theme.density.form_width`, then anything passed with `.child(..)`, then the actions;
+- `Setting` is a `FormField` that search can find: `.description`, `.note`, `.error`,
+  `.keywords([..])`, `.beside()`;
+- with a query, every page's matching settings show under a link to their page, with a count,
+  or an `EmptyState` when nothing matches. Every word of the query must appear in a setting's
+  label, description or keywords; a group's title, or a page's title or keywords, brings in all
+  of it. Without `.selected(..)` the window holds the open page itself.
+
+`KeybindingList::new(id).group(title, [KeyBinding::new("Record", ["R"]).scope(..).changed(..)
+.conflict("Undo")])` lists shortcuts as chips ("id-key-ROW-SLOT"). `.recording(Some((row, slot)))`
+arms one; the list takes focus, and the next key press comes to `.on_capture(|captured, ..|)`
+as `Some(keystroke)` (Escape gives `None`; modifiers alone are skipped). `.on_record`,
+`.on_remove` and `.on_reset` report the chip, × and reset buttons. `keystroke_label(&keystroke)`
+prints a keystroke as menus do ("⌘⇧S" on macOS, "Ctrl+Shift+S" elsewhere).
 
 Rules (also in [rules.md](rules.md)): labels above fields you type into, beside toggles. A
 `Switch` applies at once and needs no Save; anything else on the page is committed together by

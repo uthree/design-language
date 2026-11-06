@@ -101,6 +101,8 @@ check warn 'fn ([a-z_]*status_row|context_gauge|phase_label|changed_files_list)\
     "a hand-built activity line, plan or changed-files list: use atelier::agent::AgentActivity, PlanView or ChangedFiles"
 check warn 'fn (bezier|execution_order|undo_agent_node|input_mouse_down)\b' \
     "a node graph copied from the node_editor example: use atelier::graph::NodeCanvas"
+check warn 'fn (render_nav|render_key_row|found_commands|[a-z_]*matches_query)\b' \
+    "a hand-built preferences window or key list: use atelier::PreferencesWindow and KeybindingList"
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

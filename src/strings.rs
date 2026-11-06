@@ -105,6 +105,22 @@ pub struct Strings {
     pub reset_view: SharedString,
     /// A graph node whose last result was reused.
     pub cached: SharedString,
+    /// The placeholder of the preferences search.
+    pub search_settings: SharedString,
+    /// A search that found nothing; `{}` is the search text.
+    pub nothing_matches: SharedString,
+    /// How many settings a search found; `{}` is the count.
+    pub settings_found: SharedString,
+    /// A key binding chip waiting for its key.
+    pub press_a_key: SharedString,
+    /// Add another key to a command.
+    pub add_shortcut: SharedString,
+    /// Put a command's keys back.
+    pub reset_shortcut: SharedString,
+    /// A command without a key.
+    pub no_shortcut: SharedString,
+    /// A key that also runs other commands; `{}` names them.
+    pub also_runs: SharedString,
 }
 
 impl Default for Strings {
@@ -197,6 +213,14 @@ impl Strings {
             undo: "Undo".into(),
             reset_view: "Reset view".into(),
             cached: "Cached".into(),
+            search_settings: "Search settings".into(),
+            nothing_matches: "Nothing matches “{}”".into(),
+            settings_found: "{} found".into(),
+            press_a_key: "Press a key…".into(),
+            add_shortcut: "Add a shortcut".into(),
+            reset_shortcut: "Reset to default".into(),
+            no_shortcut: "None".into(),
+            also_runs: "Also runs {}".into(),
         }
     }
 
@@ -285,6 +309,14 @@ impl Strings {
             undo: "元に戻す".into(),
             reset_view: "表示をリセット".into(),
             cached: "キャッシュ".into(),
+            search_settings: "設定を検索".into(),
+            nothing_matches: "「{}」に一致する設定はありません".into(),
+            settings_found: "{} 件".into(),
+            press_a_key: "キーを押してください…".into(),
+            add_shortcut: "ショートカットを追加".into(),
+            reset_shortcut: "初期設定に戻す".into(),
+            no_shortcut: "なし".into(),
+            also_runs: "{}にも割り当て済み".into(),
         }
     }
 
@@ -297,6 +329,21 @@ impl Strings {
     /// [`Strings::remove`] with the chip's label put in.
     pub fn remove(&self, label: &str) -> SharedString {
         self.remove.replace("{}", label).into()
+    }
+
+    /// [`Strings::nothing_matches`] with the search text put in.
+    pub fn nothing_matches(&self, query: &str) -> SharedString {
+        self.nothing_matches.replace("{}", query).into()
+    }
+
+    /// [`Strings::settings_found`] with the count put in.
+    pub fn settings_found(&self, count: usize) -> SharedString {
+        self.settings_found.replace("{}", &count.to_string()).into()
+    }
+
+    /// [`Strings::also_runs`] with the other commands put in.
+    pub fn also_runs(&self, others: &str) -> SharedString {
+        self.also_runs.replace("{}", others).into()
     }
 
     /// [`Strings::usage_left`] with the percentage put in.

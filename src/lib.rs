@@ -48,6 +48,7 @@ pub mod metal;
 pub mod motion;
 mod overlay;
 pub mod plot;
+mod preferences;
 mod progress;
 mod selectable;
 mod strings;
@@ -79,6 +80,10 @@ pub use media::AudioPlayer;
 pub use metal::MetalBackdrop;
 pub use motion::{Measure, Morph, Motion};
 pub use overlay::{Completion, Completions, MenuItem, Popover, Tooltip, menu_separator};
+pub use preferences::{
+    Captured, KeyBinding, KeybindingList, PreferencesWindow, Setting, SettingsGroup, SettingsPage,
+    keystroke_label,
+};
 pub use progress::{
     ProgressBar, ProgressRing, Skeleton, StepList, StepState, TaskProgress, TaskState,
     skeleton_paragraph,

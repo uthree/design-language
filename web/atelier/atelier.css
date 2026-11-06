@@ -505,6 +505,12 @@ html[data-vibrancy] body.at-root {
   outline: none;
 }
 
+/* The field draws the focus ring around its whole box, so its input draws none of its own. */
+.at-root .at-field input:focus-visible,
+.at-root .at-field textarea:focus-visible {
+  outline: none;
+}
+
 .at-field input::placeholder,
 .at-field textarea::placeholder {
   color: var(--at-text-faint);
@@ -2258,3 +2264,151 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 }
 
 .at-node-canvas__legend > span { display: inline-flex; align-items: center; gap: var(--at-space-xs); }
+
+/* ---------------------------------------------------------------- preferences */
+
+/* `FormGroup`: a titled card of fields. */
+.at-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-md);
+}
+
+.at-form-group__title {
+  margin: 0;
+  font-size: var(--at-size-md);
+  font-weight: var(--at-heading-weight);
+}
+
+.at-form-group__description {
+  margin: var(--at-space-xxs) 0 0;
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+}
+
+.at-form-group__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-lg);
+  padding: var(--at-panel-padding, var(--at-space-md));
+  border: 1px solid var(--at-border);
+  border-radius: var(--at-radius-md);
+  background: var(--at-elevated);
+}
+
+/* `LabelPlacement::Beside`: the label and help on the leading edge, a switch at the trailing. */
+.at-form-field--beside {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: var(--at-space-md);
+}
+
+.at-form-field--beside > :not(label):not(.at-form-field__help):not(.at-form-field__error) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.at-form-field__error {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-xs);
+  color: var(--at-danger);
+  font-size: var(--at-size-sm);
+}
+
+/* `PreferencesWindow`: pages beside the open page, a search over every setting. */
+.at-preferences {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.at-preferences__nav {
+  gap: 2px;
+  width: 240px;
+  padding: var(--at-space-sm);
+}
+
+.at-preferences__nav .at-field { height: var(--at-control-sm); margin-bottom: var(--at-space-xs); }
+
+.at-preferences__page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--at-surface);
+}
+
+.at-preferences__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-xl);
+  max-width: var(--at-form-width);
+  padding: var(--at-space-xl) var(--at-space-xxl);
+}
+
+.at-preferences__column > header h2 { margin: 0; font-size: var(--at-size-lg); font-weight: var(--at-heading-weight); }
+.at-preferences__column > header p { margin: var(--at-space-xxs) 0 0; color: var(--at-text-muted); font-size: var(--at-size-sm); }
+
+.at-preferences__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-md);
+}
+
+.at-preferences__link {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: var(--at-space-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--at-text-muted);
+  font: inherit;
+  font-size: var(--at-size-sm);
+  font-weight: var(--at-label-weight);
+  cursor: pointer;
+}
+
+.at-preferences__link:hover { color: var(--at-text); }
+.at-preferences__link::after { content: "›"; }
+.at-preferences__found { color: var(--at-text-muted); font-size: var(--at-size-sm); }
+.at-preferences__empty { padding: var(--at-space-xxl) 0; color: var(--at-text-muted); text-align: center; }
+
+.at-preferences__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--at-space-sm);
+  padding-top: var(--at-space-lg);
+}
+
+.at-preferences__actions > :last-child { margin-inline-start: auto; }
+
+/* `KeybindingList`: a row per command, a chip per key. */
+.at-keybindings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  outline: none;
+}
+
+.at-keybindings .at-caption { padding-top: var(--at-space-md); }
+.at-keybindings .at-caption:first-child { padding-top: 0; }
+
+.at-keybinding {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--at-space-sm);
+  min-height: var(--at-row);
+  font-size: var(--at-size-sm);
+}
+
+.at-keybinding__label { flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-keybinding__scope { color: var(--at-text-faint); font-size: var(--at-size-xs); }
+.at-keybinding__conflict { color: var(--at-warning); font-size: var(--at-size-xs); }
+.at-keybinding__conflict::before { content: "⚠ "; }
+.at-keybinding__key { display: inline-flex; align-items: center; }
+.at-keybinding__slot { width: var(--at-control-sm); }
