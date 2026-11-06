@@ -32,6 +32,7 @@ pub struct AgentPanel {
     logo: Option<IconSource>,
     actions: Vec<AnyElement>,
     transcript: Vec<AnyElement>,
+    chat: Option<AnyElement>,
     composer: Option<AnyElement>,
     empty: Option<AnyElement>,
     on_close: Option<ClickHandler>,
@@ -48,6 +49,7 @@ impl AgentPanel {
             logo: None,
             actions: Vec::new(),
             transcript: Vec::new(),
+            chat: None,
             composer: None,
             empty: None,
             on_close: None,
@@ -82,6 +84,14 @@ impl AgentPanel {
     /// One transcript row.
     pub fn entry(mut self, entry: impl IntoElement) -> Self {
         self.transcript.push(entry.into_any_element());
+        self
+    }
+
+    /// Put a conversation view — usually an `Entity<`[`super::ChatView`]`>` — where the
+    /// transcript goes. It scrolls itself and follows the conversation, so rows given with
+    /// [`AgentPanel::entry`] and the empty state are left out.
+    pub fn chat(mut self, chat: impl IntoElement) -> Self {
+        self.chat = Some(chat.into_any_element());
         self
     }
 
@@ -196,20 +206,23 @@ impl RenderOnce for AgentPanel {
                         )),
                 )
             })
-            .child(
-                div()
-                    .id((self.id.clone(), "transcript"))
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .px(theme.density.panel_padding)
-                    .py(theme.spacing.lg)
-                    .gap(theme.spacing.lg)
-                    .children(self.transcript)
-                    .when(empty, |body| body.children(self.empty)),
-            )
+            .map(|panel| match self.chat {
+                Some(chat) => panel.child(div().flex().flex_col().flex_1().min_h_0().child(chat)),
+                None => panel.child(
+                    div()
+                        .id((self.id.clone(), "transcript"))
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .px(theme.density.panel_padding)
+                        .py(theme.spacing.lg)
+                        .gap(theme.spacing.lg)
+                        .children(self.transcript)
+                        .when(empty, |body| body.children(self.empty)),
+                ),
+            })
             .children(self.composer.map(|composer| {
                 div()
                     .flex_none()

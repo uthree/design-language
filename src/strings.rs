@@ -72,6 +72,14 @@ pub struct Strings {
     pub fast_mode_off: SharedString,
     /// The effort picker's reset button.
     pub reset: SharedString,
+    /// A conversation's button back to its end, while the person reads further up.
+    pub jump_to_latest: SharedString,
+    /// The same button once something arrived meanwhile; `{}` is how many entries.
+    pub new_messages: SharedString,
+    /// A group of tool calls; `{}` is how many.
+    pub used_tools: SharedString,
+    /// An answered approval: allowed, always allowed, denied.
+    pub approval_answers: [SharedString; 3],
 }
 
 impl Default for Strings {
@@ -127,6 +135,10 @@ impl Strings {
             fast_mode_on: "Fast mode: on".into(),
             fast_mode_off: "Fast mode: off".into(),
             reset: "Reset".into(),
+            jump_to_latest: "Jump to latest".into(),
+            new_messages: "{} new".into(),
+            used_tools: "Used {} tools".into(),
+            approval_answers: ["Allowed".into(), "Always allowed".into(), "Denied".into()],
         }
     }
 
@@ -174,6 +186,14 @@ impl Strings {
             fast_mode_on: "高速モード: オン".into(),
             fast_mode_off: "高速モード: オフ".into(),
             reset: "リセット".into(),
+            jump_to_latest: "最新へ移動".into(),
+            new_messages: "新着{}件".into(),
+            used_tools: "ツールを{}回使用".into(),
+            approval_answers: [
+                "許可しました".into(),
+                "常に許可しました".into(),
+                "拒否しました".into(),
+            ],
         }
     }
 

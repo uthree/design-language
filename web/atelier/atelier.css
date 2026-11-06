@@ -1258,6 +1258,199 @@ a.at-list-item:hover {
   gap: var(--at-space-sm);
 }
 
+/* ChatView: the conversation as one scrolling view that follows its end while the person is
+   there. `chat()` in atelier.js fills and drives it. */
+.at-chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.at-chat__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.at-chat--panel .at-transcript {
+  max-width: none;
+  padding: var(--at-space-lg) var(--at-panel-padding, var(--at-space-md));
+}
+
+.at-chat__jump {
+  position: absolute;
+  bottom: var(--at-space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: var(--at-shadow-medium);
+}
+
+.at-chat__jump[hidden] {
+  display: none;
+}
+
+.at-tool-group__title {
+  padding: var(--at-space-xxs) 0 var(--at-space-xs);
+  color: var(--at-text-faint);
+  font-size: var(--at-size-xs);
+}
+
+.at-tool-group--single {
+  padding: 0;
+  border-color: transparent;
+  background: none;
+}
+
+.at-tool-group--single > .at-tool-group__title {
+  display: none;
+}
+
+.at-tool-call {
+  cursor: default;
+}
+
+.at-tool-call[aria-expanded] {
+  cursor: pointer;
+}
+
+.at-tool-call__summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-tool-call__failed {
+  color: var(--at-danger);
+}
+
+.at-tool-call__waiting {
+  color: var(--at-warning);
+}
+
+.at-tool-call__detail {
+  margin: 0 0 var(--at-space-xs);
+  padding: var(--at-space-sm) var(--at-space-md);
+  border-radius: var(--at-radius-sm);
+  background: var(--at-sunken);
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xs);
+  white-space: pre-wrap;
+}
+
+.at-thought {
+  cursor: pointer;
+}
+
+.at-thought__text {
+  margin-left: var(--at-space-sm);
+  padding-left: var(--at-space-md);
+  border-left: 1px solid var(--at-border-strong);
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+}
+
+.at-assistant-message__caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: var(--at-agent);
+  animation: at-caret 1s ease-in-out infinite alternate;
+}
+
+@keyframes at-caret {
+  from { opacity: 0.2; }
+}
+
+.at-assistant-message ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.at-message__actions {
+  display: flex;
+  gap: var(--at-space-xxs);
+  opacity: 0;
+  transition: opacity var(--at-motion-fast) ease-out;
+}
+
+.at-message--user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--at-space-xs);
+}
+
+:is(.at-message, .at-assistant-message):hover .at-message__actions,
+.at-message__actions:hover,
+.at-message__actions:focus-within {
+  opacity: 1;
+}
+
+.at-approval--answered {
+  flex-direction: row;
+  align-items: center;
+  padding: 0 var(--at-space-sm);
+  border: 0;
+  background: none;
+  font-size: var(--at-size-sm);
+  color: var(--at-text-faint);
+}
+
+.at-approval--answered strong {
+  color: var(--at-text-muted);
+}
+
+.at-approval--answered .at-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--at-success);
+}
+
+.at-approval--denied .at-icon {
+  color: var(--at-text-muted);
+}
+
+.at-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  color: var(--at-text-faint);
+  font-size: var(--at-size-xs);
+}
+
+.at-notice::before,
+.at-notice::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--at-separator);
+}
+
+.at-notice--error {
+  padding: var(--at-space-sm) var(--at-space-md);
+  border-radius: var(--at-radius-md);
+  background: var(--at-danger-wash);
+  color: var(--at-text);
+  font-size: var(--at-size-sm);
+}
+
+.at-notice--error::before,
+.at-notice--error::after {
+  content: none;
+}
+
+.at-notice--error .at-icon {
+  color: var(--at-danger);
+}
+
 /* The composer: an elevated card whose Send button follows its corner. */
 .at-composer {
   --_inset: var(--at-space-sm);
