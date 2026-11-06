@@ -14,20 +14,14 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
-## v0.3.0 — first tagged release
-
-Everything below, down to the start of this file, ships in v0.3.0. Applications that pinned a
-revision (Auris Studio pins `b584b12`) can move to
-`atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }`; read the
-sections from the one that names their revision upwards.
-
 ## Unreleased — usable as a library
 
 ### Added
 
-- Release tags. `v0.3.0` is the first; the crate's version is 0.3.0 to match. The README's
-  Install section shows the dependency line, how to upgrade (`cargo update -p atelier`) and how
-  to build against a local checkout with `[patch]`.
+- Release tags. The first will be `v0.3.0`, and the crate's version is 0.3.0 to match;
+  applications that pinned a revision (Auris Studio pins `b584b12`) can move to it once it is
+  tagged. The README's Install section shows the dependency line, how to upgrade
+  (`cargo update -p atelier`) and how to build against a local checkout with `[patch]`.
 - `atelier::prelude`: `use atelier::prelude::*` brings in the theme and its tokens,
   `ActiveTheme` and `ActiveStrings`, `Assets` and the everyday components (buttons, labels,
   icons, form controls, layout, popovers, the window frame). Specialised parts stay in their
