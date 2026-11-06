@@ -96,6 +96,30 @@ Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, a
 
 ## Controls
 
+Every control below works as it is dropped in: the user can click, drag, Tab to and step it,
+and it moves. Wire it one of two ways:
+
+- **Store the value** — pass the value you keep and a handler that stores the new one. The
+  control then shows only what you pass, so you can clamp, undo or ignore a change:
+
+  ```rust
+  Knob::new(self.drive)
+      .id("drive")
+      .label("Drive")
+      .readout_with(|v| format!("{:.0} %", v * 100.).into())
+      .on_change(cx.listener(|this, v: &f32, _, cx| {
+          this.drive = *v;
+          cx.notify();
+      }))
+  ```
+
+- **Leave it to the control** — give it no handler and it keeps the value it is moved to,
+  starting from the one you built it with, and takes yours again whenever you pass a different
+  one. For mock-ups, demos and settings nothing reads yet: `Knob::new(0.7).id("tension")`.
+
+Either way the id must stay the same between frames (use a tuple such as `("pan", track)` for
+one per row).
+
 - `Switch::new(id, on).label("Snap to grid")` — a setting that applies immediately.
 - `Checkbox::new(id, checked).label("Count-in")` — an independent choice. Both take
   `.disabled(bool)` and `.on_change(cx.listener(|this, on: &bool, _, cx| ..))`, which hands
@@ -103,9 +127,17 @@ Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, a
 - `SegmentedControl::new(id, [Segment::label("Light"), Segment::icon(IconName::Play)], selected)`
   `.size(ControlSize::Small).on_select(cx.listener(|this, index: &usize, window, cx| ...))`.
 - `Tabs::new(id, ["Score", "Piano roll"], selected).on_select(...)` — views of one object.
-- `Slider::new(0..=1 value).label("Volume").readout("-3.2 dB")`, `.bipolar()` for pan.
-- `Knob::new(value).label("Drive").readout("80 %")`, `.bipolar()`, `.color(track_colour)`,
-  `.diameter(px)`.
+- `Slider::new(v).id(id).label("Volume").readout_with(fmt)`, `.bipolar()` for pan. A click or
+  drag along the track sets it; once Tab reaches it the arrow keys step it by `.step(..)`
+  (0.01), Home and End go to the ends, and a double click returns it to `.default_value(..)`
+  (the centre when bipolar). `.on_change(|v: &f32, ..|)` hears it; `.disabled(true)` freezes
+  it. Without `.id(..)` it only shows its value.
+- `Knob::new(v).id(id).label("Drive").readout_with(fmt)`, `.bipolar()`, `.color(track_colour)`,
+  `.diameter(px)`. A drag up or to the right turns it up (200 px for the whole range); the keys,
+  the double click, `.step`, `.default_value`, `.on_change` and `.disabled` are the slider's.
+  `.readout("80 %")` is a fixed string; prefer `.readout_with` so the readout follows the value.
+- `AudioPlayer` without `on_play`/`on_seek`/`on_volume`/`on_mute` keeps its own state too, so a
+  mock-up's player plays, seeks and mutes; give it the handlers once real playback drives it.
 - `TextField::new().icon(IconName::Search).placeholder("Search sounds…")` — the frame of a
   text input. Atelier draws the well, the height, the radius and the ring; the application owns
   the editing (caret, selection, IME). This is the supported way to use it:
@@ -132,8 +164,8 @@ Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, a
   that must keep its own padding says so with `.input_inset(px(..))`, and the placeholder moves
   in to match.
 
-Dragging and keyboard stepping for sliders and knobs belong to the application (it owns the value
-and its undo); wrap the component in an element that handles the gesture.
+Sliders and knobs handle their own dragging and keys; the application keeps only the value
+(and its undo), through `on_change`. Do not wrap them in an element that handles the gesture.
 
 ## Display
 

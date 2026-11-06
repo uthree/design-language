@@ -545,8 +545,9 @@ impl Tabs {
         }
     }
 
-    /// Called with the index of the tab clicked or pressed with Enter or Space. Each tab is a
-    /// tab stop.
+    /// Called with the index of the tab clicked or pressed with Enter or Space: store it and
+    /// pass it back. Each tab is a tab stop. Without a handler the tabs keep the choice for
+    /// themselves.
     pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_select = Some(std::rc::Rc::new(handler));
         self
@@ -555,6 +556,10 @@ impl Tabs {
 
 impl RenderOnce for Tabs {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (selected_index, on_select) = match self.on_select {
+            Some(handler) => (self.selected, handler),
+            None => crate::controls::held(&self.id, self.selected, window, cx),
+        };
         let theme = cx.theme();
         let colors = &theme.colors;
         let id = self.id.clone();
@@ -566,7 +571,7 @@ impl RenderOnce for Tabs {
             .gap(theme.spacing.xxs)
             .whitespace_nowrap()
             .children(self.labels.into_iter().enumerate().map(|(index, label)| {
-                let selected = index == self.selected;
+                let selected = index == selected_index;
                 let hover = colors.hover;
                 let tab_id = ElementId::NamedChild(Box::new(id.clone()), index.to_string().into());
                 let mut tab = focusable(
@@ -592,9 +597,8 @@ impl RenderOnce for Tabs {
                 .when(selected, |tab| tab.bg(colors.selected))
                 .when(!selected, |tab| tab.hover(move |style| style.bg(hover)))
                 .child(label);
-                if let Some(handler) = self.on_select.clone() {
-                    tab = tab.on_click(move |_, window, cx| handler(&index, window, cx));
-                }
+                let handler = on_select.clone();
+                tab = tab.on_click(move |_, window, cx| handler(&index, window, cx));
                 tab
             }))
     }

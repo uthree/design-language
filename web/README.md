@@ -70,6 +70,8 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `SegmentedControl`, `Tabs` | `.at-segmented`, `.at-tabs` with `<button>`s |
 | `TextField`, `FormField` | `.at-field` around an `<input>`, `.at-form-field` |
 | `Switch`, `Checkbox`, `Slider` | `.at-switch`, `.at-checkbox` around an `<input type=checkbox>`, `input.at-slider` |
+| `Slider::bipolar`, `.default_value(v)` | `input.at-slider.at-slider--bipolar`, `data-default="v"` (a double click goes back) |
+| `Knob::new(v).id(..).bipolar().label(..).readout_with(..)` | `.at-knob` with `data-value`, `data-bipolar`, `data-default`, `data-step`, `.at-knob__label` and an `<output class="at-knob__readout">`; `--_size` and `--_value-color` restyle it |
 | `Card`, `Popover`, `SectionHeader` | `.at-card`, `.at-popover`, `.at-section-header` |
 | `ListItem`, `OptionCard`, `MenuItem` | `.at-list-item`, `.at-option-card`, `.at-menu-item` in `.at-menu` |
 | `Badge`, `StatusDot`, `Kbd`, `Avatar` | `.at-badge--success` etc., `.at-status-dot`, `.at-kbd`, `.at-avatar` |
@@ -79,9 +81,29 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `Tooltip` | `data-tooltip="…"` on any element |
 
 Icons are `<span data-icon="sparkles"></span>`; `hydrate()` from `atelier.js` draws them, and
-wires segmented controls and tabs (click and arrow keys, an `atelier:select` event) and slider
-fills. Call it again on markup a framework renders later. The provider marks are icons too:
+wires segmented controls and tabs (click and arrow keys, an `atelier:select` event), slider fills
+and knobs. Call it again on markup a framework renders later. The provider marks are icons too:
 `logo-anthropic`, `logo-openai`, `logo-google`, `logo-local`.
+
+Every control works as it is dropped in, as it does natively: switches, checkboxes and sliders
+are the browser's own inputs, and a knob turns with a drag up or to the right, the arrow keys,
+Home and End, and goes back to `data-default` on a double click. Listen for `input` (while it
+moves) and `change` (once it settles) and read `.value`, from 0 to 1 on a knob; set `.value`
+from script to move it. The readout is yours to write, in your own units:
+
+```html
+<div class="at-knob" data-value="0.8" data-default="0.8">
+  <span class="at-knob__label">Drive</span><output class="at-knob__readout">80 %</output>
+</div>
+<script type="module">
+  import { hydrate } from "./atelier/atelier.js";
+  hydrate();
+  const knob = document.querySelector(".at-knob");
+  knob.addEventListener("input", () => {
+    knob.querySelector("output").textContent = `${Math.round(knob.value * 100)} %`;
+  });
+</script>
+```
 
 ## Translucency
 
@@ -142,6 +164,6 @@ to WebAssembly would bring them over. The liquid-metal backdrop is not ported ye
 
 The prototype covers the tokens, the core controls, the window frame, the agent transcript and
 composer, and the backdrops. Still to come: menus that open (the menu is styled, not positioned),
-dialogs, completions, the node editor, plots and the instrument controls such as `Knob`,
+dialogs, completions, the node editor, plots and the instrument controls such as
 `PianoKeyboard`, `NoteRoll` and `ReadoutStrip`/`Readout`, and the effort picker's `note` and
 `EffortButton::disabled`. `IconName::Menu` is in the generated icons.

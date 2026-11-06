@@ -48,14 +48,15 @@ Ask in this order:
 
 | Concept | Use | Not |
 | --- | --- | --- |
-| A continuous value with its label and readout on one line (volume, tempo, strength) | `Slider::new(v).label(..).readout(..)`; `.bipolar()` around a centre (pan) | a `Knob` in a roomy row |
+| A continuous value with its label and readout on one line (volume, tempo, strength) | `Slider::new(v).id(..).label(..).readout_with(..)`; `.bipolar()` around a centre (pan) | a `Knob` in a roomy row |
 | Many continuous parameters packed together (drive, tone, decay) | `Knob`, `.bipolar()` for ± values, the readout in `Label::mono` | a stack of sliders in an inspector strip |
 | An exact number the person types (BPM 128.00, a port) | `TextField` with the value in mono, the unit as `.trailing(..)` | a slider whose readout cannot be typed into |
 | Position in a piece of audio, and its volume | `AudioPlayer` with `.on_seek(..)` / `.on_volume(..)` | a `Slider` beside a play button |
 | How much effort the agent spends | `agent::EffortButton` / `EffortPicker` (see [agent.md](agent.md)) | a generic slider |
 
-The application owns dragging and keyboard stepping for `Slider` and `Knob` (it owns the value
-and its undo); wrap them in an element that handles the gesture.
+`Slider` and `Knob` drag, step with the arrow keys and reset on a double click by themselves once
+they have an `.id(..)`; the application keeps the value through `.on_change(..)`, or leaves it to
+the control in a mock-up.
 
 ## Reporting an amount (read-only)
 

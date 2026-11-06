@@ -21,10 +21,26 @@ use atelier::{
     Tone, WindowFrame,
 };
 use common::Themed;
+use common::readout::{fraction, gain_db, percent};
+
 use gpui::{
-    Animation, AnimationExt, Context, Hsla, IntoElement, ParentElement, Render, Styled, Window,
-    div, prelude::*, px,
+    Animation, AnimationExt, Context, Hsla, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window, div, prelude::*, px,
 };
+
+/// A sample knob the user can turn. It keeps its own value: the demo synthesises nothing.
+fn knob(
+    id: &'static str,
+    value: f32,
+    label: &'static str,
+    readout: fn(f32) -> SharedString,
+) -> Knob {
+    Knob::new(value)
+        .id(id)
+        .label(label)
+        .default_value(value)
+        .readout_with(readout)
+}
 
 /// One sounding voice: what it plays and how it is being excited.
 struct Voice {
@@ -526,33 +542,26 @@ impl InstrumentLab {
                     )
                     .child(
                         knobs()
-                            .child(Knob::new(0.62).label("Pressure").readout("0.62"))
-                            .child(Knob::new(0.4).label("Speed").readout("0.40"))
-                            .child(Knob::new(0.12).label("Position").readout("12 %")),
+                            .child(knob("pressure", 0.62, "Pressure", fraction))
+                            .child(knob("speed", 0.4, "Speed", fraction))
+                            .child(knob("position", 0.12, "Position", percent)),
                     ),
             )
             .child(
                 group("String").child(
                     knobs()
-                        .child(Knob::new(0.7).label("Tension").readout("70 %"))
-                        .child(Knob::new(0.18).label("Stiffness").readout("0.18"))
-                        .child(Knob::new(0.35).label("Damping").readout("0.35")),
+                        .child(knob("tension", 0.7, "Tension", percent))
+                        .child(knob("stiffness", 0.18, "Stiffness", fraction))
+                        .child(knob("damping", 0.35, "Damping", fraction)),
                 ),
             )
             .child(
                 group("Body").child(
                     knobs()
+                        .child(knob("size", 0.55, "Size", percent).color(theme.colors.series[1]))
                         .child(
-                            Knob::new(0.55)
-                                .label("Size")
-                                .readout("55 %")
-                                .color(theme.colors.series[1]),
-                        )
-                        .child(
-                            Knob::new(0.5)
+                            knob("brightness", 0.5, "Brightness", gain_db)
                                 .bipolar()
-                                .label("Brightness")
-                                .readout("0.0")
                                 .color(theme.colors.series[1]),
                         ),
                 ),

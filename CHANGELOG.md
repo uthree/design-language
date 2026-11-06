@@ -10,6 +10,43 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — controls that move when used
+
+### Added
+
+- `Slider` and `Knob` take an `.id(..)` and then move when used: a click or drag along the
+  slider's track, a drag up or to the right on the knob (200 px for the whole range), the arrow
+  keys, Home and End once Tab reaches them, and a double click back to `.default_value(..)` (the
+  centre when bipolar). `.on_change(|value: &f32, window, cx| ..)` hears the new value,
+  `.step(..)` sets an arrow key's worth (0.01), `.readout_with(|value| ..)` formats the readout
+  from the value shown, and `.disabled(true)` greys them out. Without an id they only show
+  their value, as before.
+- Every control works as it is dropped in. `Switch`, `Checkbox`, `SegmentedControl`, `Tabs`,
+  `Slider`, `Knob` and `AudioPlayer` given no handler keep the value they are moved to for
+  themselves, starting from the one they were built with and taking the application's value
+  again whenever it changes. Give them a handler and they show only what the application passes,
+  as before.
+- The examples' sliders, knobs and switches can all be used: the showcase's volume, pan, input
+  monitoring and EQ (one set per track), the instrument lab's exciter, string and body knobs,
+  the plot lab's oscillator and gas controls (its azimuth and elevation turn the plot), the
+  control legend's samples and the node editor's number parameters, whose readouts follow.
+- Web kit: `.at-knob`, the knob, drawn and turned by `hydrate()` (drag, arrow keys, Home, End,
+  double click to `data-default`, `input`/`change` events and `.value`), and
+  `input.at-slider--bipolar`, which fills from the centre. A slider with `data-default` goes back
+  to it on a double click. The showcase's sliders and knobs move, with live readouts.
+
+### Changed
+
+- A `Switch`, `Checkbox`, `SegmentedControl` or `Tabs` drawn with no handler used to ignore
+  clicks; it now flips or selects by itself. Pass `.disabled(true)` for one that must not move.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| An element around a `Slider` or `Knob` that tracks the drag, the arrow keys or a double click and sets the value | `.id(..)` and `.on_change(..)` on the control itself |
+| A readout string formatted from the value at each call site | `.readout_with(|value| ..)` |
+
 ## Unreleased — screenshots retaken, knob icon redrawn
 
 ### Changed

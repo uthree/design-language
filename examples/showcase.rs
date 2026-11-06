@@ -32,6 +32,7 @@ use gpui::{
 };
 
 use common::argument;
+use common::readout::{gain_db, pan, percent, volume_db};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -494,9 +495,25 @@ impl Showcase {
                         SectionHeader::new(track.name)
                             .description("Instrument · Grand Piano (Physical)"),
                     )
-                    .child(Slider::new(0.72).label("Volume").readout("-3.2 dB"))
-                    .child(Slider::new(0.42).label("Pan").readout("L 16").bipolar())
-                    .child(Switch::new("monitor", true).label("Input monitoring")),
+                    // No handlers: each control keeps its own value, one per track.
+                    .child(
+                        Slider::new(0.72)
+                            .id(("volume", self.selected_track))
+                            .label("Volume")
+                            .default_value(0.75)
+                            .readout_with(volume_db),
+                    )
+                    .child(
+                        Slider::new(0.42)
+                            .id(("pan", self.selected_track))
+                            .label("Pan")
+                            .bipolar()
+                            .readout_with(pan),
+                    )
+                    .child(
+                        Switch::new(("monitor", self.selected_track), true)
+                            .label("Input monitoring"),
+                    ),
             )
             .child(Divider::vertical().full())
             .child(
@@ -511,11 +528,30 @@ impl Showcase {
                     .child(
                         div().flex().gap(theme.spacing.lg).children(
                             [
-                                Knob::new(0.62).label("Low").readout("+2.1"),
-                                Knob::new(0.5).bipolar().label("Mid").readout("0.0"),
-                                Knob::new(0.35).bipolar().label("High").readout("-1.8"),
-                                Knob::new(0.8).color(color).label("Drive").readout("80 %"),
-                                Knob::new(0.25).label("Mix").readout("25 %"),
+                                Knob::new(0.62)
+                                    .id(("eq-low", self.selected_track))
+                                    .bipolar()
+                                    .label("Low")
+                                    .readout_with(gain_db),
+                                Knob::new(0.5)
+                                    .id(("eq-mid", self.selected_track))
+                                    .bipolar()
+                                    .label("Mid")
+                                    .readout_with(gain_db),
+                                Knob::new(0.35)
+                                    .id(("eq-high", self.selected_track))
+                                    .bipolar()
+                                    .label("High")
+                                    .readout_with(gain_db),
+                                Knob::new(0.8)
+                                    .id(("drive", self.selected_track))
+                                    .color(color)
+                                    .label("Drive")
+                                    .readout_with(percent),
+                                Knob::new(0.25)
+                                    .id(("mix", self.selected_track))
+                                    .label("Mix")
+                                    .readout_with(percent),
                             ]
                             .into_iter()
                             .take(knobs),

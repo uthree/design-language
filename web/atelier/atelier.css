@@ -679,6 +679,109 @@ html[data-vibrancy] body.at-root {
   box-shadow: var(--at-shadow-medium);
 }
 
+/* A bipolar slider fills from the centre; `hydrate` keeps `--_from` and `--_value` in step. */
+.at-slider--bipolar::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    90deg,
+    var(--at-sunken) var(--_from),
+    var(--at-on-fill) var(--_from) var(--_value),
+    var(--at-sunken) var(--_value)
+  );
+}
+
+.at-slider--bipolar::-moz-range-track {
+  background: linear-gradient(
+    90deg,
+    var(--at-sunken) var(--_from),
+    var(--at-on-fill) var(--_from) var(--_value),
+    var(--at-sunken) var(--_value)
+  );
+}
+
+.at-slider--bipolar::-moz-range-progress {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- knob */
+
+/* `Knob`: a 270° arc, a body and a pointer, with the name and the value under it. `hydrate`
+   draws the dial into `.at-knob__dial` and makes it turn: a drag up or to the right, the arrow
+   keys, Home and End, and a double click back to `data-default`. */
+.at-knob {
+  --_size: 40px;
+  --_value-color: var(--at-accent);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.at-knob__dial {
+  display: block;
+  width: var(--_size);
+  height: var(--_size);
+  border-radius: 50%;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.at-knob__dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.at-knob__track {
+  fill: none;
+  stroke: var(--at-sunken);
+  stroke-width: 3;
+}
+
+.at-knob__ring {
+  fill: none;
+  stroke: var(--at-border-strong);
+  stroke-opacity: 0.5;
+  stroke-width: 0.75;
+}
+
+.at-knob__value {
+  fill: none;
+  stroke: var(--_value-color);
+  stroke-width: 3;
+}
+
+.at-knob__body {
+  fill: var(--at-elevated);
+  stroke: var(--at-border-strong);
+  stroke-width: 1;
+}
+
+/* The body catches a little light in the dark themes, as natively. */
+[data-theme$="-dark"] .at-knob__body {
+  fill: color-mix(in srgb, var(--at-elevated) 94%, white);
+}
+
+.at-knob__pointer {
+  stroke: var(--at-text);
+  stroke-width: 2;
+}
+
+.at-knob__label {
+  font-size: var(--at-size-xs);
+  color: var(--at-text-muted);
+}
+
+.at-knob__readout {
+  font-family: var(--at-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--at-size-xs);
+}
+
+.at-knob[aria-disabled="true"] {
+  opacity: 0.45;
+}
+
 /* ---------------------------------------------------------------- surfaces and lists */
 
 .at-card {
