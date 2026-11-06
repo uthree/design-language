@@ -889,3 +889,399 @@ export function changedFiles(root, { title = "Changed files", files = [], action
   });
   return root;
 }
+
+/// `graph::NodeCanvas`: a node graph on a pannable canvas in `root` (give it a height).
+///
+/// Each node is `{ title, icon, x, y, width, inputs, outputs, fields, state, progress, seconds,
+/// byAgent }`: ports are `{ name, kind }` with `kind` an index into `portTypes` (it picks the
+/// port colour), fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
+/// and `state` is idle, queued, running (with `progress` 0–1), done (with `seconds`), cached or
+/// failed. Wires are `{ from, output, to, input }` by node id, and only join ports of one kind.
+///
+/// The person drags nodes, draws wires from an output to an input, picks a wire up by its
+/// input, pans with the background or the wheel, and deletes the selected node with Delete.
+/// What they do fires `atelier:node-select`, `node-move`, `node-connect`, `node-disconnect`,
+/// `node-remove`, `node-keep` and `node-undo` on `root`, after the canvas has applied it.
+export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legend = true, labels = {} } = {}) {
+  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", ...labels };
+  const graph = new Map();
+  let links = [];
+  let next = 0;
+  let pan = { x: 16, y: 24 };
+  let selected = null;
+  let drag = null;
+  root.classList.add("at-node-canvas");
+  root.tabIndex = 0;
+  root.replaceChildren();
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("at-node-canvas__wires");
+  const layer = element("div", "at-node-canvas__layer");
+  root.append(svg, layer);
+  const emit = (name, detail) => root.dispatchEvent(new CustomEvent(`atelier:${name}`, { bubbles: true, detail }));
+  const color = (kind) => `var(--at-port-${(kind || 0) % 5})`;
+
+  if (legend) {
+    const box = element("div", "at-node-canvas__legend");
+    const reset = element("button", "at-button at-button--ghost at-button--sm", words.resetView);
+    reset.type = "button";
+    reset.addEventListener("click", () => api.resetView());
+    box.append(reset);
+    portTypes.forEach((name, kind) => {
+      const item = element("span");
+      const dot = element("span", "at-status-dot");
+      dot.style.background = color(kind);
+      item.append(dot, name);
+      box.append(item);
+    });
+    root.append(box);
+  }
+
+  const portKind = (id, index, output) => graph.get(id)?.[output ? "outputs" : "inputs"]?.[index]?.kind;
+  const canConnect = (wire) =>
+    wire.from !== wire.to && portKind(wire.from, wire.output, true) !== undefined && portKind(wire.from, wire.output, true) === portKind(wire.to, wire.input, false);
+  const same = (a, b) => a.from === b.from && a.output === b.output && a.to === b.to && a.input === b.input;
+
+  function stateMark(node) {
+    const mark = element("span", "at-node__state");
+    switch (node.state) {
+      case "queued":
+        mark.textContent = words.queued;
+        break;
+      case "running":
+        mark.append(`${Math.round((node.progress || 0) * 100)} %`, element("span", "at-spinner"));
+        break;
+      case "done":
+        mark.classList.add("at-node__state--done");
+        if (node.seconds != null) mark.textContent = `${node.seconds.toFixed(1)} s`;
+        break;
+      case "cached":
+        mark.textContent = words.cached;
+        break;
+      case "failed":
+        mark.classList.add("at-node__state--failed");
+        mark.textContent = "!";
+        break;
+      default:
+        if (node.byAgent) {
+          mark.classList.add("at-node__state--agent");
+          mark.append(icon("sparkles", { size: 12 }));
+        }
+    }
+    return mark;
+  }
+
+  function drawNode(id, node) {
+    const card = element("div", "at-node");
+    card.dataset.node = id;
+    card.style.left = `${node.x || 0}px`;
+    card.style.top = `${node.y || 0}px`;
+    card.style.width = `${node.width || 200}px`;
+    card.classList.toggle("at-node--agent", !!node.byAgent);
+    card.classList.toggle("is-selected", selected === id);
+    card.classList.toggle("is-running", node.state === "running");
+    card.classList.toggle("is-failed", node.state === "failed");
+    const header = element("div", "at-node__header");
+    if (node.icon) header.append(icon(node.icon));
+    header.append(element("span", "at-node__title", node.title), stateMark(node));
+    card.append(header);
+    if (node.state === "running") {
+      const bar = element("div", "at-node__progress");
+      const fill = element("span");
+      fill.style.width = `${(node.progress || 0) * 100}%`;
+      bar.append(fill);
+      card.append(bar);
+    }
+    const inputs = node.inputs || [];
+    const outputs = node.outputs || [];
+    const rows = Math.max(inputs.length, outputs.length);
+    if (rows) {
+      const ports = element("div", "at-node__ports");
+      for (let row = 0; row < rows; row++) {
+        const line = element("div", "at-node__row");
+        line.append(element("span", "", inputs[row]?.name || ""), element("span", "", outputs[row]?.name || ""));
+        for (const [list, output] of [[inputs, false], [outputs, true]]) {
+          const port = list[row];
+          if (!port) continue;
+          const socket = element("span", `at-node__socket at-node__socket--${output ? "out" : "in"}`);
+          socket.dataset.kind = port.kind || 0;
+          socket.dataset.index = row;
+          socket.title = portTypes[port.kind] ? `${port.name} · ${portTypes[port.kind]}` : port.name;
+          const wired = links.some((wire) => (output ? wire.from === id && wire.output === row : wire.to === id && wire.input === row));
+          socket.classList.toggle("is-wired", wired);
+          line.append(socket);
+        }
+        ports.append(line);
+      }
+      card.append(ports);
+    }
+    if (node.fields?.length) {
+      const fields = element("div", "at-node__fields");
+      for (const field of node.fields) {
+        const row = element("div", `at-node__field at-node__field--${field.type || "number"}`);
+        if (field.fraction != null) row.style.setProperty("--fraction", String(field.fraction));
+        row.append(element("span", "", field.name), element("span", "", field.value ?? ""));
+        fields.append(row);
+      }
+      card.append(fields);
+    }
+    if (node.byAgent) {
+      const footer = element("div", "at-node__agent", words.addedByAgent);
+      const buttons = element("div");
+      const undo = element("button", "at-button at-button--ghost at-button--sm", words.undo);
+      const keep = element("button", "at-button at-button--sm", words.keep);
+      undo.type = keep.type = "button";
+      undo.addEventListener("click", () => {
+        api.undoAgentNode(id);
+        emit("node-undo", { id });
+      });
+      keep.addEventListener("click", () => {
+        api.update(id, { byAgent: false });
+        emit("node-keep", { id });
+      });
+      buttons.append(undo, keep);
+      footer.append(buttons);
+      card.append(footer);
+    }
+    return card;
+  }
+
+  function socketCentre(id, index, output) {
+    const socket = layer.querySelector(`.at-node[data-node="${id}"] .at-node__socket--${output ? "out" : "in"}[data-index="${index}"]`);
+    if (!socket) return null;
+    const box = socket.getBoundingClientRect();
+    const frame = root.getBoundingClientRect();
+    return { x: box.left + box.width / 2 - frame.left, y: box.top + box.height / 2 - frame.top };
+  }
+
+  function curve(from, to) {
+    const reach = Math.max(Math.abs(to.x - from.x) * 0.5, 48);
+    return `M ${from.x} ${from.y} C ${from.x + reach} ${from.y}, ${to.x - reach} ${to.y}, ${to.x} ${to.y}`;
+  }
+
+  function drawWires() {
+    svg.replaceChildren();
+    const add = (from, to, kind, strong) => {
+      if (!from || !to) return;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", curve(from, to));
+      path.style.stroke = color(kind);
+      if (strong) path.classList.add("is-strong");
+      svg.append(path);
+    };
+    for (const wire of links) {
+      add(socketCentre(wire.from, wire.output, true), socketCentre(wire.to, wire.input, false), portKind(wire.from, wire.output, true), selected === wire.from || selected === wire.to);
+    }
+    if (drag?.type === "wire") add(socketCentre(drag.from, drag.output, true), drag.cursor, portKind(drag.from, drag.output, true), true);
+  }
+
+  function draw() {
+    root.style.setProperty("--_pan-x", `${pan.x}px`);
+    root.style.setProperty("--_pan-y", `${pan.y}px`);
+    layer.replaceChildren(...[...graph].map(([id, node]) => drawNode(id, node)));
+    // While a wire is dragged, inputs it cannot join step back.
+    if (drag?.type === "wire") {
+      for (const socket of layer.querySelectorAll(".at-node__socket--in")) {
+        const to = Number(socket.closest(".at-node").dataset.node);
+        socket.classList.toggle("is-muted", !canConnect({ from: drag.from, output: drag.output, to, input: Number(socket.dataset.index) }));
+      }
+    }
+    drawWires();
+  }
+
+  const point = (event) => {
+    const frame = root.getBoundingClientRect();
+    return { x: event.clientX - frame.left, y: event.clientY - frame.top };
+  };
+
+  root.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 && event.button !== 1) return;
+    if (event.target.closest("button, .at-node-canvas__legend")) return;
+    root.focus({ preventScroll: true });
+    const socket = event.target.closest(".at-node__socket");
+    const card = event.target.closest(".at-node");
+    if (socket && card) {
+      const id = Number(card.dataset.node);
+      const index = Number(socket.dataset.index);
+      if (socket.classList.contains("at-node__socket--out")) {
+        drag = { type: "wire", from: id, output: index, cursor: point(event) };
+      } else {
+        // Pulling a wired input picks its wire up again.
+        const wire = links.find((wire) => wire.to === id && wire.input === index);
+        if (!wire) return;
+        links = links.filter((other) => other !== wire);
+        emit("node-disconnect", { wire });
+        drag = { type: "wire", from: wire.from, output: wire.output, cursor: point(event) };
+      }
+    } else if (card && event.button === 0) {
+      const id = Number(card.dataset.node);
+      if (selected !== id) {
+        api.select(id);
+        emit("node-select", { id });
+      }
+      drag = { type: "node", id, last: point(event), moved: false };
+    } else {
+      if (event.button === 0 && selected !== null) {
+        api.select(null);
+        emit("node-select", { id: null });
+      }
+      drag = { type: "pan", last: point(event) };
+    }
+    root.setPointerCapture(event.pointerId);
+    draw();
+    event.preventDefault();
+  });
+
+  root.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const at = point(event);
+    if (drag.type === "pan") {
+      pan = { x: pan.x + at.x - drag.last.x, y: pan.y + at.y - drag.last.y };
+      drag.last = at;
+      draw();
+    } else if (drag.type === "node") {
+      const node = graph.get(drag.id);
+      node.x = (node.x || 0) + at.x - drag.last.x;
+      node.y = (node.y || 0) + at.y - drag.last.y;
+      drag.last = at;
+      drag.moved = true;
+      const card = layer.querySelector(`.at-node[data-node="${drag.id}"]`);
+      card.style.left = `${node.x}px`;
+      card.style.top = `${node.y}px`;
+      card.classList.add("is-dragging");
+      drawWires();
+    } else {
+      drag.cursor = at;
+      drawWires();
+    }
+  });
+
+  const finish = (event) => {
+    if (!drag) return;
+    const ended = drag;
+    drag = null;
+    if (ended.type === "node" && ended.moved) emit("node-move", { id: ended.id });
+    if (ended.type === "wire") {
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".at-node__socket--in");
+      const card = target?.closest(".at-node");
+      if (target && card) {
+        const wire = { from: ended.from, output: ended.output, to: Number(card.dataset.node), input: Number(target.dataset.index) };
+        if (canConnect(wire)) {
+          const replaced = links.find((old) => old.to === wire.to && old.input === wire.input);
+          links = links.filter((old) => old !== replaced);
+          links.push(wire);
+          if (replaced) emit("node-disconnect", { wire: replaced });
+          emit("node-connect", { wire });
+        }
+      }
+    }
+    draw();
+  };
+  root.addEventListener("pointerup", finish);
+  root.addEventListener("pointercancel", finish);
+
+  root.addEventListener(
+    "wheel",
+    (event) => {
+      pan = { x: pan.x - event.deltaX, y: pan.y - event.deltaY };
+      draw();
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  root.addEventListener("keydown", (event) => {
+    if ((event.key === "Delete" || event.key === "Backspace") && selected !== null) {
+      const id = selected;
+      api.remove(id);
+      emit("node-remove", { id });
+      event.preventDefault();
+    } else if (event.key === "Escape" && selected !== null) {
+      api.select(null);
+      emit("node-select", { id: null });
+    }
+  });
+
+  const api = {
+    add(node) {
+      const id = next++;
+      graph.set(id, { ...node });
+      draw();
+      return id;
+    },
+    remove(id) {
+      graph.delete(id);
+      links = links.filter((wire) => wire.from !== id && wire.to !== id);
+      if (selected === id) selected = null;
+      draw();
+    },
+    update(id, patch) {
+      const node = graph.get(id);
+      if (!node) return;
+      Object.assign(node, patch);
+      draw();
+    },
+    setState(id, state, { progress, seconds } = {}) {
+      api.update(id, { state, progress, seconds });
+    },
+    connect(wire) {
+      if (!canConnect(wire)) return false;
+      links = links.filter((old) => !(old.to === wire.to && old.input === wire.input));
+      links.push({ ...wire });
+      draw();
+      return true;
+    },
+    disconnect(wire) {
+      links = links.filter((old) => !same(old, wire));
+      draw();
+    },
+    select(id) {
+      selected = id;
+      // The touched node comes to the front.
+      if (id !== null && graph.has(id)) {
+        const node = graph.get(id);
+        graph.delete(id);
+        graph.set(id, node);
+      }
+      draw();
+    },
+    undoAgentNode(id) {
+      const source = links.find((wire) => wire.to === id);
+      const targets = links.filter((wire) => wire.from === id);
+      api.remove(id);
+      if (source) for (const target of targets) api.connect({ from: source.from, output: source.output, to: target.to, input: target.input });
+    },
+    resetView() {
+      pan = { x: 16, y: 24 };
+      draw();
+    },
+    get selected() {
+      return selected;
+    },
+    nodes: () => [...graph].map(([id, node]) => ({ id, ...node })),
+    wires: () => links.map((wire) => ({ ...wire })),
+    canConnect,
+    downstream(id) {
+      const found = [id];
+      for (let index = 0; index < found.length; index++) {
+        for (const wire of links) if (wire.from === found[index] && !found.includes(wire.to)) found.push(wire.to);
+      }
+      return found;
+    },
+    executionOrder() {
+      const remaining = [...graph.keys()].sort((a, b) => a - b);
+      const order = [];
+      while (remaining.length) {
+        const ready = remaining.findIndex((id) => links.filter((wire) => wire.to === id).every((wire) => !remaining.includes(wire.from)));
+        order.push(remaining.splice(Math.max(ready, 0), 1)[0]);
+      }
+      return order;
+    },
+  };
+
+  for (const node of nodes) api.add(node);
+  for (const wire of wires) api.connect(wire);
+  // Wires follow the cards' measured sockets, so draw again once fonts and layout settle.
+  requestAnimationFrame(draw);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => drawWires()).observe(root);
+  return api;
+}

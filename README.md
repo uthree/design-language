@@ -19,7 +19,7 @@ atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }
 
 ```rust
 use atelier::prelude::*;   // theme, cx.theme(), cx.strings() and the everyday components
-use atelier::agent::Composer; // specialised parts stay in their modules: agent, viz, plot, …
+use atelier::agent::Composer; // specialised parts stay in their modules: agent, graph, viz, plot, …
 ```
 
 - **Pin a tag.** Each tag `vX.Y.Z` matches the crate's version and a section of

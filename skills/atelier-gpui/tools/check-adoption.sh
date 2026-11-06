@@ -99,6 +99,8 @@ check warn 'fn (mode_warns|[a-z_]*approval_view)\b' \
     "a hand-built approval or permission mode menu: use atelier::agent::ApprovalDialog, ChatEntry::approval or PermissionPicker"
 check warn 'fn ([a-z_]*status_row|context_gauge|phase_label|changed_files_list)\b' \
     "a hand-built activity line, plan or changed-files list: use atelier::agent::AgentActivity, PlanView or ChangedFiles"
+check warn 'fn (bezier|execution_order|undo_agent_node|input_mouse_down)\b' \
+    "a node graph copied from the node_editor example: use atelier::graph::NodeCanvas"
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

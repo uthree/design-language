@@ -213,6 +213,11 @@
                 <span class="at-small at-muted" id="dialog-answer">Answers show here.</span>
               </div>
 
+              <div class="at-card at-card--padded" style="grid-column: 1 / -1">
+                <div class="at-section-header"><h3 class="at-heading">Node canvas</h3><span class="at-small at-muted" id="graph-event">Drag nodes, wire an output to an input, pan the background.</span></div>
+                <div id="graph" style="height: 380px; border-radius: var(--at-radius-md)"></div>
+              </div>
+
               <div class="at-card at-card--padded">
                 <div class="at-section-header"><h3 class="at-heading">Categories and meters</h3></div>
                 <div class="swatches" id="categories"></div>
@@ -292,7 +297,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, hydrate, openDialog, permissionPicker, planView, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, hydrate, nodeCanvas, openDialog, permissionPicker, planView, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -449,6 +454,25 @@
         answer.textContent = `Answered: ${value ?? "dismissed"}`;
       });
       permissionPicker(document.getElementById("permission-sample"));
+      // The node canvas, wired as the gpui node_editor's tail end.
+      const graphRoot = document.getElementById("graph");
+      nodeCanvas(graphRoot, {
+        portTypes: ["Model", "Conditioning", "Latent", "Audio", "Value"],
+        nodes: [
+          { title: "Sampler", icon: "brain", x: 0, y: 10, width: 220, inputs: [{ name: "Model", kind: 0 }, { name: "Positive", kind: 1 }, { name: "Latent", kind: 2 }], outputs: [{ name: "Latent", kind: 2 }], fields: [{ type: "number", name: "Steps", value: "30", fraction: 0.3 }, { type: "choice", name: "Sampler", value: "DPM++ 2M" }], state: "done", seconds: 4.2 },
+          { title: "Decode audio", icon: "waveform", x: 270, y: 10, inputs: [{ name: "Latent", kind: 2 }], outputs: [{ name: "Audio", kind: 3 }], state: "running", progress: 0.45 },
+          { title: "Loudness normalize", icon: "waveform", x: 270, y: 150, inputs: [{ name: "Audio", kind: 3 }], outputs: [{ name: "Audio", kind: 3 }], fields: [{ type: "number", name: "Target", value: "−14 LUFS", fraction: 0.6 }], byAgent: true },
+          { title: "Save audio", icon: "music", x: 520, y: 60, inputs: [{ name: "Audio", kind: 3 }], fields: [{ type: "text", name: "File name", value: "pad-textures-{n}.wav" }] },
+        ],
+        wires: [
+          { from: 0, output: 0, to: 1, input: 0 },
+          { from: 1, output: 0, to: 2, input: 0 },
+          { from: 2, output: 0, to: 3, input: 0 },
+        ],
+      });
+      for (const name of ["node-select", "node-move", "node-connect", "node-disconnect", "node-remove", "node-keep", "node-undo"]) {
+        graphRoot.addEventListener(`atelier:${name}`, (event) => (document.getElementById("graph-event").textContent = `${name}: ${JSON.stringify(event.detail)}`));
+      }
       permissionPicker(document.getElementById("permission-bypass"), { mode: "bypass" });
       const draft = document.getElementById("draft");
       const send = () => {

@@ -39,6 +39,7 @@ mod focus;
 mod form;
 mod frame;
 mod gpu;
+pub mod graph;
 mod icon;
 mod keyboard;
 mod layout;
