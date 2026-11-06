@@ -85,6 +85,7 @@ pub fn theme_css(theme: &Theme) -> String {
         ("surface", colors.surface),
         ("elevated", colors.elevated),
         ("overlay", colors.overlay),
+        ("scrim", colors.scrim),
         ("sunken", colors.sunken),
         ("control", colors.control),
         ("hover", colors.hover),

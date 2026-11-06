@@ -117,6 +117,9 @@ pub struct Colors {
     pub elevated: Hsla,
     /// Menus, popovers, tooltips and dialogs.
     pub overlay: Hsla,
+    /// Laid over the whole window behind a modal dialog, so the dialog is the one thing to
+    /// answer.
+    pub scrim: Hsla,
     /// Recessed wells: text fields, meters, slider tracks, lanes.
     pub sunken: Hsla,
     /// Fill of an ordinary (secondary) button. Opaque `elevated` in most themes; under Glass's
@@ -784,6 +787,7 @@ fn colors(
         surface,
         elevated,
         overlay,
+        scrim: gpui::black().opacity(if dark { 0.5 } else { 0.28 }),
         sunken,
         control,
         hover: tone.opacity(if dark { 0.08 } else { 0.05 }),

@@ -32,6 +32,7 @@ pub mod ambient;
 mod backdrop;
 mod button;
 mod controls;
+mod dialog;
 mod display;
 pub mod emoji;
 mod focus;
@@ -60,6 +61,7 @@ pub use ambient::{Ambience, AmbientBackdrop};
 pub use backdrop::BackdropPalette;
 pub use button::{Button, ButtonVariant, ControlSize, CopyButton};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
+pub use dialog::{DIALOG_CONTEXT, Dialog};
 pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
 pub use focus::{
     CONTROL_CONTEXT, FocusNext, FocusPrevious, StepBackward, StepForward, StepToEnd, StepToStart,
@@ -109,7 +111,7 @@ pub fn init(cx: &mut gpui::App, theme: Theme) {
 pub mod prelude {
     pub use crate::{
         ActiveStrings, ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card,
-        Checkbox, ControlSize, Direction, Divider, EmptyState, FormField, FormGroup, Icon,
+        Checkbox, ControlSize, Dialog, Direction, Divider, EmptyState, FormField, FormGroup, Icon,
         IconName, Label, ListItem, MenuItem, Popover, SectionHeader, Sidebar, Slider, Spinner,
         StatusBar, Strings, Switch, Tabs, TextColor, TextField, TextSize, Theme, TitleBar, Tone,
         Toolbar, Tooltip, WindowFrame,

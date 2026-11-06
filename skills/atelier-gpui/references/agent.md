@@ -77,6 +77,32 @@ AgentPanel::new("agent", title).status(status).chat(chat.clone()).composer(compo
 On the web, `chat(element, { panel, logo, strings })` from `atelier.js` is the same view; see
 `web/README.md`.
 
+## Approvals and permission modes
+
+Ask in the transcript (`ChatEntry::approval`) when the person is reading the conversation. Ask
+in a modal when the request must stop everything: the conversation is hidden, or the action
+leaves the machine (a push, a payment, an e-mail).
+
+```rust
+ApprovalDialog::new("push", "Push claude/fix-playback to origin?")
+    .body("Publishes 2 commits. Pushing can be undone only by a force-push.")
+    .command("git push origin claude/fix-playback")   // the exact command, as a terminal line
+    .allow_label("Push")                                // the verb, never "OK"
+    .offer_always()
+    .reviewing(auto_review_running)                     // only Deny pressable meanwhile
+    .on_decide(cx.listener(|this, decision: &Decision, window, cx| { .. }))
+```
+
+Draw it while the request waits; it lays itself over the window. Deny takes focus, Escape and a
+press outside deny. Put focus back where the person was when you stop drawing it. Any other
+modal question is a `Dialog` (`.icon(IconName::Trash, Tone::Danger)`, `.body(..)`,
+`.action(Button)` safe choice first, `.on_dismiss(..)`).
+
+The permission mode sits in the composer row:
+`.control(PermissionPicker::new("permission", mode).modes([Plan, Ask, AcceptEdits, Bypass]).on_select(..))`.
+Offer only the modes your runtime enforces. `Bypass` stays red while chosen; do not add a
+second warning for it. Show the mode in the status bar too (`mode.label(cx)`).
+
 ## The panel
 
 ```rust

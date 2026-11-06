@@ -202,6 +202,17 @@
               </div>
 
               <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Dialogs and permissions</h3></div>
+                <div class="row">
+                  <button class="at-button" id="open-approval">Approval dialog…</button>
+                  <button class="at-button" id="open-reviewing">While reviewing…</button>
+                  <button class="at-button at-button--danger" id="open-delete">Delete clip…</button>
+                </div>
+                <div class="row"><span id="permission-sample"></span><span id="permission-bypass"></span></div>
+                <span class="at-small at-muted" id="dialog-answer">Answers show here.</span>
+              </div>
+
+              <div class="at-card at-card--padded">
                 <div class="at-section-header"><h3 class="at-heading">Categories and meters</h3></div>
                 <div class="swatches" id="categories"></div>
                 <div class="meters">
@@ -232,6 +243,7 @@
                 <div class="at-composer__bar">
                   <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Attach"><span data-icon="paperclip"></span></button>
                   <button class="at-button at-button--ghost at-button--sm"><span data-icon="logo-anthropic"></span>Claude Opus 5.5<span class="at-button__after" data-icon="chevron-down"></span></button>
+                  <span id="permission"></span>
                   <span class="at-spacer"></span>
                   <span class="at-kbd">Enter</span>
                   <button id="send" class="at-button at-button--primary at-button--icon at-composer__send" data-tooltip="Send"><span data-icon="arrow-up"></span></button>
@@ -280,7 +292,7 @@
     </div>
 
     <script type="module">
-      import { chat, hydrate, setTheme, theme } from "./atelier/atelier.js";
+      import { approvalDialog, chat, hydrate, openDialog, permissionPicker, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -345,14 +357,57 @@
         }
         conversation.finish(answer);
       };
+      const permission = permissionPicker(document.getElementById("permission"));
       document.getElementById("chat").addEventListener("atelier:decided", (event) => {
         if (event.detail.decision === "deny") return reply("Understood. I will leave the tests for you to run.");
         const run = conversation.push({ kind: "tool", name: "bash", summary: "Running the workspace tests", state: "running", icon: "code" });
-        setTimeout(() => {
+        setTimeout(async () => {
           conversation.setToolState(run, "succeeded");
-          reply("All 2,412 tests pass, including 50 runs of the playback test.");
+          await reply("All 2,412 tests pass, including 50 runs of the playback test.");
+          if (permission.mode === "bypass") return;
+          // Pushing leaves the machine, so the mock agent asks in a dialog.
+          const push = await approvalDialog({
+            title: "Push claude/fix-playback to origin?",
+            body: "Publishes 2 commits to GitHub. Pushing can be undone only by a force-push.",
+            command: "git push origin claude/fix-playback",
+            allowLabel: "Push",
+            offerAlways: true,
+          });
+          if (push === "deny") conversation.push({ kind: "status", text: "Push denied" });
+          else conversation.push({ kind: "tool", name: "bash", summary: "Pushed claude/fix-playback", state: "succeeded", icon: "code" });
         }, 1200);
       });
+
+      // The components page's dialogs and permission pickers.
+      const answer = document.getElementById("dialog-answer");
+      const approve = async (reviewing) => {
+        const decision = await approvalDialog({
+          title: "Render the mix to disk?",
+          body: "Writes mixdown.wav (about 60 MB) next to the project. Nothing is replaced.",
+          command: "auris render --mix --out mixdown.wav",
+          allowLabel: "Render",
+          offerAlways: true,
+          reviewing,
+        });
+        answer.textContent = `Answered: ${decision}`;
+      };
+      document.getElementById("open-approval").addEventListener("click", () => approve(false));
+      document.getElementById("open-reviewing").addEventListener("click", () => approve(true));
+      document.getElementById("open-delete").addEventListener("click", async () => {
+        const value = await openDialog({
+          title: "Delete \u201cVerse 2\u201d?",
+          body: "The clip and its 48 notes are removed from Piano. Undo brings them back.",
+          icon: "trash",
+          tone: "danger",
+          actions: [
+            { label: "Cancel", value: "cancel", focus: true },
+            { label: "Delete", value: "delete", variant: "danger" },
+          ],
+        });
+        answer.textContent = `Answered: ${value ?? "dismissed"}`;
+      });
+      permissionPicker(document.getElementById("permission-sample"));
+      permissionPicker(document.getElementById("permission-bypass"), { mode: "bypass" });
       const draft = document.getElementById("draft");
       const send = () => {
         const text = draft.value.trim();

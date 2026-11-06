@@ -142,6 +142,7 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 pub struct MenuItem {
     id: ElementId,
     label: SharedString,
+    description: Option<SharedString>,
     icon: Option<IconSource>,
     shortcut: Option<SharedString>,
     checked: bool,
@@ -156,6 +157,7 @@ impl MenuItem {
         Self {
             id: id.into(),
             label: label.into(),
+            description: None,
             icon: None,
             shortcut: None,
             checked: false,
@@ -168,6 +170,13 @@ impl MenuItem {
     /// Leading icon.
     pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// A line under the label saying what the choice does, for menus of modes or options
+    /// whose names alone are not enough.
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
@@ -225,10 +234,13 @@ impl RenderOnce for MenuItem {
             cx,
         )
         .flex()
-        .items_center()
         .gap(px(8.))
-        .h(theme.density.row - px(2.))
         .px(px(8.))
+        .map(|row| match self.description {
+            // A described row grows to its two lines and keeps its marks on the first.
+            Some(_) => row.items_start().py(px(6.)),
+            None => row.items_center().h(theme.density.row - px(2.)),
+        })
         .rounded(theme.shape.radius_sm)
         .text_size(theme.typography.size_md)
         .text_color(text)
@@ -241,7 +253,25 @@ impl RenderOnce for MenuItem {
             self.icon
                 .map(|icon| Icon::new(icon).size(px(15.)).color(text.opacity(0.8))),
         )
-        .child(div().flex_1().min_w_0().truncate().child(self.label))
+        .child(match self.description {
+            Some(description) => div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .gap(px(2.))
+                .child(div().truncate().child(self.label))
+                .child(
+                    Label::new(description)
+                        .size(TextSize::Small)
+                        .color(if self.disabled {
+                            TextColor::Disabled
+                        } else {
+                            TextColor::Muted
+                        }),
+                ),
+            None => div().flex_1().min_w_0().truncate().child(self.label),
+        })
         .children(self.shortcut.map(|shortcut| {
             Label::new(shortcut)
                 .size(TextSize::Small)

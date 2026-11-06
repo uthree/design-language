@@ -15,6 +15,7 @@
 //! * **Tool work is collapsed by default** and grouped, so a long turn reads as its answer.
 //! * **Approvals name the object and the verb**, with the safe choice as the default.
 
+mod approval;
 mod chat;
 mod code;
 mod composer;
@@ -24,6 +25,7 @@ mod panel;
 mod transcript;
 mod usage;
 
+pub use approval::{ApprovalDialog, PermissionMode, PermissionPicker};
 pub use chat::{ChatEntry, ChatEvent, ChatView, CustomEntry, Decision, EntryId};
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
