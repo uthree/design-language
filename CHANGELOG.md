@@ -10,6 +10,44 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — dialogs, approvals and permission modes
+
+### Added
+
+- `Dialog`, a modal dialog: a card over a scrim that dims the whole window, drawn from anywhere
+  while it is open. It takes focus when it appears (`.initial_focus(&handle)` for the safe
+  choice), and Escape or a press on the scrim calls `.on_dismiss(..)`. `.icon(icon, tone)`,
+  `.body(..)`, `.child(..)`, `.action(..)`, `.leading_action(..)` and `.width(..)` build it.
+- `Colors::scrim`, what a modal lays over the window; `--at-scrim` on the web.
+- `agent::ApprovalDialog`, an approval as a modal for a request that must stop everything:
+  `.command(..)` shows the exact command, `.detail(..)` a diff, `.reviewing(true)` says an
+  automatic reviewer is deciding and leaves only Deny pressable. Deny takes focus, so Enter
+  refuses, and Escape or a press outside denies. `.on_decide(|decision: &Decision, ..|)` hears
+  the answer, the same `Decision` a `ChatView` approval reports.
+- `agent::PermissionMode` (`Plan`, `Ask`, `AcceptEdits`, `AutoReview`, `Bypass`, with `label`,
+  `detail`, `icon` and `warns`) and `agent::PermissionPicker`, the mode as a small button for
+  the composer row that opens a menu of the modes upwards, each with what it lets the agent
+  do. `Bypass` keeps the button in the danger colour for as long as it is chosen. Without
+  `.on_select(..)` it keeps the chosen mode itself.
+- `MenuItem::description(..)`, a second line saying what a choice does.
+- `Strings::reviewing`, `permissions`, `permission_modes` and `permission_details`, in English
+  and Japanese.
+- The `agent_desktop` example has a permission picker in its composer (the status bar follows
+  it), and once the tests are allowed the mock agent asks to push in an `ApprovalDialog`
+  (`--push-request` opens it at start, `--permission bypass` starts in bypass). The showcase's
+  agent pieces open both dialogs (`--dialog delete|approval`) and show two pickers.
+- Web kit: `openDialog(..)`, `approvalDialog(..)` and `permissionPicker(..)` in `atelier.js`,
+  with `dialog.at-dialog`, `.at-permission` and described menu items in `atelier.css`. The web
+  showcase has them on its components page and in the agent composer.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A full-window overlay with an occluding scrim and a centred card | `Dialog` |
+| Allow-once / Deny / Always buttons laid out by hand around a pending tool call | `ApprovalDialog` or `ChatEntry::approval` |
+| An application enum of permission modes with its own menu, and a warning drawn while bypass is chosen | `PermissionMode` and `PermissionPicker` |
+
 ## Unreleased — the conversation view
 
 ### Added

@@ -80,6 +80,14 @@ pub struct Strings {
     pub used_tools: SharedString,
     /// An answered approval: allowed, always allowed, denied.
     pub approval_answers: [SharedString; 3],
+    /// An approval while an automatic reviewer decides it.
+    pub reviewing: SharedString,
+    /// The heading of the permission mode menu.
+    pub permissions: SharedString,
+    /// The permission modes' names: plan, ask, accept edits, auto-review, bypass.
+    pub permission_modes: [SharedString; 5],
+    /// What each permission mode lets the agent do, in the same order.
+    pub permission_details: [SharedString; 5],
 }
 
 impl Default for Strings {
@@ -139,6 +147,22 @@ impl Strings {
             new_messages: "{} new".into(),
             used_tools: "Used {} tools".into(),
             approval_answers: ["Allowed".into(), "Always allowed".into(), "Denied".into()],
+            reviewing: "Reviewing…".into(),
+            permissions: "Permissions".into(),
+            permission_modes: [
+                "Plan only".into(),
+                "Ask before changes".into(),
+                "Accept edits".into(),
+                "Auto-review".into(),
+                "Bypass approvals".into(),
+            ],
+            permission_details: [
+                "Reads and proposes. Changes nothing.".into(),
+                "Asks before every edit and command.".into(),
+                "Edits files without asking. Asks before commands.".into(),
+                "A reviewer model answers each request. Unsure ones come to you.".into(),
+                "Runs everything without asking. Use only in a sandbox.".into(),
+            ],
         }
     }
 
@@ -193,6 +217,22 @@ impl Strings {
                 "許可しました".into(),
                 "常に許可しました".into(),
                 "拒否しました".into(),
+            ],
+            reviewing: "レビュー中…".into(),
+            permissions: "権限".into(),
+            permission_modes: [
+                "計画のみ".into(),
+                "変更前に確認".into(),
+                "編集を自動承認".into(),
+                "自動レビュー".into(),
+                "承認をスキップ".into(),
+            ],
+            permission_details: [
+                "読み取りと提案だけで、何も変更しません。".into(),
+                "編集やコマンドの前に毎回確認します。".into(),
+                "ファイルの編集は確認なしで行い、コマンドの前は確認します。".into(),
+                "レビュー用のモデルが各リクエストに答え、迷うものはあなたに回します。".into(),
+                "すべて確認なしで実行します。サンドボックスの中でだけ使ってください。".into(),
             ],
         }
     }

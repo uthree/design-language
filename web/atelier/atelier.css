@@ -1142,6 +1142,151 @@ a.at-list-item:hover {
   color: var(--at-accent-text);
 }
 
+/* MenuItem::description: a second line saying what the choice does. */
+.at-menu-item--described {
+  align-items: flex-start;
+  height: auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.at-menu-item__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.at-menu-item__description {
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+}
+
+.at-menu-item--danger {
+  color: var(--at-danger);
+}
+
+.at-menu-item--danger:hover {
+  background: var(--at-danger-wash);
+}
+
+/* Dialog: a card over a scrim. Use it on a <dialog> opened with showModal(), which keeps focus
+   inside and closes on Escape; `openDialog()` in atelier.js builds one. */
+dialog.at-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-md);
+  width: min(440px, calc(100vw - 2 * var(--at-space-xl)));
+  max-height: calc(100vh - 2 * var(--at-space-xl));
+  padding: var(--at-space-lg);
+  border: 1px solid var(--at-border);
+  border-radius: var(--at-radius-lg);
+  background: var(--at-overlay);
+  color: var(--at-text);
+  box-shadow: var(--at-shadow-high);
+  animation: at-dialog-in var(--at-motion-normal, 200ms) ease-out;
+}
+
+dialog.at-dialog:not([open]) {
+  display: none;
+}
+
+dialog.at-dialog::backdrop {
+  background: var(--at-scrim);
+}
+
+@keyframes at-dialog-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+.at-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  margin: 0;
+  font-size: var(--at-size-lg);
+  font-weight: var(--at-heading-weight);
+}
+
+.at-dialog__title .at-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.at-dialog__body {
+  margin: 0;
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+}
+
+.at-dialog__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--at-space-sm);
+  padding-top: var(--at-space-xs);
+}
+
+.at-dialog__footer > .at-spacer {
+  flex: 1;
+}
+
+.at-dialog__reviewing {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+}
+
+/* PermissionPicker: the permission mode in the composer row, its menu opening upwards. */
+.at-permission {
+  position: relative;
+  display: inline-flex;
+}
+
+.at-permission__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--at-space-xs);
+  height: var(--at-control-sm);
+  padding: 0 var(--at-space-sm);
+  border: 0;
+  border-radius: var(--at-radius-sm);
+  background: transparent;
+  color: var(--at-text-muted);
+  font: inherit;
+  font-size: var(--at-size-sm);
+  white-space: nowrap;
+}
+
+.at-permission__button:hover {
+  background: var(--at-hover);
+}
+
+.at-permission__button .at-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.at-permission--warns .at-permission__button {
+  background: var(--at-danger-wash);
+  color: var(--at-danger);
+}
+
+.at-permission .at-menu {
+  position: absolute;
+  bottom: calc(100% + var(--at-space-xs));
+  left: 0;
+  z-index: 10;
+  width: 300px;
+}
+
+.at-permission .at-menu[hidden] {
+  display: none;
+}
+
 .at-menu-separator {
   height: 1px;
   margin: var(--at-space-xs) 0;

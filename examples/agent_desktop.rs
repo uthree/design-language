@@ -5,14 +5,15 @@
 //!
 //! ```text
 //! cargo run --example agent_desktop -- [--direction glass|studio|mono] [--appearance dark|light]
-//!     [--draft "いい感じ :thi"]
+//!     [--draft "いい感じ :thi"] [--permission ask|plan|bypass] [--push-request]
 //! ```
 
 mod common;
 
 use atelier::agent::{
-    AgentStatus, ChatEntry, ChatEvent, ChatView, CodeBlock, Composer, ContextChip, ConversationRow,
-    Decision, DiffBlock, DiffLine, ToolState, UsageLimit, UsageMeter,
+    AgentStatus, ApprovalDialog, ChatEntry, ChatEvent, ChatView, CodeBlock, Composer, ContextChip,
+    ConversationRow, Decision, DiffBlock, DiffLine, PermissionMode, PermissionPicker, ToolState,
+    UsageLimit, UsageMeter,
 };
 use atelier::emoji::{self, EmojiMatch};
 use atelier::{
@@ -45,6 +46,10 @@ struct AgentDesktop {
     autofocus: bool,
     model: usize,
     model_menu: bool,
+    /// How much the agent may do before asking.
+    permission: PermissionMode,
+    /// The mock agent asked to push the branch and waits for the dialog's answer.
+    push_request: bool,
 }
 
 impl Themed for AgentDesktop {
@@ -349,6 +354,12 @@ impl AgentDesktop {
                 cx,
             );
         });
+        // Once the tests may run, the mock agent also wants to push, and that leaves the
+        // machine, so it asks in a dialog rather than in the transcript.
+        if *decision != Decision::Deny && self.permission != PermissionMode::Bypass {
+            self.push_request = true;
+        }
+        cx.notify();
     }
 
     fn changes_pane(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -528,6 +539,18 @@ impl Render for AgentDesktop {
                                                     )
                                                     .model(model)
                                                     .model_logo(model_logo)
+                                                    .control(
+                                                        PermissionPicker::new(
+                                                            "permission",
+                                                            self.permission,
+                                                        )
+                                                        .on_select(cx.listener(
+                                                            |this, mode: &PermissionMode, _, cx| {
+                                                                this.permission = *mode;
+                                                                cx.notify();
+                                                            },
+                                                        )),
+                                                    )
                                                     .usage(
                                                         UsageMeter::new("usage")
                                                             .limit(
@@ -573,9 +596,13 @@ impl Render for AgentDesktop {
                     .border_t_1()
                     .border_color(theme.colors.border)
                     .child(
-                        Label::new("Auto mode")
+                        Label::new(self.permission.label(cx))
                             .size(TextSize::XSmall)
-                            .color(TextColor::Muted),
+                            .color(if self.permission.warns() {
+                                TextColor::Danger
+                            } else {
+                                TextColor::Muted
+                            }),
                     )
                     .child(
                         Label::new("Context 38 %")
@@ -585,6 +612,38 @@ impl Render for AgentDesktop {
                     .child(div().flex_1())
                     .child(Badge::new("1 waiting").tone(Tone::Warning).dot()),
             )
+            .children(self.push_dialog(cx))
+    }
+}
+
+impl AgentDesktop {
+    /// The mock agent's request to push, over the whole window until it is answered.
+    fn push_dialog(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        self.push_request.then(|| {
+            ApprovalDialog::new("push", "Push claude/fix-playback to origin?")
+                .body("Publishes 2 commits to GitHub. Pushing can be undone only by a force-push.")
+                .command("git push origin claude/fix-playback")
+                .allow_label("Push")
+                .offer_always()
+                .on_decide(cx.listener(|this, decision: &Decision, window, cx| {
+                    this.push_request = false;
+                    let reply = match decision {
+                        Decision::Deny => ChatEntry::status("Push denied"),
+                        _ => ChatEntry::tool(
+                            "bash",
+                            "Pushed claude/fix-playback",
+                            ToolState::Succeeded,
+                        )
+                        .icon(IconName::Code),
+                    };
+                    this.chat.update(cx, |chat, cx| {
+                        chat.push(reply, cx);
+                    });
+                    // Back to the composer, where the person was.
+                    window.focus(&this.input);
+                    cx.notify();
+                }))
+        })
     }
 }
 
@@ -671,6 +730,12 @@ fn main() {
             autofocus: true,
             model: 0,
             model_menu: false,
+            permission: match common::argument("--permission").as_deref() {
+                Some("bypass") => PermissionMode::Bypass,
+                Some("plan") => PermissionMode::Plan,
+                _ => PermissionMode::Ask,
+            },
+            push_request: std::env::args().any(|arg| arg == "--push-request"),
         }
     });
 }

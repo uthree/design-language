@@ -10,6 +10,7 @@
   --at-surface: #1e1e23;
   --at-elevated: #2a2a30;
   --at-overlay: #333338;
+  --at-scrim: rgb(0 0 0 / 0.5);
   --at-sunken: #111114;
   --at-control: rgb(255 255 255 / 0.1);
   --at-hover: rgb(255 255 255 / 0.08);
@@ -173,6 +174,7 @@
   --at-surface: #f4f4f6;
   --at-elevated: #ffffff;
   --at-overlay: #ffffff;
+  --at-scrim: rgb(0 0 0 / 0.28);
   --at-sunken: #e9e9eb;
   --at-control: #ffffff;
   --at-hover: rgb(0 0 0 / 0.05);
@@ -336,6 +338,7 @@
   --at-surface: #232325;
   --at-elevated: #303034;
   --at-overlay: #38383c;
+  --at-scrim: rgb(0 0 0 / 0.5);
   --at-sunken: #141416;
   --at-control: #303034;
   --at-hover: rgb(255 255 255 / 0.08);
@@ -499,6 +502,7 @@
   --at-surface: #ffffff;
   --at-elevated: #ffffff;
   --at-overlay: #ffffff;
+  --at-scrim: rgb(0 0 0 / 0.28);
   --at-sunken: #f4f4f4;
   --at-control: rgb(0 0 0 / 0.05);
   --at-hover: rgb(0 0 0 / 0.05);
@@ -662,6 +666,7 @@
   --at-surface: #1e1e23;
   --at-elevated: #2a2a30;
   --at-overlay: #333338;
+  --at-scrim: rgb(0 0 0 / 0.5);
   --at-sunken: #111114;
   --at-control: rgb(255 255 255 / 0.1);
   --at-hover: rgb(255 255 255 / 0.08);
@@ -825,6 +830,7 @@
   --at-surface: #ffffff;
   --at-elevated: #f7f7f9;
   --at-overlay: #ffffff;
+  --at-scrim: rgb(0 0 0 / 0.28);
   --at-sunken: #f4f4f4;
   --at-control: #f7f7f9;
   --at-hover: rgb(0 0 0 / 0.05);
@@ -988,6 +994,7 @@
   --at-surface: #0e0e0e;
   --at-elevated: #161618;
   --at-overlay: #1f1f21;
+  --at-scrim: rgb(0 0 0 / 0.5);
   --at-sunken: #050505;
   --at-control: #161618;
   --at-hover: rgb(255 255 255 / 0.08);

@@ -15,6 +15,7 @@ pub mod ambient;
 mod backdrop;
 mod button;
 mod controls;
+mod dialog;
 mod display;
 pub mod emoji;
 mod focus;
@@ -43,6 +44,7 @@ pub use ambient::{Ambience, AmbientBackdrop};
 pub use backdrop::BackdropPalette;
 pub use button::{Button, ButtonVariant, ControlSize, CopyButton};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
+pub use dialog::{DIALOG_CONTEXT, Dialog};
 pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
 pub use focus::{
     CONTROL_CONTEXT, FocusNext, FocusPrevious, StepBackward, StepForward, StepToEnd, StepToStart,

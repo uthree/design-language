@@ -595,3 +595,157 @@ export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
     entries: () => [...entries.values()].map(({ entry }) => entry),
   };
 }
+
+// ---------------------------------------------------------------- dialogs and approvals
+
+/// Open a modal dialog over the page, as `Dialog` is in gpui, and resolve with the `value` of the
+/// action pressed, or `null` on Escape. `actions` run from the safe choice to the one the dialog
+/// exists for: `[{ label, value, variant: "primary" | "danger" | "ghost", leading, focus }]`;
+/// the one marked `focus` (else the first) takes focus. `content` is any extra element.
+export function openDialog({ title, body, icon: iconName, tone = "warning", content, actions = [] }) {
+  const dialog = element("dialog", "at-dialog");
+  const heading = element("h2", "at-dialog__title");
+  if (iconName) {
+    const mark = icon(iconName);
+    mark.style.color = `var(--at-${tone})`;
+    heading.append(mark);
+  }
+  heading.append(title);
+  dialog.append(heading);
+  if (body) dialog.append(element("p", "at-dialog__body", body));
+  if (content) dialog.append(content);
+  const footer = element("div", "at-dialog__footer");
+  const leading = actions.filter((action) => action.leading);
+  const trailing = actions.filter((action) => !action.leading);
+  const buttons = [];
+  const button = (action) => {
+    const variant = action.variant ? ` at-button--${action.variant}` : "";
+    const b = element("button", `at-button${variant}`, action.label);
+    b.disabled = Boolean(action.disabled);
+    b.addEventListener("click", () => dialog.close(String(buttons.indexOf(b))));
+    buttons.push(b);
+    return { b, action };
+  };
+  const made = [...leading.map(button), ...trailing.map(button)];
+  footer.append(...made.slice(0, leading.length).map(({ b }) => b), element("span", "at-spacer"));
+  footer.append(...made.slice(leading.length).map(({ b }) => b));
+  if (actions.length) dialog.append(footer);
+  document.body.append(dialog);
+  dialog.showModal();
+  const first = made.find(({ action }) => action.focus) || made.find(({ b }) => !b.disabled);
+  first?.b.focus();
+  // A press on the scrim, outside the card, dismisses like Escape.
+  dialog.addEventListener("mousedown", (event) => {
+    if (event.target === dialog) {
+      const box = dialog.getBoundingClientRect();
+      const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside) dialog.close("");
+    }
+  });
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      const index = dialog.returnValue === "" ? -1 : Number(dialog.returnValue);
+      dialog.remove();
+      resolve(index >= 0 ? made[index].action.value : null);
+    });
+  });
+}
+
+/// An approval as a modal dialog, as `ApprovalDialog` is in gpui: resolves with "allow",
+/// "alwaysAllow" or "deny". Deny takes focus, and Escape or a press outside denies. With
+/// `reviewing: true` only Deny can be pressed while an automatic reviewer decides.
+export async function approvalDialog({ title, body, command, detail, allowLabel, destructive = false, offerAlways = false, reviewing = false, strings = {} }) {
+  const words = { ...CHAT_STRINGS, reviewing: "Reviewing…", ...strings };
+  const content = document.createDocumentFragment();
+  if (command) content.append(element("pre", "at-code", `$ ${command}`));
+  if (detail) content.append(detail);
+  if (reviewing) {
+    const note = element("div", "at-dialog__reviewing");
+    note.append(element("span", "at-spinner"), words.reviewing);
+    content.append(note);
+  }
+  const actions = [];
+  if (offerAlways) actions.push({ label: words.alwaysAllow, value: "alwaysAllow", variant: "ghost", leading: true, disabled: reviewing });
+  actions.push({ label: words.deny, value: "deny", focus: true });
+  actions.push({ label: allowLabel || words.allow, value: "allow", variant: destructive ? "danger" : "primary", disabled: reviewing });
+  const decision = await openDialog({ title, body, icon: "alert", tone: destructive ? "danger" : "warning", content, actions });
+  return decision || "deny";
+}
+
+/// The permission modes, from the most careful to the least, as `PermissionMode` in gpui.
+export const PERMISSION_MODES = {
+  plan: { label: "Plan only", detail: "Reads and proposes. Changes nothing.", icon: "eye" },
+  ask: { label: "Ask before changes", detail: "Asks before every edit and command.", icon: "user" },
+  acceptEdits: { label: "Accept edits", detail: "Edits files without asking. Asks before commands.", icon: "file" },
+  autoReview: { label: "Auto-review", detail: "A reviewer model answers each request. Unsure ones come to you.", icon: "sparkles" },
+  bypass: { label: "Bypass approvals", detail: "Runs everything without asking. Use only in a sandbox.", icon: "alert", warns: true },
+};
+
+/// Turn `root` (an empty element) into the permission picker `PermissionPicker` is in gpui: a
+/// small button showing the mode, opening a menu of `modes` upwards. Fires `atelier:permission`
+/// with `{ mode }` on a pick. A mode that `warns` keeps the button in the danger colour. Pass
+/// `labels` to translate: `{ heading, plan: { label, detail }, … }`.
+export function permissionPicker(root, { mode = "ask", modes = Object.keys(PERMISSION_MODES), labels = {} } = {}) {
+  const info = (id) => ({ ...PERMISSION_MODES[id], ...labels[id] });
+  root.classList.add("at-permission");
+  const button = element("button", "at-permission__button");
+  button.type = "button";
+  button.setAttribute("aria-haspopup", "menu");
+  const menu = element("div", "at-menu");
+  menu.setAttribute("role", "menu");
+  menu.hidden = true;
+  root.replaceChildren(menu, button);
+  const draw = () => {
+    const current = info(mode);
+    root.classList.toggle("at-permission--warns", Boolean(current.warns));
+    button.replaceChildren(icon(current.icon), current.label, icon("chevron-down"));
+    button.setAttribute("aria-expanded", String(!menu.hidden));
+    menu.replaceChildren(element("div", "at-caption", labels.heading || "Permissions"));
+    for (const id of modes) {
+      const option = info(id);
+      const item = element("button", `at-menu-item at-menu-item--described${option.warns ? " at-menu-item--danger" : ""}`);
+      item.setAttribute("role", "menuitemradio");
+      item.setAttribute("aria-checked", String(id === mode));
+      const check = element("span", "at-menu-item__check");
+      if (id === mode) check.append(icon("check"));
+      const text = element("span", "at-menu-item__text");
+      text.append(element("span", null, option.label), element("span", "at-menu-item__description", option.detail));
+      item.append(check, icon(option.icon), text);
+      item.addEventListener("click", () => {
+        mode = id;
+        close();
+        root.dispatchEvent(new CustomEvent("atelier:permission", { bubbles: true, detail: { mode } }));
+      });
+      menu.append(item);
+    }
+  };
+  const close = () => {
+    menu.hidden = true;
+    draw();
+  };
+  button.addEventListener("click", () => {
+    menu.hidden = !menu.hidden;
+    draw();
+    if (!menu.hidden) menu.querySelector('[aria-checked="true"]')?.focus();
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !menu.hidden) {
+      close();
+      button.focus();
+      event.stopPropagation();
+    }
+  });
+  document.addEventListener("mousedown", (event) => {
+    if (!menu.hidden && !root.contains(event.target)) close();
+  });
+  draw();
+  return {
+    get mode() {
+      return mode;
+    },
+    set mode(value) {
+      mode = value;
+      draw();
+    },
+  };
+}

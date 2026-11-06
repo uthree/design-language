@@ -6,6 +6,7 @@
 //! ```text
 //! cargo run --example showcase -- [--direction studio|glass|mono] [--appearance dark|light]
 //!                                 [--page arrange|components] [--agent-closed]
+//!                                 [--dialog delete|approval]
 //! ```
 
 mod common;
@@ -13,14 +14,14 @@ mod common;
 use std::time::Duration;
 
 use atelier::agent::{
-    AgentPanel, AgentStatus, AgentToggle, ApprovalCard, AskBar, AssistantMessage, ChatNotice,
-    Composer, ContextChip, ReasoningBlock, SuggestionChip, ThinkingIndicator, ToolCall, ToolGroup,
-    ToolState, UserMessage,
+    AgentPanel, AgentStatus, AgentToggle, ApprovalCard, ApprovalDialog, AskBar, AssistantMessage,
+    ChatNotice, Composer, ContextChip, Decision, PermissionMode, PermissionPicker, ReasoningBlock,
+    SuggestionChip, ThinkingIndicator, ToolCall, ToolGroup, ToolState, UserMessage,
 };
 use atelier::{
     ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox,
-    ControlSize, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName, Kbd, Knob,
-    Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo,
+    ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName, Kbd,
+    Knob, Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo,
     SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StepList,
     StepState, Switch, Tabs, TaskProgress, TaskState, TextColor, TextField, TextSize, Theme,
     TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
@@ -33,6 +34,13 @@ use gpui::{
 
 use common::argument;
 use common::readout::{gain_db, pan, percent, volume_db};
+
+/// The sample dialog open over the window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OpenDialog {
+    Delete,
+    Approval,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -93,6 +101,10 @@ struct Showcase {
     progress: f32,
     /// How many steps of the demo plan are done.
     plan_step: usize,
+    /// The sample dialog open over the window, if any.
+    dialog: Option<OpenDialog>,
+    /// The sample approval's automatic reviewer is still deciding.
+    reviewing: bool,
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -1132,6 +1144,53 @@ impl Showcase {
                     .w(px(360.))
                     .flex()
                     .flex_col()
+                    .gap(theme.spacing.md)
+                    .child(
+                        Label::new("Permission mode: the menu opens upwards, as in a composer row")
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(theme.spacing.sm)
+                            .child(PermissionPicker::new("permissions", PermissionMode::Ask))
+                            .child(PermissionPicker::new("bypass", PermissionMode::Bypass)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(theme.spacing.sm)
+                            .child(Button::new("open-approval", "Approval dialog…").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.dialog = Some(OpenDialog::Approval);
+                                    this.reviewing = false;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(Button::new("open-reviewing", "While reviewing…").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.dialog = Some(OpenDialog::Approval);
+                                    this.reviewing = true;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(
+                                Button::new("open-delete", "Delete clip…")
+                                    .variant(ButtonVariant::Danger)
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.dialog = Some(OpenDialog::Delete);
+                                        cx.notify();
+                                    })),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .w(px(360.))
+                    .flex()
+                    .flex_col()
                     .gap(theme.spacing.sm)
                     .child(
                         SuggestionChip::new("sg1", "Suggest a bridge that modulates up a tone")
@@ -1170,6 +1229,50 @@ impl Showcase {
                 surfaces.into_any_element(),
             ))
             .child(section("Agent pieces", agent.into_any_element()))
+    }
+}
+
+impl Showcase {
+    /// The sample dialog, drawn over everything while open.
+    fn dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        Some(match self.dialog? {
+            OpenDialog::Delete => Dialog::new("delete-dialog", "Delete \u{201c}Verse 2\u{201d}?")
+                .icon(IconName::Trash, Tone::Danger)
+                .body("The clip and its 48 notes are removed from Piano. Undo brings them back.")
+                .on_dismiss(cx.listener(|this, _: &(), _, cx| {
+                    this.dialog = None;
+                    cx.notify();
+                }))
+                .action(Button::new("delete-cancel", "Cancel").on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.dialog = None;
+                        cx.notify();
+                    },
+                )))
+                .action(
+                    Button::new("delete-confirm", "Delete")
+                        .variant(ButtonVariant::Danger)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.dialog = None;
+                            cx.notify();
+                        })),
+                )
+                .into_any_element(),
+            OpenDialog::Approval => ApprovalDialog::new(
+                "approval-dialog",
+                "Render the mix to disk?",
+            )
+            .body("Writes mixdown.wav (about 60 MB) next to the project. Nothing is replaced.")
+            .command("auris render --mix --out mixdown.wav")
+            .allow_label("Render")
+            .offer_always()
+            .reviewing(self.reviewing)
+            .on_decide(cx.listener(|this, _: &Decision, _, cx| {
+                this.dialog = None;
+                cx.notify();
+            }))
+            .into_any_element(),
+        })
     }
 }
 
@@ -1422,6 +1525,7 @@ impl Render for Showcase {
                     )
                     .when(self.agent_open, |row| row.child(self.agent_panel(fit, cx))),
             )
+            .children(self.dialog(cx))
     }
 }
 
@@ -1479,6 +1583,12 @@ fn main() {
                     disclosures: [true, false, false],
                     progress: 0.35,
                     plan_step: 2,
+                    dialog: match argument("--dialog").as_deref() {
+                        Some("delete") => Some(OpenDialog::Delete),
+                        Some("approval") => Some(OpenDialog::Approval),
+                        _ => None,
+                    },
+                    reviewing: false,
                 })
             })
             .expect("failed to open the showcase window");
