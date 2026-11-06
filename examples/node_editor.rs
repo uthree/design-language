@@ -130,7 +130,7 @@ enum Unit {
 }
 
 impl Unit {
-    fn readout(self, value: f32) -> SharedString {
+    fn format(self, value: f32) -> SharedString {
         match self {
             Unit::Bpm => format!("{:.0} BPM", value * 200.),
             Unit::Duration => {
@@ -1000,11 +1000,7 @@ impl NodeEditor {
                         .size(TextSize::XSmall)
                         .color(TextColor::Muted),
                 )
-                .child(
-                    Label::new(unit.readout(value))
-                        .size(TextSize::XSmall)
-                        .mono(),
-                ),
+                .child(Label::new(unit.format(value)).size(TextSize::XSmall).mono()),
             Param::Choice(options, selected) => well
                 .h(row)
                 .flex()
@@ -1506,7 +1502,7 @@ impl NodeEditor {
                         Param::Number(value, unit) => Slider::new(value)
                             .id(("param", id * 16 + index))
                             .label(*name)
-                            .readout(unit.readout(value))
+                            .readout(unit.format(value))
                             .on_change(cx.listener(move |this, value: &f32, _, cx| {
                                 if let Some(node) = this.node_mut(id)
                                     && let Param::Number(_, unit) = node.params[index].1
