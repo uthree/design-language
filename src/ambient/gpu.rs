@@ -5,10 +5,14 @@
 //! Only a hardware adapter is used. Without one, or if anything fails, [`render`] returns `None`
 //! and the backdrop falls back to the CPU.
 
+#[cfg(feature = "gpu")]
 use std::sync::{Mutex, OnceLock};
 
-use super::{Ambience, Frame, figures, stars};
+use super::{Ambience, Frame};
+#[cfg(any(feature = "gpu", test))]
+use super::{figures, stars};
 
+#[cfg(feature = "gpu")]
 struct Gpu {
     shared: &'static crate::gpu::Gpu,
     layout: wgpu::PipelineLayout,
@@ -20,6 +24,7 @@ struct Gpu {
 }
 
 /// The texture a frame is shaded into, and the buffer it is read back through, for one size.
+#[cfg(feature = "gpu")]
 struct Target {
     width: u32,
     height: u32,
@@ -27,21 +32,36 @@ struct Target {
     readback: wgpu::Buffer,
 }
 
+#[cfg(feature = "gpu")]
 fn gpu() -> Option<&'static Gpu> {
     static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
     GPU.get_or_init(Gpu::new).as_ref()
 }
 
 /// Whether frames can be shaded on the GPU.
+#[cfg(feature = "gpu")]
 pub(super) fn available() -> bool {
     gpu().is_some()
 }
 
 /// `frame` shaded as `ambience`, BGRA, or `None` if the GPU couldn't shade it.
+#[cfg(feature = "gpu")]
 pub(super) fn render(ambience: Ambience, frame: &Frame) -> Option<Vec<u8>> {
     gpu()?.render(ambience, frame)
 }
 
+/// Without the `gpu` feature there is no device, and every frame is drawn on the CPU.
+#[cfg(not(feature = "gpu"))]
+pub(super) fn available() -> bool {
+    false
+}
+
+#[cfg(not(feature = "gpu"))]
+pub(super) fn render(_: Ambience, _: &Frame) -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(any(feature = "gpu", test))]
 pub(super) fn source(ambience: Ambience) -> &'static str {
     match ambience {
         Ambience::Aurora => include_str!("aurora.wgsl"),
@@ -57,6 +77,7 @@ pub(super) fn source(ambience: Ambience) -> &'static str {
     }
 }
 
+#[cfg(feature = "gpu")]
 impl Gpu {
     fn new() -> Option<Self> {
         let shared = crate::gpu::gpu()?;
@@ -204,19 +225,28 @@ impl Gpu {
 
 /// Where Aurora's sky starts in the shader's `Params`, in 4-byte words: after the frame, the
 /// colours and the ripples.
+#[cfg(any(feature = "gpu", test))]
 pub(super) const SKY: usize = 12 + 4 + 4 + 4 * 4 + super::sim::WAVES * 4;
 /// Where the stars start: after the two counts, padded to a whole vector.
+#[cfg(any(feature = "gpu", test))]
 pub(super) const STARS: usize = SKY + 4;
+#[cfg(any(feature = "gpu", test))]
 pub(super) const LINES: usize = STARS + stars::STARS * 4;
+#[cfg(any(feature = "gpu", test))]
 pub(super) const STRENGTHS: usize = LINES + stars::LINES * 4;
+#[cfg(any(feature = "gpu", test))]
 pub(super) const METEORS: usize = STRENGTHS + stars::LINES;
 /// Where Formation's and Garden's pieces start: after their four counts.
+#[cfg(any(feature = "gpu", test))]
 pub(super) const COUNTS: usize = METEORS + stars::METEORS * 4;
+#[cfg(any(feature = "gpu", test))]
 pub(super) const FIGURES: usize = COUNTS + 4;
 /// The shader's `Params`, in 4-byte words.
+#[cfg(any(feature = "gpu", test))]
 pub(super) const PARAMS_LEN: usize = FIGURES + figures::FIGURES * 8;
 
 /// The shader's `Params` for one frame, laid out as WGSL lays out the struct.
+#[cfg(feature = "gpu")]
 fn params(frame: &Frame) -> [f32; PARAMS_LEN] {
     let response = &frame.response;
     let palette = &frame.palette;

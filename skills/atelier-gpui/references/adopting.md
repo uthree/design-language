@@ -5,8 +5,16 @@
 ```toml
 [dependencies]
 gpui = "=0.2.2"
-atelier = { git = "https://github.com/uthree/design-language" }   # or { path = "../design-language" }
+atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }
 ```
+
+Pin a release tag (`vX.Y.Z`, the crate's version; each has a section in `CHANGELOG.md`), or a
+`rev` for a fix that is not released yet. To build against a local checkout, add
+`[patch."https://github.com/uthree/design-language"] atelier = { path = "../design-language" }`
+instead of changing the line. `default-features = false` drops the `gpu` feature (wgpu): the
+liquid metal, ambient backdrops and 3-D plots then draw on the CPU. `features =
+["runtime-shaders"]` lets a Mac without full Xcode build. `use atelier::prelude::*` brings in the
+theme, the `cx.theme()` / `cx.strings()` traits and the everyday components.
 
 Atelier pins gpui `=0.2.2`, the release Auris Studio uses, so both resolve to one gpui. When the
 app moves to a newer gpui, move Atelier in the same change.

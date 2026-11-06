@@ -10,10 +10,13 @@
 //! `None` the plot draws itself with gpui paths instead.
 
 use std::ops::Range;
+#[cfg(feature = "gpu")]
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(feature = "gpu")]
 use wgpu::util::DeviceExt;
 
+#[cfg(feature = "gpu")]
 use crate::gpu::{DEPTH_FORMAT, FORMAT, extent};
 
 /// The shader's `Params`, in 4-byte words.
@@ -27,6 +30,7 @@ pub(super) const SEGMENT: usize = 16;
 pub(super) const POINT: usize = 8;
 
 /// One frame: `width` × `height` device pixels and what goes in it.
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
 pub(super) struct Frame {
     pub width: u32,
     pub height: u32,
@@ -42,12 +46,14 @@ pub(super) struct Frame {
 }
 
 /// A run of segments or points, by index into [`Frame::segments`] or [`Frame::points`].
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
 pub(super) enum Draw {
     Curve(Range<u32>),
     Markers(Range<u32>),
     Particles(Range<u32>),
 }
 
+#[cfg(feature = "gpu")]
 struct Pipelines {
     shared: &'static crate::gpu::Gpu,
     surface: wgpu::RenderPipeline,
@@ -61,6 +67,7 @@ struct Pipelines {
 }
 
 /// The textures one frame size is shaded into, and the buffer it is read back through.
+#[cfg(feature = "gpu")]
 struct Target {
     width: u32,
     height: u32,
@@ -71,26 +78,47 @@ struct Target {
     readback: wgpu::Buffer,
 }
 
+#[cfg(feature = "gpu")]
 fn pipelines() -> Option<&'static Pipelines> {
     static PIPELINES: OnceLock<Option<Pipelines>> = OnceLock::new();
     PIPELINES.get_or_init(Pipelines::new).as_ref()
 }
 
 /// Whether plots can be shaded on the GPU.
+#[cfg(feature = "gpu")]
 pub(super) fn available() -> bool {
     pipelines().is_some()
 }
 
 /// The largest frame side the GPU takes.
+#[cfg(feature = "gpu")]
 pub(super) fn fits(width: u32, height: u32) -> bool {
     pipelines().is_some_and(|pipelines| pipelines.shared.fits(width, height))
 }
 
 /// `frame`'s pixels, BGRA with straight alpha, or `None` if the GPU couldn't shade it.
+#[cfg(feature = "gpu")]
 pub(super) fn render(frame: &Frame) -> Option<Vec<u8>> {
     pipelines()?.render(frame)
 }
 
+/// Without the `gpu` feature there is no device, and plots draw with gpui paths.
+#[cfg(not(feature = "gpu"))]
+pub(super) fn available() -> bool {
+    false
+}
+
+#[cfg(not(feature = "gpu"))]
+pub(super) fn fits(_: u32, _: u32) -> bool {
+    false
+}
+
+#[cfg(not(feature = "gpu"))]
+pub(super) fn render(_: &Frame) -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(feature = "gpu")]
 fn attributes<const N: usize>(formats: [wgpu::VertexFormat; N]) -> [wgpu::VertexAttribute; N] {
     let mut offset = 0;
     let mut location = 0;
@@ -106,6 +134,7 @@ fn attributes<const N: usize>(formats: [wgpu::VertexFormat; N]) -> [wgpu::Vertex
     })
 }
 
+#[cfg(feature = "gpu")]
 impl Pipelines {
     fn new() -> Option<Self> {
         let shared = crate::gpu::gpu()?;
@@ -405,11 +434,13 @@ impl Pipelines {
     }
 }
 
+#[cfg(feature = "gpu")]
 fn bytes(words: &[f32]) -> Vec<u8> {
     words.iter().flat_map(|word| word.to_ne_bytes()).collect()
 }
 
 /// Premultiplied BGRA to straight alpha, which gpui's images hold.
+#[cfg(feature = "gpu")]
 fn straighten(pixels: &mut [u8]) {
     for pixel in pixels.as_chunks_mut::<4>().0 {
         let alpha = pixel[3] as u32;

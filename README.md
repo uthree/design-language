@@ -9,11 +9,44 @@ plots, welcome-screen backdrops, and the agent side panel, transcript and compos
 
 ## Install
 
+Atelier is used straight from this repository, pinned to a release tag:
+
 ```toml
 [dependencies]
 gpui = "=0.2.2"
-atelier = { git = "https://github.com/uthree/design-language" }
+atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }
 ```
+
+```rust
+use atelier::prelude::*;   // theme, cx.theme(), cx.strings() and the everyday components
+use atelier::agent::Composer; // specialised parts stay in their modules: agent, viz, plot, …
+```
+
+- **Pin a tag.** Each tag `vX.Y.Z` matches the crate's version and a section of
+  [CHANGELOG.md](CHANGELOG.md), which lists what to change and what workarounds to delete when
+  you move up. `Cargo.lock` records the exact commit, so a build never moves on its own; to
+  upgrade, change the tag and run `cargo update -p atelier`. A `rev = "<commit>"` works too, for
+  a fix that is not in a release yet.
+- **Same gpui.** Atelier pins gpui `=0.2.2`; depend on the same version, or use
+  `atelier::gpui`, which is always the one Atelier was built with.
+- **Features.** `gpu` (on by default) shades the liquid metal, the ambient backdrops and the 3-D
+  plots with wgpu. An application that shows none of them, or wants a smaller build, can turn it
+  off with `default-features = false`; those parts then draw on the CPU, exactly as they do on a
+  machine without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders`, so the app builds
+  on a Mac with only the Command Line Tools installed.
+- **Working on both at once.** Point Cargo at a local checkout without touching the
+  dependency line, in the application's `.cargo/config.toml` or `Cargo.toml`:
+
+  ```toml
+  [patch."https://github.com/uthree/design-language"]
+  atelier = { path = "../design-language" }
+  ```
+
+Atelier is not on crates.io: gpui itself has no stable release there yet, and a crate with a git
+dependency cannot be published. An application that depends on Atelier from git cannot be
+published to crates.io either, but builds, ships binaries and bundles as usual. Setting up the
+theme, windows and fonts is in
+[skills/atelier-gpui/references/adopting.md](skills/atelier-gpui/references/adopting.md).
 
 Try the mock creator tool used to compare the candidates:
 

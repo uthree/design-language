@@ -4,15 +4,20 @@
 //!
 //! The device is opened once, on first use, and shared. Without an adapter, or with
 //! `ATELIER_GPU=off` in the environment, there is none and every caller draws on the CPU instead.
+//! Built without the `gpu` feature, there is never one, and wgpu is not compiled.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+#[cfg(feature = "gpu")]
+use std::sync::OnceLock;
 
 use gpui::{App, Global, RenderImage, Window, WindowId};
 
 /// Rows of a read-back buffer start on multiples of this many bytes.
+#[cfg(feature = "gpu")]
 const ROW_ALIGNMENT: u32 = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
+#[cfg(feature = "gpu")]
 pub(crate) struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -23,11 +28,13 @@ pub(crate) struct Gpu {
 }
 
 /// The shared device, or `None` without one.
+#[cfg(feature = "gpu")]
 pub(crate) fn gpu() -> Option<&'static Gpu> {
     static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
     GPU.get_or_init(|| pollster::block_on(Gpu::new())).as_ref()
 }
 
+#[cfg(feature = "gpu")]
 impl Gpu {
     async fn new() -> Option<Self> {
         if std::env::var("ATELIER_GPU").is_ok_and(|value| value == "off") {
@@ -132,10 +139,13 @@ impl Gpu {
 }
 
 /// The format frames are shaded in: what gpui's images hold.
+#[cfg(feature = "gpu")]
 pub(crate) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 /// The depth format of 3-D frames.
+#[cfg(feature = "gpu")]
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+#[cfg(feature = "gpu")]
 pub(crate) fn extent(width: u32, height: u32) -> wgpu::Extent3d {
     wgpu::Extent3d {
         width,
@@ -144,6 +154,7 @@ pub(crate) fn extent(width: u32, height: u32) -> wgpu::Extent3d {
     }
 }
 
+#[cfg(feature = "gpu")]
 fn padded_row(width: u32) -> u32 {
     (width * 4).div_ceil(ROW_ALIGNMENT) * ROW_ALIGNMENT
 }
