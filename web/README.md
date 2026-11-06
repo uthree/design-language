@@ -69,6 +69,8 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `.size(Small)` / `Large`, `Button::icon_only`, `.selected(true)` | `--sm` / `--lg`, `--icon`, `aria-pressed="true"` |
 | `SegmentedControl`, `Tabs` | `.at-segmented`, `.at-tabs` with `<button>`s |
 | `TextField`, `FormField` | `.at-field` around an `<input>`, `.at-form-field` |
+| `PreferencesWindow`, `SettingsPage`, `SettingsGroup`, `Setting`, `FormGroup` | `preferences(element, { pages, selected, actions, labels })`, returning `select`, `search`, `page`; `atelier:page`; `.at-preferences`, `.at-form-group` |
+| `KeybindingList`, `KeyBinding`, `keystroke_label` | `keybindings(element, { groups, labels })`, returning `update`, `recording`; `keystrokeLabel(event)`; `atelier:keybinding`, `keybinding-remove`, `keybinding-reset`; `.at-keybindings`, `.at-keybinding` |
 | `Switch`, `Checkbox`, `Slider` | `.at-switch`, `.at-checkbox` around an `<input type=checkbox>`, `input.at-slider` |
 | `Slider::bipolar`, `.default_value(v)` | `input.at-slider.at-slider--bipolar`, `data-default="v"` (a double click goes back) |
 | `Knob::new(v).id(..).bipolar().label(..).readout_with(..)` | `.at-knob` with `data-value`, `data-bipolar`, `data-default`, `data-step`, `.at-knob__label` and an `<output class="at-knob__readout">`; `--_size` and `--_value-color` restyle it |

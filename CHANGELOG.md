@@ -32,6 +32,43 @@ its code bumps the minor version while Atelier is below 1.0.
   already did without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders` for Macs
   without full Xcode.
 
+## Unreleased — the preferences window
+
+### Added
+
+- `PreferencesWindow`, the settings window Auris Studio's `settings_window.rs` builds by hand:
+  pages in a sidebar under a search field, the open page as a header and groups of settings in
+  a readable column, the page's actions at its foot (the last one is the primary, at the
+  trailing end), an optional sidebar footer and status bar. It holds the open page itself
+  unless you pass `.selected(..)` and `.on_select(..)`. gpui has no text input, so the
+  application passes its search field and query with `.search(query, field)`; with a query the
+  window lists every page's matching settings under a link to the page, with a count, or says
+  nothing matches.
+- `SettingsPage` (`.icon`, `.description`, `.keywords`, `.group`, `.child`), `SettingsGroup`
+  (`new`, `untitled`, `.description`, `.setting`) and `Setting`, a `FormField` that search can
+  find by its label, description or `.keywords([..])`. Every word of a query must match; a
+  group title, or a page's title or keywords, brings in all of it.
+- `KeybindingList` and `KeyBinding`: shortcuts in groups as key chips, with a scope, a reset
+  for a changed binding and a note when two commands share a key. `.recording(Some((row,
+  slot)))` arms a chip and the next key press arrives at `.on_capture(..)` (Escape gives
+  `None`). `keystroke_label(..)` prints a keystroke as menus do: "⌘⇧S" on macOS,
+  "Ctrl+Shift+S" elsewhere.
+- `Strings::search_settings`, `nothing_matches`, `settings_found`, `press_a_key`,
+  `add_shortcut`, `reset_shortcut`, `no_shortcut` and `also_runs`, in English and Japanese.
+- The `preferences` example draws its window with `PreferencesWindow`, takes typed search
+  (`--search 保存`) and has a working keys page.
+- Web kit: `preferences(..)`, `keybindings(..)` and `keystrokeLabel(..)` in `atelier.js`, with
+  `.at-preferences`, `.at-form-group` and `.at-keybinding` in `atelier.css`, and a preferences
+  sample on the showcase's components page. An input inside `.at-field` no longer draws a
+  second focus ring inside the field's own.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A hand-built settings window: sidebar of pages, search over a list of settings, page header, actions row | `PreferencesWindow` with `SettingsPage`, `SettingsGroup`, `Setting` |
+| A key-binding table with its own recording state and keystroke formatting | `KeybindingList`, `KeyBinding`, `keystroke_label` |
+
 ## Unreleased — the node canvas
 
 ### Added

@@ -1285,3 +1285,267 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
   if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => drawWires()).observe(root);
   return api;
 }
+
+/// Whether every word of `query` is in one of `texts`, ignoring case.
+function matchesAll(query, texts) {
+  const haystack = texts.filter(Boolean).map((text) => String(text).toLowerCase());
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.some((text) => text.includes(word)));
+}
+
+/// `FormField` and `FormGroup`, built from a setting `{ label, description, error, beside,
+/// control }` and a group `{ title, description, settings }`.
+function formGroup(group, settings) {
+  const box = element("section", "at-form-group");
+  if (group.title) {
+    const heading = element("div");
+    heading.append(element("h3", "at-form-group__title", group.title));
+    if (group.description) heading.append(element("p", "at-form-group__description", group.description));
+    box.append(heading);
+  }
+  const card = element("div", "at-form-group__card");
+  for (const setting of settings) {
+    const field = element("div", `at-form-field${setting.beside ? " at-form-field--beside" : ""}`);
+    field.append(element("label", "", setting.label));
+    const control = typeof setting.control === "function" ? setting.control() : setting.control;
+    if (control) field.append(control);
+    if (setting.description) field.append(element("span", "at-form-field__help", setting.description));
+    if (setting.error) field.append(element("span", "at-form-field__error", setting.error));
+    card.append(field);
+  }
+  box.append(card);
+  return box;
+}
+
+/// `PreferencesWindow`: pages in a sidebar with a search over every setting, the open page in a
+/// readable column. Each page is `{ title, icon, description, keywords, groups, content }`, each
+/// group `{ title, description, settings }`, and each setting `{ label, description, keywords,
+/// error, beside, control }` where `control` is an element, or a function that makes one (a
+/// search draws a page's matching settings again, so pass a function when a control is shared).
+/// `content` is anything else on the page, an element or a function. `actions` sit at the end
+/// of every page, the last at the trailing edge. Opening a page fires `atelier:page` with
+/// `{ index }`. Returns `{ select(index), search(text), get page() }`.
+export function preferences(root, { pages = [], selected = 0, actions = [], labels = {} } = {}) {
+  const words = { search: "Search settings", nothing: "Nothing matches “{}”", found: "{} found", ...labels };
+  root.classList.add("at-preferences");
+  root.replaceChildren();
+  const nav = element("nav", "at-sidebar at-chrome at-preferences__nav");
+  const field = element("label", "at-field");
+  field.append(icon("search"));
+  const input = element("input");
+  input.type = "search";
+  input.placeholder = words.search;
+  field.append(input);
+  nav.append(field);
+  const items = pages.map((page, index) => {
+    const item = element("button", "at-list-item");
+    item.type = "button";
+    if (page.icon) item.append(icon(page.icon));
+    item.append(element("span", "at-list-item__label", page.title));
+    item.addEventListener("click", () => api.select(index, true));
+    nav.append(item);
+    return item;
+  });
+  const main = element("main", "at-preferences__page");
+  const column = element("div", "at-preferences__column");
+  main.append(column);
+  root.append(nav, main);
+  const make = (thing) => (typeof thing === "function" ? thing() : thing);
+
+  function draw() {
+    const query = input.value.trim();
+    column.replaceChildren();
+    items.forEach((item, index) => item.setAttribute("aria-selected", String(!query && index === selected)));
+    if (!query) {
+      const page = pages[selected];
+      if (!page) return;
+      const header = element("header");
+      header.append(element("h2", "", page.title));
+      if (page.description) header.append(element("p", "", page.description));
+      column.append(header);
+      for (const group of page.groups || []) column.append(formGroup(group, group.settings || []));
+      if (page.content) column.append(make(page.content));
+      if (actions.length) {
+        const row = element("div", "at-preferences__actions");
+        row.append(...actions.map(make));
+        column.append(row);
+      }
+      return;
+    }
+    let found = 0;
+    const results = [];
+    pages.forEach((page, index) => {
+      // A page's name and keywords bring in all of it; its description is too broad to.
+      const pageMatches = matchesAll(query, [page.title, ...(page.keywords || [])]);
+      const groups = [];
+      for (const group of page.groups || []) {
+        const all = pageMatches || matchesAll(query, [group.title]);
+        const settings = (group.settings || []).filter((setting) => all || matchesAll(query, [setting.label, setting.description, ...(setting.keywords || [])]));
+        if (!settings.length) continue;
+        found += settings.length;
+        groups.push(formGroup(group, settings));
+      }
+      if (!groups.length && !(pageMatches && page.content)) return;
+      if (!groups.length) found += 1;
+      const result = element("section", "at-preferences__result");
+      const link = element("button", "at-preferences__link");
+      link.type = "button";
+      if (page.icon) link.append(icon(page.icon, { size: 13 }));
+      link.append(page.title);
+      link.addEventListener("click", () => api.select(index, true));
+      result.append(link, ...groups);
+      results.push(result);
+    });
+    if (!found) column.append(element("p", "at-preferences__empty", words.nothing.replace("{}", query)));
+    else column.append(element("span", "at-preferences__found", words.found.replace("{}", found)), ...results);
+  }
+
+  input.addEventListener("input", draw);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && input.value) {
+      input.value = "";
+      draw();
+      event.stopPropagation();
+    }
+  });
+
+  const api = {
+    select(index, fromPerson = false) {
+      selected = index;
+      input.value = "";
+      draw();
+      main.scrollTop = 0;
+      if (fromPerson) root.dispatchEvent(new CustomEvent("atelier:page", { bubbles: true, detail: { index } }));
+    },
+    search(text) {
+      input.value = text;
+      draw();
+    },
+    get page() {
+      return selected;
+    },
+  };
+  draw();
+  hydrate(root);
+  return api;
+}
+
+/// "⌘⇧S" on macOS, "Ctrl+Shift+S" elsewhere, from a `keydown` event, as `keystroke_label`
+/// prints a gpui keystroke. Returns null for a modifier pressed alone.
+export function keystrokeLabel(event) {
+  if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Fn"].includes(event.key)) return null;
+  const names = { " ": "Space", Escape: "Esc", ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", PageUp: "Page Up", PageDown: "Page Down" };
+  let key = names[event.key] || (event.key.length === 1 ? event.key.toUpperCase() : event.key);
+  if (event.code?.startsWith("Key")) key = event.code.slice(3);
+  if (event.code?.startsWith("Digit")) key = event.code.slice(5);
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  if (mac) return `${event.ctrlKey ? "⌃" : ""}${event.altKey ? "⌥" : ""}${event.shiftKey ? "⇧" : ""}${event.metaKey ? "⌘" : ""}${key}`;
+  return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super", key].filter(Boolean).join("+");
+}
+
+/// `KeybindingList`: key bindings, grouped, that record new keys. `groups` is `[{ title,
+/// bindings: [{ label, scope, keys, changed, conflict }] }]`; rows count from 0 across groups.
+/// Pressing a key chip, "None" or + records: the next key press fires `atelier:keybinding` with
+/// `{ row, slot, key }` (`key` null for Escape). × fires `atelier:keybinding-remove` with
+/// `{ row, slot }` and the reset button `atelier:keybinding-reset` with `{ row }`. Call
+/// `update(groups)` with the new keys. Returns `{ update(groups), get recording() }`.
+export function keybindings(root, { groups = [], labels = {} } = {}) {
+  const words = { pressAKey: "Press a key…", none: "None", add: "Add a shortcut", reset: "Reset to default", alsoRuns: "Also runs {}", ...labels };
+  let recording = null;
+  root.classList.add("at-keybindings");
+  root.tabIndex = -1;
+  const emit = (name, detail) => root.dispatchEvent(new CustomEvent(`atelier:${name}`, { bubbles: true, detail }));
+  const small = (text, extra = "") => {
+    const button = element("button", `at-button at-button--sm ${extra}`.trim(), text);
+    button.type = "button";
+    return button;
+  };
+  const record = (row, slot) => {
+    recording = { row, slot };
+    draw();
+    root.focus();
+  };
+
+  function draw() {
+    root.replaceChildren();
+    let row = 0;
+    for (const group of groups) {
+      if (group.title) root.append(element("span", "at-caption", group.title));
+      for (const binding of group.bindings || []) {
+        const index = row++;
+        const keys = binding.keys || [];
+        const line = element("div", "at-keybinding");
+        line.append(element("span", "at-keybinding__label", binding.label));
+        if (binding.scope) line.append(element("span", "at-keybinding__scope", binding.scope));
+        if (binding.conflict) line.append(element("span", "at-keybinding__conflict", words.alsoRuns.replace("{}", binding.conflict)));
+        const armed = (slot) => recording && recording.row === index && recording.slot === slot;
+        keys.forEach((key, slot) => {
+          const holder = element("span", "at-keybinding__key");
+          const chip = small(armed(slot) ? words.pressAKey : key);
+          chip.setAttribute("aria-pressed", String(!!armed(slot)));
+          chip.addEventListener("click", () => record(index, slot));
+          holder.append(chip);
+          if (keys.length > 1) {
+            const remove = small("", "at-button--ghost at-button--icon");
+            remove.append(icon("close", { size: 12 }));
+            remove.title = `Remove ${key}`;
+            remove.addEventListener("click", () => emit("keybinding-remove", { row: index, slot }));
+            holder.append(remove);
+          }
+          line.append(holder);
+        });
+        if (armed(keys.length)) {
+          const waiting = small(words.pressAKey);
+          waiting.setAttribute("aria-pressed", "true");
+          line.append(waiting);
+        }
+        else if (!keys.length) {
+          const none = small(words.none);
+          none.addEventListener("click", () => record(index, 0));
+          line.append(none);
+        }
+        const add = small("", "at-button--ghost at-button--icon");
+        add.append(icon("plus", { size: 12 }));
+        add.title = words.add;
+        add.addEventListener("click", () => record(index, keys.length));
+        line.append(add);
+        const slot = element("span", "at-keybinding__slot");
+        if (binding.changed) {
+          const reset = small("", "at-button--ghost at-button--icon");
+          reset.append(icon("undo", { size: 12 }));
+          reset.title = words.reset;
+          reset.addEventListener("click", () => emit("keybinding-reset", { row: index }));
+          slot.append(reset);
+        }
+        line.append(slot);
+        root.append(line);
+      }
+    }
+  }
+
+  root.addEventListener("keydown", (event) => {
+    if (!recording) return;
+    const key = event.key === "Escape" ? null : keystrokeLabel(event);
+    if (key === null && event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const { row, slot } = recording;
+    recording = null;
+    draw();
+    emit("keybinding", { row, slot, key });
+  });
+
+  draw();
+  return {
+    update(next) {
+      groups = next;
+      draw();
+    },
+    get recording() {
+      return recording;
+    },
+  };
+}

@@ -271,9 +271,10 @@ screen, already laid out at its final size, fades in over it (`Morph`; captured 
 
 ```bash
 cargo run --example preferences -- --page general|voice|assistant|keys
+cargo run --example preferences -- --search 保存
 ```
 
-The shape Auris Studio's settings take: pages in a sidebar that scrolls, with search first, two
+The shape Auris Studio's settings take, drawn by `PreferencesWindow`: pages in a sidebar that scrolls, with search first, two
 lines of description per page and the setup guide last; each page a header and groups of
 labelled fields in a readable column (`density.form_width`), labels above fields and beside
 switches; the page's actions at its foot with Save at the trailing end; and a status bar that
@@ -283,6 +284,14 @@ outline sits on the "クラウド" segment after tabbing to it.
 ![Preferences, voice synthesis, keyboard focus on a segment](images/preferences.png)
 
 ![Preferences, voice synthesis, with a field error](images/preferences-voice.png)
+
+Typing in the search field (the window takes keys as soon as it opens) lists every setting that
+matches each word, under a link to its page. The keys page is a `KeybindingList`: press a key to
+record a new one, Esc cancels, and a key two commands share is flagged on both.
+
+![Preferences, searching for 保存](images/preferences-search.png)
+
+![Preferences, key bindings](images/preferences-keys.png)
 
 ## control_legend — which control for which concept
 

@@ -218,6 +218,11 @@
                 <div id="graph" style="height: 380px; border-radius: var(--at-radius-md)"></div>
               </div>
 
+              <div class="at-card at-card--padded" style="grid-column: 1 / -1">
+                <div class="at-section-header"><h3 class="at-heading">Preferences</h3><span class="at-small at-muted" id="prefs-event">Search “mic”, or open Keyboard and record a shortcut.</span></div>
+                <div id="prefs" style="height: 460px; border-radius: var(--at-radius-md); overflow: hidden"></div>
+              </div>
+
               <div class="at-card at-card--padded">
                 <div class="at-section-header"><h3 class="at-heading">Categories and meters</h3></div>
                 <div class="swatches" id="categories"></div>
@@ -297,7 +302,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, hydrate, nodeCanvas, openDialog, permissionPicker, planView, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, hydrate, keybindings, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -473,6 +478,78 @@
       for (const name of ["node-select", "node-move", "node-connect", "node-disconnect", "node-remove", "node-keep", "node-undo"]) {
         graphRoot.addEventListener(`atelier:${name}`, (event) => (document.getElementById("graph-event").textContent = `${name}: ${JSON.stringify(event.detail)}`));
       }
+      // Preferences: pages of grouped settings, a search over them, and a keyboard page.
+      const html = (markup) => {
+        const holder = document.createElement("div");
+        holder.innerHTML = markup.trim();
+        return holder.firstElementChild;
+      };
+      const toggle = (on) => () => html(`<label class="at-switch"><input type="checkbox" role="switch"${on ? " checked" : ""} /></label>`);
+      const choose = (...options) => () => html(`<select class="at-select">${options.map((option) => `<option>${option}</option>`).join("")}</select>`);
+      const shortcuts = [
+        { title: "Transport", bindings: [{ label: "Play or pause", keys: ["Space"] }, { label: "Record", keys: ["R"], changed: true }, { label: "Return to start", keys: ["Home", "⌘←"] }] },
+        { title: "Assistant", bindings: [{ label: "Focus the composer", keys: ["⌘L"] }, { label: "Stop the reply", keys: ["Esc"], scope: "While answering" }, { label: "New conversation", keys: [] }] },
+      ];
+      const defaults = shortcuts.map((group) => group.bindings.map((binding) => [...binding.keys]));
+      const rows = () => shortcuts.flatMap((group) => group.bindings);
+      const keysRoot = document.createElement("div");
+      const keyList = keybindings(keysRoot, { groups: shortcuts });
+      const reflow = () => {
+        const all = rows();
+        const flat = defaults.flat();
+        all.forEach((binding, index) => {
+          binding.changed = JSON.stringify(binding.keys) !== JSON.stringify(flat[index]);
+          const other = all.find((candidate) => candidate !== binding && candidate.keys.some((key) => binding.keys.includes(key)));
+          binding.conflict = other ? other.label : undefined;
+        });
+        keyList.update(shortcuts);
+      };
+      const say = (text) => (document.getElementById("prefs-event").textContent = text);
+      keysRoot.addEventListener("atelier:keybinding", ({ detail: { row, slot, key } }) => {
+        if (key === null) return say("Recording cancelled.");
+        rows()[row].keys[slot] = key;
+        reflow();
+        say(`${rows()[row].label} now runs on ${key}.`);
+      });
+      keysRoot.addEventListener("atelier:keybinding-remove", ({ detail: { row, slot } }) => {
+        rows()[row].keys.splice(slot, 1);
+        reflow();
+      });
+      keysRoot.addEventListener("atelier:keybinding-reset", ({ detail: { row } }) => {
+        rows()[row].keys = [...defaults.flat()[row]];
+        reflow();
+      });
+      preferences(document.getElementById("prefs"), {
+        pages: [
+          {
+            title: "General",
+            icon: "settings",
+            description: "How the studio starts and looks.",
+            groups: [
+              { title: "Startup", settings: [{ label: "Open the last project", beside: true, control: toggle(true) }, { label: "Check for updates", description: "Once a day, in the background.", beside: true, control: toggle(true), keywords: ["version"] }] },
+              { title: "Appearance", settings: [{ label: "Language", control: choose("English", "日本語") }, { label: "Reduce motion", description: "Backdrops hold still and panels stop sliding.", beside: true, control: toggle(false), keywords: ["animation"] }] },
+            ],
+          },
+          {
+            title: "Audio",
+            icon: "mic",
+            description: "Devices and recording.",
+            groups: [
+              { title: "Devices", settings: [{ label: "Microphone", control: choose("Built-in microphone", "USB interface"), keywords: ["input"] }, { label: "Sample rate", control: choose("48 kHz", "44.1 kHz", "96 kHz") }] },
+              { title: "Recording", settings: [{ label: "Input monitoring", beside: true, control: toggle(true) }, { label: "Count-in", description: "One bar before recording starts.", beside: true, control: toggle(false), keywords: ["metronome"] }] },
+            ],
+          },
+          {
+            title: "Assistant",
+            icon: "brain",
+            groups: [{ title: "Replies", settings: [{ label: "Model", control: choose("Claude Opus 5.5", "Claude Sonnet 5.5", "Qwen 4 Coder (local)") }, { label: "Ask before changing files", beside: true, control: toggle(true), keywords: ["permission", "approval"] }] }],
+          },
+          { title: "Keyboard", icon: "keyboard", description: "Press a shortcut to record a new one; Esc cancels.", keywords: ["shortcuts", "keys"], content: keysRoot },
+        ],
+        actions: [() => html(`<button class="at-button">Reset all</button>`), () => html(`<button class="at-button at-button--primary">Done</button>`)],
+      });
+      document.getElementById("prefs").addEventListener("atelier:page", ({ detail }) => say(`Opened page ${detail.index}.`));
+      reflow();
       permissionPicker(document.getElementById("permission-bypass"), { mode: "bypass" });
       const draft = document.getElementById("draft");
       const send = () => {
