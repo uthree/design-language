@@ -18,22 +18,28 @@
 mod activity;
 mod approval;
 mod chat;
+mod choice;
 mod code;
 mod composer;
+mod conversations;
 mod effort;
 mod label;
 mod panel;
+mod queue;
 mod transcript;
 mod usage;
 
 pub use activity::{AgentActivity, AgentPhase, ChangeKind, ChangedFiles, FileChange, PlanView};
 pub use approval::{ApprovalDialog, PermissionMode, PermissionPicker};
 pub use chat::{ChatEntry, ChatEvent, ChatView, CustomEntry, Decision, EntryId};
+pub use choice::{Choice, ChoiceCard};
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
+pub use conversations::{Conversation, ConversationList};
 pub use effort::{EffortButton, EffortPicker};
 pub use label::AgentLabel;
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
+pub use queue::{MessageQueue, QueuedMessage};
 pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
     ToolCall, ToolGroup, ToolState, UserMessage,

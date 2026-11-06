@@ -225,7 +225,10 @@ impl ParentElement for SettingsPage {
 }
 
 /// Whether every word of `query` is in one of `texts`, ignoring case.
-fn matches<'a>(query: &str, texts: impl IntoIterator<Item = &'a SharedString> + Clone) -> bool {
+pub(crate) fn matches<'a>(
+    query: &str,
+    texts: impl IntoIterator<Item = &'a SharedString> + Clone,
+) -> bool {
     query.split_whitespace().all(|word| {
         let word = word.to_lowercase();
         texts

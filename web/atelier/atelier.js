@@ -268,6 +268,8 @@ export const CHAT_STRINGS = {
   newMessages: (count) => `${count} new`,
   usedTools: (count) => `Used ${count} tools`,
   copy: "Copy",
+  send: "Send",
+  pickAny: "Choose any that apply",
 };
 
 /// How close to the end, in pixels, still counts as reading the latest entry.
@@ -280,39 +282,189 @@ function element(tag, className, text) {
   return node;
 }
 
-/// The little Markdown a chat answer needs, as `ChatView` draws it: paragraphs, `-` bullets,
-/// `#` headings and fenced code. Text is never parsed as HTML.
-function prose(target, text) {
-  target.replaceChildren();
-  const lines = text.split("\n");
-  let paragraph = [];
-  let list = null;
+// ---------------------------------------------------------------- Markdown
+
+/// Links that may be followed: the web, mail, and the page's own paths. Anything else, such as
+/// `javascript:`, is drawn as plain text.
+const SAFE_URL = /^(https?:|mailto:|#|\/|\.{1,2}\/|[\w.-]+(\/|$))/i;
+
+/// Inline Markdown into `target`: `code`, **bold**, *italic*, ~~struck~~ and [links](url).
+/// Text is only ever text nodes; nothing is parsed as HTML.
+function inlineMarkdown(target, text) {
+  let plain = "";
   const flush = () => {
-    if (paragraph.length) target.append(element("p", null, paragraph.join(" ")));
-    paragraph = [];
+    if (plain) target.append(plain);
+    plain = "";
   };
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index].trimStart();
-    if (!line.startsWith("- ")) list = null;
-    if (line.startsWith("```")) {
+  const wrap = (tag, inner) => {
+    flush();
+    const node = element(tag);
+    inlineMarkdown(node, inner);
+    target.append(node);
+  };
+  for (let index = 0; index < text.length; ) {
+    const rest = text.slice(index);
+    const before = text[index - 1] || " ";
+    let match;
+    if (rest[0] === "\\" && /[\\`*_~[\]()#>!|-]/.test(rest[1] || "")) {
+      plain += rest[1];
+      index += 2;
+    } else if ((match = /^(`+)([\s\S]*?[^`])\1(?!`)/.exec(rest))) {
       flush();
-      const code = [];
-      while (++index < lines.length && !lines[index].trimStart().startsWith("```")) code.push(lines[index]);
-      target.append(element("pre", "at-code", code.join("\n")));
-    } else if (line.startsWith("- ")) {
+      target.append(element("code", null, match[2].trim() || match[2]));
+      index += match[0].length;
+    } else if ((match = /^!?\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/.exec(rest))) {
       flush();
-      if (!list) target.append((list = element("ul")));
-      list.append(element("li", null, line.slice(2)));
-    } else if (line.startsWith("# ")) {
-      flush();
-      target.append(element("strong", null, line.slice(2)));
-    } else if (!line) {
-      flush();
+      const safe = SAFE_URL.test(match[2]);
+      const link = element(safe ? "a" : "span");
+      if (safe) {
+        link.href = match[2];
+        link.target = "_blank";
+        link.rel = "noreferrer";
+      }
+      inlineMarkdown(link, match[1] || match[2]);
+      target.append(link);
+      index += match[0].length;
+    } else if ((match = /^(\*\*|__)(?=\S)([\s\S]*?\S)\1/.exec(rest)) && (match[1] === "**" || !/\w/.test(before))) {
+      wrap("strong", match[2]);
+      index += match[0].length;
+    } else if ((match = /^~~(?=\S)([\s\S]*?\S)~~/.exec(rest))) {
+      wrap("del", match[1]);
+      index += match[0].length;
+    } else if ((match = /^([*_])(?=\S)([\s\S]*?\S)\1(?!\1)/.exec(rest)) && (match[1] === "*" || !/\w/.test(before))) {
+      wrap("em", match[2]);
+      index += match[0].length;
     } else {
-      paragraph.push(line);
+      plain += rest[0];
+      index += 1;
     }
   }
   flush();
+}
+
+const FENCE = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/;
+const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
+const QUOTE = /^\s{0,3}>\s?/;
+const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
+const TABLE_RULE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+const cells = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((cell) => cell.trim());
+const startsBlock = (line, next) =>
+  FENCE.test(line) || HEADING.test(line) || RULE.test(line) || QUOTE.test(line) || ITEM.test(line) || (line.includes("|") && TABLE_RULE.test(next || ""));
+
+function codeBlock(language, code, words) {
+  const block = element("div", "at-markdown__code");
+  const header = element("div", "at-markdown__code-header");
+  header.append(element("span", null, language || ""));
+  header.append(copyButton(() => code, words));
+  block.append(header, element("pre", null, code));
+  return block;
+}
+
+function markdownBlocks(target, lines, words) {
+  for (let index = 0; index < lines.length; ) {
+    const line = lines[index];
+    let match;
+    if (!line.trim()) {
+      index += 1;
+    } else if ((match = FENCE.exec(line))) {
+      const code = [];
+      const indent = line.length - line.trimStart().length;
+      while (++index < lines.length && !lines[index].trimStart().startsWith(match[1])) code.push(lines[index].slice(Math.min(indent, lines[index].length - lines[index].trimStart().length)));
+      index += 1;
+      target.append(codeBlock(match[2], code.join("\n"), words));
+    } else if ((match = HEADING.exec(line))) {
+      const heading = element(`h${match[1].length}`);
+      inlineMarkdown(heading, match[2]);
+      target.append(heading);
+      index += 1;
+    } else if (RULE.test(line)) {
+      target.append(element("hr"));
+      index += 1;
+    } else if (QUOTE.test(line)) {
+      const quoted = [];
+      while (index < lines.length && lines[index].trim() && (QUOTE.test(lines[index]) || !startsBlock(lines[index]))) quoted.push(lines[index++].replace(QUOTE, ""));
+      const quote = element("blockquote");
+      markdownBlocks(quote, quoted, words);
+      target.append(quote);
+    } else if (line.includes("|") && TABLE_RULE.test(lines[index + 1] || "")) {
+      const table = element("table");
+      const head = element("tr");
+      for (const cell of cells(line)) inlineMarkdown(head.appendChild(element("th")), cell);
+      table.append(element("thead"));
+      table.firstChild.append(head);
+      const body = element("tbody");
+      index += 2;
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        const row = element("tr");
+        for (const cell of cells(lines[index++])) inlineMarkdown(row.appendChild(element("td")), cell);
+        body.append(row);
+      }
+      table.append(body);
+      target.append(table);
+    } else if ((match = ITEM.exec(line))) {
+      const indent = match[1].length;
+      const ordered = /\d/.test(match[2]);
+      const list = element(ordered ? "ol" : "ul");
+      if (ordered && parseInt(match[2], 10) !== 1) list.start = parseInt(match[2], 10);
+      while (index < lines.length) {
+        const item = ITEM.exec(lines[index]);
+        if (!item || item[1].length !== indent || /\d/.test(item[2]) !== ordered) break;
+        const body = [item[3]];
+        const inset = item[1].length + item[2].length + 1;
+        index += 1;
+        while (index < lines.length) {
+          const next = lines[index];
+          const depth = next.length - next.trimStart().length;
+          if (next.trim() && depth <= indent) break;
+          if (!next.trim() && !(lines[index + 1] || "").startsWith(" ".repeat(indent + 1))) break;
+          body.push(next.slice(Math.min(inset, depth)));
+          index += 1;
+        }
+        const entry = element("li");
+        const task = /^\[([ xX])\]\s+/.exec(body[0]);
+        if (task) {
+          body[0] = body[0].slice(task[0].length);
+          entry.className = "at-markdown__task";
+          const box = element("span", "at-markdown__box");
+          if (task[1] !== " ") {
+            entry.classList.add("is-done");
+            box.append(icon("check", { size: 10 }));
+          }
+          entry.append(box);
+        }
+        const content = element("div");
+        markdownBlocks(content, body, words);
+        // A tight item's one paragraph reads as the item itself.
+        if (content.children.length === 1 && content.firstChild.tagName === "P") entry.append(...content.firstChild.childNodes);
+        else entry.append(...content.childNodes);
+        list.append(entry);
+        while (index < lines.length && !lines[index].trim()) index += 1;
+      }
+      target.append(list);
+    } else {
+      const paragraph = [];
+      while (index < lines.length && lines[index].trim() && !(paragraph.length && startsBlock(lines[index], lines[index + 1]))) paragraph.push(lines[index++].trim());
+      const node = element("p");
+      inlineMarkdown(node, paragraph.join(" "));
+      target.append(node);
+    }
+  }
+}
+
+/// Draw `text` as Markdown into `target`, as `Markdown` does in gpui: paragraphs, headings,
+/// bullet, numbered and task lists (nested), quotes, fenced code with a copy button, tables,
+/// rules, **bold**, *italic*, ~~struck~~, `code` and links. Raw HTML stays text, and only
+/// web, mail and relative links are followed.
+export function markdown(target, text, { labels = {} } = {}) {
+  target.classList.add("at-markdown");
+  target.replaceChildren();
+  markdownBlocks(target, String(text).replace(/\r\n?/g, "\n").split("\n"), { copy: "Copy", ...labels });
+  return target;
+}
+
+function prose(target, text, words) {
+  markdown(target, text, { labels: words });
 }
 
 function copyButton(text, strings) {
@@ -340,8 +492,10 @@ function copyButton(text, strings) {
 /// Entries are plain objects with a `kind`: `user` (`text`, `attachments`), `assistant` (`text`,
 /// `meta`, `streaming`), `reasoning` (`summary`, `text`), `tool` (`name`, `summary`, `state`:
 /// "running" | "succeeded" | "failed" | "awaiting", `detail`, `icon`), `approval` (`title`,
-/// `body`, `allowLabel`, `destructive`, `offerAlways`), `status`, `error` (`text`) or `custom`
-/// (`element`). `{ panel: true }` fits it to a side panel; without, it is a centred column.
+/// `body`, `allowLabel`, `destructive`, `offerAlways`), `choices` (`question`, `options`,
+/// `multiple`; answering fires `atelier:chose` with `{ id, picked }`, and a message sent after
+/// it closes it), `status`, `error` (`text`) or `custom` (`element`). Answers are drawn as
+/// Markdown. `{ panel: true }` fits it to a side panel; without, it is a centred column.
 export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
   const words = { ...CHAT_STRINGS, ...strings };
   root.classList.add("at-chat");
@@ -429,7 +583,7 @@ export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
         actions.append(copyButton(() => entry.text, words));
         node.append(header, body, actions);
         const refresh = () => {
-          prose(body, entry.text || "");
+          prose(body, entry.text || "", words);
           if (entry.streaming) {
             (body.lastElementChild || body).append(element("span", "at-assistant-message__caret"));
           }
@@ -516,6 +670,30 @@ export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
         refresh();
         return { node, refresh };
       }
+      case "choices": {
+        const node = element("div");
+        const refresh = () => {
+          node.replaceChildren();
+          const card = element("div");
+          choiceCard(card, {
+            question: entry.question,
+            options: entry.options,
+            multiple: entry.multiple,
+            picked: entry.picked || [],
+            answered: Boolean(entry.answered || entry.passed),
+            labels: { send: words.send, pickAny: words.pickAny },
+          });
+          card.addEventListener("atelier:choose", (event) => {
+            event.stopPropagation();
+            entry.picked = event.detail.picked;
+            entry.answered = true;
+            root.dispatchEvent(new CustomEvent("atelier:chose", { bubbles: true, detail: { id: entry.id, picked: entry.picked } }));
+          });
+          node.append(card);
+        };
+        refresh();
+        return { node, refresh };
+      }
       case "status":
       case "error": {
         const node = element("div", `at-notice${entry.kind === "error" ? " at-notice--error" : ""}`);
@@ -546,6 +724,15 @@ export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
   };
 
   const push = (input) => change(() => {
+    // A message sent past an open question answers it in other words: it takes no more picks.
+    if (input.kind === "user") {
+      for (const held of entries.values()) {
+        if (held.entry.kind === "choices" && !held.entry.answered && !held.entry.passed) {
+          held.entry.passed = true;
+          held.refresh?.();
+        }
+      }
+    }
     const id = nextId++;
     const entry = { ...input, id };
     const drawn = draw(entry);
@@ -1546,6 +1733,264 @@ export function keybindings(root, { groups = [], labels = {} } = {}) {
     },
     get recording() {
       return recording;
+    },
+  };
+}
+
+// ---------------------------------------------------------------- choices, the queue, conversations
+
+/// `ChoiceCard`: a question the agent asked with fixed answers. `options` are
+/// `[{ label, detail }]` (or strings). With one answer to give, each option answers on a press;
+/// `multiple` gives each a checkbox and a Send button. Picking fires `atelier:choose` with
+/// `{ picked }` (indices) and the card then shows the pick and takes no more. Returns
+/// `{ answer(picked), get picked() }`.
+export function choiceCard(root, { question, options = [], multiple = false, picked = [], answered = false, labels = {} } = {}) {
+  const words = { send: "Send", pickAny: "Choose any that apply", ...labels };
+  const choices = options.map((option) => (typeof option === "string" ? { label: option } : option));
+  let ticked = [...picked];
+  let done = answered;
+  root.classList.add("at-card", "at-choice-card");
+
+  const choose = (indices) => {
+    done = true;
+    ticked = [...indices].sort((a, b) => a - b);
+    draw();
+    root.dispatchEvent(new CustomEvent("atelier:choose", { bubbles: true, detail: { picked: ticked } }));
+  };
+
+  function draw() {
+    root.replaceChildren();
+    const header = element("div", "at-choice-card__header");
+    header.append(element("strong", null, question));
+    if (multiple) header.append(element("span", "at-choice-card__hint", words.pickAny));
+    root.append(header);
+    choices.forEach((choice, index) => {
+      const chosen = ticked.includes(index);
+      if (multiple) {
+        const row = element("label", "at-checkbox at-choice-card__check");
+        const input = element("input");
+        input.type = "checkbox";
+        input.checked = chosen;
+        input.disabled = done;
+        input.addEventListener("change", () => {
+          ticked = input.checked ? [...ticked, index] : ticked.filter((at) => at !== index);
+          send.disabled = !ticked.length;
+        });
+        const text = element("span", "at-choice-card__text");
+        text.append(element("span", null, choice.label));
+        if (choice.detail) text.append(element("span", "at-list-item__description", choice.detail));
+        row.append(input, text);
+        root.append(row);
+      } else {
+        const row = element("button", "at-list-item at-choice-card__option");
+        row.type = "button";
+        row.disabled = done && !chosen;
+        row.setAttribute("aria-selected", String(chosen));
+        row.append(icon(chosen ? "check" : "chevron-right"));
+        const text = element("span", "at-list-item__label");
+        text.append(element("span", null, choice.label));
+        if (choice.detail) text.append(element("span", "at-list-item__description", choice.detail));
+        row.append(text);
+        if (!done) row.addEventListener("click", () => choose([index]));
+        root.append(row);
+      }
+    });
+    const send = element("button", "at-button at-button--primary at-button--sm");
+    send.type = "button";
+    send.append(icon("arrow-up"), words.send);
+    send.disabled = !ticked.length;
+    send.addEventListener("click", () => choose(ticked));
+    if (multiple && !done) {
+      const row = element("div", "at-choice-card__send");
+      row.append(send);
+      root.append(row);
+    }
+  }
+
+  draw();
+  return {
+    answer(indices) {
+      done = true;
+      ticked = [...indices];
+      draw();
+    },
+    get picked() {
+      return ticked;
+    },
+  };
+}
+
+/// `MessageQueue`: the messages sent while the agent was still answering, between the
+/// transcript and the composer. `messages` are `[{ text, attachments }]` (or strings). Fires
+/// `atelier:queue-send-now`, `queue-edit` and `queue-remove` with `{ index }`, and
+/// `atelier:queue-pause` with `{ paused }`. Hidden while empty. Returns `{ update({ messages,
+/// paused, editable }) }`.
+export function messageQueue(root, { messages = [], paused = false, editable = true, labels = {} } = {}) {
+  const words = {
+    queued: (count) => `${count} queued`,
+    queuePaused: (count) => `${count} queued, paused`,
+    pause: "Pause",
+    resume: "Resume",
+    sendNow: "Send now",
+    sendNowHint: "Stop the current reply and send this next",
+    edit: "Edit",
+    remove: "Remove",
+    ...labels,
+  };
+  let state = { messages, paused, editable };
+  root.classList.add("at-queue");
+  const emit = (name, detail) => root.dispatchEvent(new CustomEvent(`atelier:${name}`, { bubbles: true, detail }));
+  const button = (label, className = "") => {
+    const node = element("button", `at-button at-button--ghost at-button--sm ${className}`.trim(), label);
+    node.type = "button";
+    return node;
+  };
+
+  function draw() {
+    const list = state.messages.map((message) => (typeof message === "string" ? { text: message } : message));
+    root.hidden = !list.length;
+    root.replaceChildren();
+    const header = element("div", "at-queue__header");
+    header.append(element("span", `at-queue__count${state.paused ? " is-paused" : ""}`, (state.paused ? words.queuePaused : words.queued)(list.length)));
+    const pause = button("");
+    pause.append(icon(state.paused ? "play" : "pause"), state.paused ? words.resume : words.pause);
+    pause.addEventListener("click", () => emit("queue-pause", { paused: !state.paused }));
+    header.append(pause);
+    root.append(header);
+    const rows = element("div", "at-queue__list");
+    list.forEach((message, index) => {
+      const row = element("div", "at-queue__message");
+      row.title = message.text;
+      const preview = message.text.split(/\s+/).filter(Boolean).join(" ");
+      const extra = (message.attachments || []).length ? ` · ${message.attachments.join(", ")}` : "";
+      row.append(element("span", "at-queue__text", preview + extra));
+      const now = button(words.sendNow);
+      now.dataset.tooltip = words.sendNowHint;
+      now.addEventListener("click", () => emit("queue-send-now", { index }));
+      const edit = button(words.edit);
+      edit.disabled = !state.editable;
+      edit.addEventListener("click", () => emit("queue-edit", { index }));
+      const remove = button("", "at-button--icon");
+      remove.append(icon("close", { size: 12 }));
+      remove.dataset.tooltip = words.remove;
+      remove.addEventListener("click", () => emit("queue-remove", { index }));
+      row.append(now, edit, remove);
+      rows.append(row);
+    });
+    root.append(rows);
+  }
+
+  draw();
+  return {
+    update(next) {
+      state = { ...state, ...next };
+      draw();
+    },
+  };
+}
+
+const STATUS_WORDS = { running: "Working", awaitingApproval: "Needs approval" };
+
+/// `ConversationList`: past conversations with a search, Recent and Archived, and "New
+/// conversation". `conversations` are `[{ title, preview, when, status }]` with `status`
+/// `"running"` or `"awaitingApproval"` while a turn is live. The search keeps the ones whose
+/// title or preview has every word. Fires `atelier:conversation-open` and `conversation-more`
+/// (with the button's rectangle, for a menu) with `{ index }`, `atelier:conversation-new`, and
+/// `atelier:conversation-archived` with `{ archived }`. Returns `{ update({ conversations,
+/// selected, archived }), search(text) }`.
+export function conversationList(root, { conversations = [], selected = null, archived = null, labels = {} } = {}) {
+  const words = {
+    newConversation: "New conversation",
+    search: "Search conversations",
+    recent: "Recent",
+    archived: "Archived",
+    untitled: "Untitled conversation",
+    none: "No conversations yet",
+    nothing: "Nothing matches “{}”",
+    more: "More actions",
+    status: STATUS_WORDS,
+    ...labels,
+  };
+  let state = { conversations, selected, archived };
+  root.classList.add("at-conversations");
+  const emit = (name, detail) => root.dispatchEvent(new CustomEvent(`atelier:${name}`, { bubbles: true, detail }));
+  root.replaceChildren();
+  const top = element("div", "at-conversations__top");
+  const create = element("button", "at-button at-button--sm");
+  create.type = "button";
+  create.append(icon("plus"), words.newConversation);
+  create.addEventListener("click", () => emit("conversation-new", {}));
+  const field = element("label", "at-field at-field--sm");
+  field.append(icon("search"));
+  const input = element("input");
+  input.type = "search";
+  input.placeholder = words.search;
+  field.append(input);
+  const tabs = element("div", "at-segmented at-segmented--sm");
+  for (const [index, label] of [words.recent, words.archived].entries()) {
+    const tab = element("button", null, label);
+    tab.type = "button";
+    tab.addEventListener("click", () => emit("conversation-archived", { archived: index === 1 }));
+    tabs.append(tab);
+  }
+  top.append(create, field, tabs);
+  const list = element("div", "at-conversations__list");
+  root.append(top, list);
+
+  function draw() {
+    tabs.hidden = state.archived == null;
+    [...tabs.children].forEach((tab, index) => tab.setAttribute("aria-pressed", String(index === Number(Boolean(state.archived)))));
+    const query = input.value.trim();
+    list.replaceChildren();
+    state.conversations.forEach((conversation, index) => {
+      if (!matchesAll(query, [conversation.title, conversation.preview])) return;
+      const row = element("div", "at-conversation");
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      if (index === state.selected) row.setAttribute("aria-current", "true");
+      const first = element("div", "at-conversation__line");
+      first.append(element("span", "at-conversation__title", conversation.title || words.untitled));
+      const live = words.status[conversation.status];
+      if (live) {
+        const badge = element("span", `at-conversation__status at-conversation__status--${conversation.status}`);
+        badge.append(conversation.status === "running" ? element("span", "at-spinner at-spinner--agent") : element("span", "at-status-dot at-status-dot--warning"), live);
+        first.append(badge);
+      } else if (conversation.when) {
+        first.append(element("span", "at-conversation__when", conversation.when));
+      }
+      const more = element("button", "at-button at-button--ghost at-button--sm at-button--icon");
+      more.type = "button";
+      more.dataset.tooltip = words.more;
+      more.append(icon("more"));
+      more.addEventListener("click", (event) => {
+        event.stopPropagation();
+        emit("conversation-more", { index, rect: more.getBoundingClientRect() });
+      });
+      first.append(more);
+      row.append(first);
+      if (conversation.preview) row.append(element("div", "at-conversation__preview", conversation.preview.split(/\s+/).filter(Boolean).join(" ")));
+      const open = () => emit("conversation-open", { index });
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (event) => {
+        if (event.target === row && (event.key === "Enter" || event.key === " ")) open(), event.preventDefault();
+      });
+      list.append(row);
+    });
+    if (!list.children.length) {
+      list.append(element("p", "at-conversations__empty", query ? words.nothing.replace("{}", query) : words.none));
+    }
+  }
+
+  input.addEventListener("input", draw);
+  draw();
+  return {
+    update(next) {
+      state = { ...state, ...next };
+      draw();
+    },
+    search(text) {
+      input.value = text;
+      draw();
     },
   };
 }

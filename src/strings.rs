@@ -121,6 +121,34 @@ pub struct Strings {
     pub no_shortcut: SharedString,
     /// A key that also runs other commands; `{}` names them.
     pub also_runs: SharedString,
+    /// Under a question that takes several answers.
+    pub pick_any: SharedString,
+    /// Messages waiting to be sent; `{}` is the count.
+    pub queued: SharedString,
+    /// Messages waiting while the queue is paused; `{}` is the count.
+    pub queue_paused: SharedString,
+    /// Start a paused queue again.
+    pub resume: SharedString,
+    /// Send a queued message ahead of the rest.
+    pub send_now: SharedString,
+    /// What [`Strings::send_now`] does to the turn under way.
+    pub send_now_hint: SharedString,
+    /// Take a queued message back into the composer.
+    pub edit: SharedString,
+    /// Start a new conversation.
+    pub new_conversation: SharedString,
+    /// A conversation without a title yet.
+    pub untitled: SharedString,
+    /// The conversations still in use.
+    pub recent: SharedString,
+    /// The conversations put away.
+    pub archived: SharedString,
+    /// An empty conversation list.
+    pub no_conversations: SharedString,
+    /// The placeholder of the conversation search.
+    pub search_conversations: SharedString,
+    /// A button that opens more actions.
+    pub more_actions: SharedString,
 }
 
 impl Default for Strings {
@@ -221,6 +249,20 @@ impl Strings {
             reset_shortcut: "Reset to default".into(),
             no_shortcut: "None".into(),
             also_runs: "Also runs {}".into(),
+            pick_any: "Choose any that apply".into(),
+            queued: "{} queued".into(),
+            queue_paused: "{} queued, paused".into(),
+            resume: "Resume".into(),
+            send_now: "Send now".into(),
+            send_now_hint: "Stop the current reply and send this next".into(),
+            edit: "Edit".into(),
+            new_conversation: "New conversation".into(),
+            untitled: "Untitled conversation".into(),
+            recent: "Recent".into(),
+            archived: "Archived".into(),
+            no_conversations: "No conversations yet".into(),
+            search_conversations: "Search conversations".into(),
+            more_actions: "More actions".into(),
         }
     }
 
@@ -317,6 +359,20 @@ impl Strings {
             reset_shortcut: "初期設定に戻す".into(),
             no_shortcut: "なし".into(),
             also_runs: "{}にも割り当て済み".into(),
+            pick_any: "当てはまるものをすべて選択".into(),
+            queued: "送信待ち {} 件".into(),
+            queue_paused: "送信待ち {} 件（一時停止中）".into(),
+            resume: "再開".into(),
+            send_now: "今すぐ送信".into(),
+            send_now_hint: "今の応答を止めて、これを次に送ります".into(),
+            edit: "編集".into(),
+            new_conversation: "新しい会話".into(),
+            untitled: "無題の会話".into(),
+            recent: "最近".into(),
+            archived: "アーカイブ".into(),
+            no_conversations: "会話はまだありません".into(),
+            search_conversations: "会話を検索".into(),
+            more_actions: "その他の操作".into(),
         }
     }
 
@@ -339,6 +395,16 @@ impl Strings {
     /// [`Strings::settings_found`] with the count put in.
     pub fn settings_found(&self, count: usize) -> SharedString {
         self.settings_found.replace("{}", &count.to_string()).into()
+    }
+
+    /// [`Strings::queued`] or [`Strings::queue_paused`] with the count put in.
+    pub fn queued(&self, count: usize, paused: bool) -> SharedString {
+        let words = if paused {
+            &self.queue_paused
+        } else {
+            &self.queued
+        };
+        words.replace("{}", &count.to_string()).into()
     }
 
     /// [`Strings::also_runs`] with the other commands put in.

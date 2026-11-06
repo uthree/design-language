@@ -324,15 +324,19 @@ impl RenderOnce for AgentToggle {
     }
 }
 
-/// A row in the conversation history.
+/// A row in the conversation history: the title and when it was last used, and with
+/// [`ConversationRow::preview`] a second line from the conversation. [`super::ConversationList`]
+/// draws a list of them with search and a new-conversation button.
 #[derive(IntoElement)]
 pub struct ConversationRow {
     id: ElementId,
     title: SharedString,
     time: SharedString,
+    preview: Option<SharedString>,
     selected: bool,
     status: AgentStatus,
     on_click: Option<ClickHandler>,
+    on_more: Option<ClickHandler>,
 }
 
 impl ConversationRow {
@@ -346,10 +350,28 @@ impl ConversationRow {
             id: id.into(),
             title: title.into(),
             time: time.into(),
+            preview: None,
             selected: false,
             status: AgentStatus::Idle,
             on_click: None,
+            on_more: None,
         }
+    }
+
+    /// A second, muted line: the start of the last message.
+    pub fn preview(mut self, preview: impl Into<SharedString>) -> Self {
+        self.preview = Some(preview.into());
+        self
+    }
+
+    /// A "More actions" button at the trailing end, for a menu of rename, archive and delete.
+    /// The click event carries the position to open the menu at.
+    pub fn on_more(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_more = Some(Box::new(handler));
+        self
     }
 
     /// Selected.
@@ -383,6 +405,61 @@ impl RenderOnce for ConversationRow {
             self.status,
             AgentStatus::Running | AgentStatus::AwaitingApproval
         );
+        let more = self.on_more.map(|handler| {
+            Button::icon_only((self.id.clone(), "more"), IconName::More)
+                .variant(crate::button::ButtonVariant::Ghost)
+                .size(crate::button::ControlSize::Small)
+                .tooltip(cx.strings().more_actions.clone())
+                .on_click(handler)
+        });
+        let two_lines = self.preview.is_some();
+        // The row is a button too: a press on "More" stays with it.
+        let more = more.map(|more| {
+            div()
+                .flex_none()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(more)
+        });
+        let first = div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.sm)
+            .w_full()
+            .min_w_0()
+            .when(!two_lines, |line| line.h_full())
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(theme.typography.size_md)
+                    .text_color(colors.text)
+                    .when(two_lines, |title| {
+                        title.font_weight(theme.typography.label_weight)
+                    })
+                    .child(self.title),
+            )
+            .when(live, |line| line.child(AgentStatusLabel::new(self.status)))
+            .when(!live, |line| {
+                line.child(
+                    Label::new(self.time)
+                        .size(TextSize::XSmall)
+                        .color(TextColor::Faint),
+                )
+            })
+            .children(more);
+        // Each line is a row of the row's own width, so both truncate at its end.
+        let second = self.preview.map(|preview| {
+            div().flex().w_full().min_w_0().overflow_hidden().child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(theme.typography.size_sm)
+                    .text_color(colors.text_muted)
+                    .child(preview.split_whitespace().collect::<Vec<_>>().join(" ")),
+            )
+        });
         let mut row = focusable(
             div().id(self.id.clone()),
             &self.id,
@@ -392,32 +469,20 @@ impl RenderOnce for ConversationRow {
             cx,
         )
         .flex()
-        .items_center()
-        .gap(theme.spacing.sm)
-        .h(theme.density.row)
+        .flex_col()
+        .justify_center()
+        .gap(theme.spacing.xxs)
+        .when(two_lines, |row| row.py(theme.spacing.xs))
+        .when(!two_lines, |row| row.h(theme.density.row))
+        .min_w_0()
         .px(theme.spacing.sm)
         .rounded(theme.shape.radius_sm)
         .when(self.selected, |row| row.bg(colors.selected))
         .when(!self.selected, |row| {
             row.hover(move |style| style.bg(hover))
         })
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(theme.typography.size_md)
-                .text_color(colors.text)
-                .child(self.title),
-        )
-        .when(live, |row| row.child(AgentStatusLabel::new(self.status)))
-        .when(!live, |row| {
-            row.child(
-                Label::new(self.time)
-                    .size(TextSize::XSmall)
-                    .color(TextColor::Faint),
-            )
-        });
+        .child(first)
+        .children(second);
         if let Some(handler) = self.on_click {
             row = row.on_click(handler);
         }

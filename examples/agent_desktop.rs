@@ -6,22 +6,23 @@
 //! ```text
 //! cargo run --example agent_desktop -- [--direction glass|studio|mono] [--appearance dark|light]
 //!     [--draft "いい感じ :thi"] [--permission ask|plan|bypass] [--push-request]
-//!     [--activity tool|thinking|compacting]
+//!     [--activity tool|thinking|compacting] [--ask single|multiple] [--queue]
+//!     [--search "piano"] [--short]
 //! ```
 
 mod common;
 
 use atelier::agent::{
     AgentActivity, AgentPhase, AgentStatus, ApprovalDialog, ChangeKind, ChangedFiles, ChatEntry,
-    ChatEvent, ChatView, CodeBlock, Composer, ContextChip, ConversationRow, Decision, DiffBlock,
-    DiffLine, FileChange, PermissionMode, PermissionPicker, PlanView, ToolState, UsageLimit,
-    UsageMeter,
+    ChatEvent, ChatView, Choice, CodeBlock, Composer, ContextChip, Conversation, ConversationList,
+    Decision, DiffBlock, DiffLine, FileChange, MessageQueue, PermissionMode, PermissionPicker,
+    PlanView, ToolState, UsageLimit, UsageMeter,
 };
 use atelier::emoji::{self, EmojiMatch};
 use atelier::{
-    ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider, Edge,
-    FocusNext, IconName, Label, MenuItem, Popover, ProviderLogo, Sidebar, StepList, StepState,
-    Tabs, TaskProgress, TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
+    ActiveStrings, ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider,
+    Edge, FocusNext, IconName, Label, MenuItem, Popover, ProviderLogo, Sidebar, StepList,
+    StepState, Tabs, TaskProgress, TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -54,6 +55,12 @@ struct AgentDesktop {
     push_request: bool,
     /// What the running turn is doing, or `None` once it has ended.
     activity: Option<AgentPhase>,
+    /// Messages sent while the turn runs, waiting for it to end.
+    queue: Vec<String>,
+    queue_paused: bool,
+    /// The sidebar's search text and whether it shows archived sessions.
+    session_query: String,
+    archived: bool,
 }
 
 impl Themed for AgentDesktop {
@@ -62,21 +69,44 @@ impl Themed for AgentDesktop {
     }
 }
 
-const SESSIONS: [(&str, &str, AgentStatus); 6] = [
+/// The sessions in the sidebar: title, when, state, and the start of the last message.
+const SESSIONS: [(&str, &str, AgentStatus, &str); 6] = [
     (
         "Fix flaky playback test",
         "now",
         AgentStatus::AwaitingApproval,
+        "Run `cargo test --workspace`?",
     ),
-    ("Add stems export to CLI", "4 min", AgentStatus::Running),
-    ("Port mixer graph to Atelier", "11:20", AgentStatus::Idle),
-    ("Profile physical piano", "09:05", AgentStatus::Idle),
     (
-        "Update VOICEVOX pronunciation",
+        "Add stems export to CLI",
+        "4 min",
+        AgentStatus::Running,
+        "Writing the --stems flag and its help text",
+    ),
+    (
+        "Port mixer graph to Atelier",
+        "11:20",
+        AgentStatus::Idle,
+        "The canvas now draws wires with NodeCanvas.",
+    ),
+    (
+        "Profile physical piano",
+        "09:05",
+        AgentStatus::Idle,
+        "Most of the time goes to the soundboard filter.",
+    ),
+    (
+        "",
         "Yesterday",
         AgentStatus::Idle,
+        "How do I add a word to the VOICEVOX dictionary?",
     ),
-    ("Review CLAP host PR", "Yesterday", AgentStatus::Idle),
+    (
+        "Review CLAP host PR",
+        "Yesterday",
+        AgentStatus::Idle,
+        "Two comments on the parameter flush order.",
+    ),
 ];
 
 /// The models on offer, grouped by provider in the picker.
@@ -205,49 +235,41 @@ impl AgentDesktop {
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let section = |label: &'static str| {
-            div()
-                .px(theme.spacing.sm)
-                .pt(theme.spacing.md)
-                .pb(theme.spacing.xs)
-                .child(Label::caption(label))
-        };
-        let row = |index: usize, cx: &Context<Self>| {
-            let (title, time, status) = SESSIONS[index];
-            ConversationRow::new(("session", index), title, time)
+        let conversations = SESSIONS.iter().map(|&(title, when, status, preview)| {
+            Conversation::new(title)
+                .when(when)
                 .status(status)
-                .selected(index == self.session)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.session = index;
-                    cx.notify();
-                }))
-        };
+                .preview(preview)
+        });
         Sidebar::new(Edge::Left)
-            .w(px(272.))
-            .p(theme.spacing.sm)
-            .gap(theme.spacing.xxs)
+            .w(px(288.))
             .child(
-                Button::new("new-session", "New session")
-                    .icon(IconName::Plus)
-                    .full_width(),
+                ConversationList::new("sessions")
+                    .conversations(conversations)
+                    .selected(Some(self.session))
+                    .search(
+                        self.session_query.clone(),
+                        TextField::new()
+                            .icon(IconName::Search)
+                            .placeholder(cx.strings().search_conversations.clone())
+                            .when(!self.session_query.is_empty(), |field| {
+                                field.value(self.session_query.clone())
+                            }),
+                    )
+                    .archived(
+                        self.archived,
+                        cx.listener(|this, archived: &bool, _, cx| {
+                            this.archived = *archived;
+                            cx.notify();
+                        }),
+                    )
+                    .on_new(|_, _| {})
+                    .on_open(cx.listener(|this, index: &usize, _, cx| {
+                        this.session = *index;
+                        cx.notify();
+                    }))
+                    .on_more(|_, _, _, _| {}),
             )
-            .child(
-                div().pt(theme.spacing.sm).child(
-                    TextField::new()
-                        .icon(IconName::Search)
-                        .placeholder("Search sessions"),
-                ),
-            )
-            .child(section("Running"))
-            .child(row(0, cx))
-            .child(row(1, cx))
-            .child(section("Today"))
-            .child(row(2, cx))
-            .child(row(3, cx))
-            .child(section("Yesterday"))
-            .child(row(4, cx))
-            .child(row(5, cx))
-            .child(div().flex_1())
             .child(
                 div()
                     .flex()
@@ -275,8 +297,8 @@ impl AgentDesktop {
 
     /// The conversation so far, as the session's entries. The diff, the plan and the code
     /// output are rows the app draws itself.
-    fn conversation(model: usize) -> Vec<ChatEntry> {
-        vec![
+    fn conversation(model: usize, ask: Option<bool>) -> Vec<ChatEntry> {
+        let mut entries = vec![
             ChatEntry::user(
                 "The playback test fails about one run in ten on Windows. Find out why and fix it.",
             )
@@ -304,7 +326,7 @@ impl AgentDesktop {
                 .into_any_element()
             }),
             ChatEntry::assistant(
-                "Found it. `play()` returns before the audio thread has taken its first block, so a position read right after it can still be zero.\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:",
+                "Found it. `play()` returns **before** the audio thread has taken its first block, so a position read right after it can still be zero.\n\n| Platform | Runs | Failures |\n|---|---|---|\n| Windows | 50 | 6 |\n| macOS | 50 | 0 |\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:\n\n1. Send `Command::Play`\n2. Wait up to *250 ms* for the acknowledgement\n3. Report `DeviceStalled` otherwise ([why a timeout](https://docs.rs/crossbeam-channel))",
             )
             .meta(format!("{} · 41 s", MODELS[model].0)),
             ChatEntry::custom(|_, _| {
@@ -335,16 +357,48 @@ impl AgentDesktop {
                     )
                     .into_any_element()
             }),
-            ChatEntry::approval("Run `cargo test --workspace`?")
+        ];
+        entries.push(match ask {
+            Some(false) => ChatEntry::choices(
+                "The same race is in the recorder. Fix it there too?",
+                [
+                    Choice::new("Fix both").detail("One change, two files"),
+                    Choice::new("Only playback").detail("Leave the recorder for a separate change"),
+                    Choice::new("Show me the recorder first"),
+                ],
+            ),
+            Some(true) => ChatEntry::choices(
+                "Which platforms should the test suite run on?",
+                ["Windows", "macOS", "Linux"],
+            )
+            .multiple(),
+            None => ChatEntry::approval("Run `cargo test --workspace`?")
                 .body("Runs about 2,400 tests. Nothing is written outside target/.")
                 .allow_label("Run")
                 .offer_always(),
-        ]
+        });
+        entries
     }
 
     /// What the mock agent does with an approval: say what it would do next.
     fn decided(&mut self, event: &ChatEvent, cx: &mut Context<Self>) {
-        let ChatEvent::Decided { decision, .. } = event;
+        let decision = match event {
+            ChatEvent::Decided { decision, .. } => decision,
+            ChatEvent::Chose { picked, .. } => {
+                let reply = format!(
+                    "Going with option {}.",
+                    picked
+                        .iter()
+                        .map(|index| (index + 1).to_string())
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                );
+                self.chat.update(cx, |chat, cx| {
+                    chat.push(ChatEntry::assistant(reply), cx);
+                });
+                return;
+            }
+        };
         let reply = match decision {
             Decision::Allow | Decision::AlwaysAllow => {
                 "Running the workspace tests now. I will report back when they finish."
@@ -467,7 +521,7 @@ impl Render for AgentDesktop {
         // to read.
         let sidebar = window.viewport_size().width >= px(SIDEBAR_MIN_WINDOW);
         let switch = common::theme_switch(self, cx);
-        let (title, _, status) = SESSIONS[self.session];
+        let (title, _, status, _) = SESSIONS[self.session];
         let (model, model_logo) = MODELS[self.model];
         let model_menu = self.model_menu.then(|| self.model_menu(cx));
         WindowFrame::new()
@@ -529,6 +583,7 @@ impl Render for AgentDesktop {
                                             .relative()
                                             .w_full()
                                             .max_w(px(780.))
+                                            .child(self.waiting_messages(cx))
                                             .child(
                                                 Composer::new("composer")
                                                     .placeholder(
@@ -633,6 +688,34 @@ impl Render for AgentDesktop {
 }
 
 impl AgentDesktop {
+    /// The messages waiting for the turn to end, between the transcript and the composer.
+    fn waiting_messages(&self, cx: &mut Context<Self>) -> MessageQueue {
+        MessageQueue::new("queue")
+            .messages(self.queue.iter().cloned())
+            .paused(self.queue_paused)
+            .editable(self.draft.is_empty())
+            .on_pause(cx.listener(|this, paused: &bool, _, cx| {
+                this.queue_paused = *paused;
+                cx.notify();
+            }))
+            .on_send_now(cx.listener(|this, index: &usize, _, cx| {
+                let text = this.queue.remove(*index);
+                this.chat.update(cx, |chat, cx| {
+                    chat.jump_to_latest(cx);
+                    chat.push(ChatEntry::user(text), cx);
+                });
+                cx.notify();
+            }))
+            .on_edit(cx.listener(|this, index: &usize, _, cx| {
+                this.draft = this.queue.remove(*index);
+                cx.notify();
+            }))
+            .on_remove(cx.listener(|this, index: &usize, _, cx| {
+                this.queue.remove(*index);
+                cx.notify();
+            }))
+    }
+
     /// The running turn's line above the composer. The figures are fixed in this mock; an app
     /// passes what its backend reports.
     fn activity_strip(&self, phase: AgentPhase) -> AgentActivity {
@@ -736,7 +819,26 @@ fn main() {
     common::run("Agent", 1500., 940., |choice, cx| {
         let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)));
         chat.update(cx, |chat, cx| {
-            chat.replace(AgentDesktop::conversation(0), cx);
+            let ask = common::argument("--ask").map(|kind| kind == "multiple");
+            chat.replace(AgentDesktop::conversation(0, ask), cx);
+            // `--short` keeps only what the two speakers said, to see an answer whole.
+            if std::env::args().any(|arg| arg == "--short") {
+                let rows: Vec<_> = chat
+                    .entries()
+                    .filter(|(_, entry)| {
+                        matches!(
+                            entry,
+                            ChatEntry::Tool { .. }
+                                | ChatEntry::Custom(_)
+                                | ChatEntry::Reasoning { .. }
+                        )
+                    })
+                    .map(|(id, _)| id)
+                    .collect();
+                for id in rows {
+                    chat.remove(id, cx);
+                }
+            }
             chat.set_logo(Some(MODELS[0].1.into()), cx);
             // The bash call starts open, to show what a tool row holds.
             let bash = chat.entries().nth(2).map(|(id, _)| id);
@@ -774,6 +876,17 @@ fn main() {
                 Some("compacting") => AgentPhase::Compacting,
                 _ => AgentPhase::Approval,
             }),
+            queue: if std::env::args().any(|arg| arg == "--queue") {
+                vec![
+                    "Also check the recorder for the same race".into(),
+                    "Then update the CHANGELOG\nunder Fixed".into(),
+                ]
+            } else {
+                Vec::new()
+            },
+            queue_paused: false,
+            session_query: common::argument("--search").unwrap_or_default(),
+            archived: false,
         }
     });
 }

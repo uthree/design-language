@@ -192,3 +192,47 @@ fn the_transcript_reads_as_text(cx: &mut TestAppContext) {
         "> Why?\n\n[bash] Ran the tests\n\nBecause."
     );
 }
+
+#[gpui::test]
+fn a_question_takes_one_pick_and_reports_it(cx: &mut TestAppContext) {
+    let (chat, events, cx) = open(cx);
+    let id = chat.update(cx, |chat, cx| {
+        chat.push(
+            ChatEntry::choices("Fix the recorder too?", ["Fix both", "Only playback"]),
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let option = cx
+        .debug_bounds("chat-choices-0-option-1")
+        .expect("the second answer");
+    cx.simulate_click(option.center(), Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(
+        *events.borrow(),
+        [ChatEvent::Chose {
+            entry: id,
+            picked: vec![1]
+        }]
+    );
+    // Answered: a second press changes nothing.
+    assert!(!chat.read_with(cx, |chat, _| chat.choices_open(id)));
+    cx.simulate_click(option.center(), Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(events.borrow().len(), 1);
+}
+
+#[gpui::test]
+fn a_message_sent_past_a_question_closes_it(cx: &mut TestAppContext) {
+    let (chat, _, cx) = open(cx);
+    let id = chat.update(cx, |chat, cx| {
+        let id = chat.push(
+            ChatEntry::choices("Which platforms?", ["Windows", "macOS"]).multiple(),
+            cx,
+        );
+        assert!(chat.choices_open(id));
+        chat.push(ChatEntry::user("Never mind, just Linux"), cx);
+        id
+    });
+    assert!(!chat.read_with(cx, |chat, _| chat.choices_open(id)));
+}

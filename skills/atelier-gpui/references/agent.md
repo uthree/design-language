@@ -40,6 +40,7 @@ let chat = cx.new(|_| ChatView::new("chat"));             // side panel
 let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)));   // middle of a window
 cx.subscribe(&chat, |app, _, event: &ChatEvent, cx| match event {
     ChatEvent::Decided { entry, decision } => app.agent.answer(*entry, *decision),
+    ChatEvent::Chose { entry, picked } => app.agent.answer_choices(*entry, picked),
 }).detach();
 
 chat.update(cx, |chat, cx| {
@@ -72,10 +73,47 @@ AgentPanel::new("agent", title).status(status).chat(chat.clone()).composer(compo
 - `replace(entries)` opens another conversation at its end; `capacity(n)` keeps the last n;
   `transcript_text()` gives the whole conversation as text; `entries()`/`entry(id)` read it
   back; `update_entry(id, |entry| ..)` changes anything else.
-- Rows it has no kind for (diffs, plans, choice cards) go in as `ChatEntry::custom(..)`.
+- **A question with fixed answers** is `ChatEntry::choices(question, [Choice::new("Fix both")
+  .detail("One change, two files"), ..])`, or `.multiple()` for checkboxes and Send. Picking
+  emits `ChatEvent::Chose` and the card shows the pick; a message the person sends after it
+  closes it too (`choices_open(id)`); `choose(id, picked)` records an answer from elsewhere.
+- Answers are drawn as `Markdown` (below).
+- Rows it has no kind for (diffs, plans) go in as `ChatEntry::custom(..)`.
 
 On the web, `chat(element, { panel, logo, strings })` from `atelier.js` is the same view; see
 `web/README.md`.
+
+## Questions, the queue and the conversation list
+
+- `ChoiceCard::new(id, question).options([..]).on_choose(|picked, ..|)` is the card on its own,
+  for a transcript you draw yourself: one answer answers on a press (`ListItem`s); `.multiple(true)`
+  ticks `Checkbox`es (held by the card unless you pass `.picked(..)` and `.on_toggle(..)`) and
+  sends with Send. `.answered(picked)` shows the pick and takes no more input. Options are
+  `{id}-option-{i}`, Send `{id}-send`.
+- `MessageQueue::new(id).messages(queued).paused(paused).editable(draft_is_empty)` sits between
+  the transcript and the composer while messages wait for the turn to end (`Composer::queue`
+  sends them there). It counts them (`Strings::queued`), pauses and resumes, and per message
+  offers "Send now" (stop the reply, send this next), "Edit" (back into the composer) and remove:
+  `.on_send_now`, `.on_edit`, `.on_remove`, `.on_pause`. The application keeps the queue and
+  sends the first when a turn ends. It hides itself while empty.
+- `ConversationList::new(id).conversations([Conversation::new(title).preview(..).when("2 min")
+  .status(AgentStatus::Running)])` is the history page or sidebar: "New conversation"
+  (`.on_new`), your search field and its text (`.search(query, field)`, every word must match the
+  title or preview), Recent and Archived (`.archived(bool, ..)`), and a `ConversationRow` per
+  conversation with a "More actions" button (`.on_more(|index, click, ..|)`, open your menu at
+  the click). Untitled ones read `Strings::untitled`; nothing found shows an `EmptyState`.
+  `ConversationRow::preview(..)` and `::on_more(..)` give a row of your own the same two lines.
+
+## Markdown
+
+`Markdown::new(id, source)` draws what an agent writes: paragraphs, headings, bullet, numbered
+and task lists (nested), quotes, fenced code with its language and a copy button, GitHub tables,
+rules, bold, italic, struck text, inline code and links. Every block is a `SelectableText`
+(`{id}-block-N` in reading order) and a click on a link opens it, or goes to `.on_link(|url, ..|)`
+for links into the project. Raw HTML is shown as text. `.plain()` drops selection and links for
+text without a stable id. `AssistantMessage` and `ChatView` answers use it already; use it as
+well for plans, release notes and tool results that are Markdown. `SelectableText::styles(..)`
+and `::link(..)` are the pieces it is built from, for rich text of your own.
 
 ## Approvals and permission modes
 
@@ -168,8 +206,8 @@ pinned. Use `ThinkingIndicator::new("Reading the score")` before the first token
 caret). Errors: `ChatNotice::error("Couldn't reach the model. Check your connection and try
 again.").action(Button::new("retry", "Retry"))`.
 
-`AssistantMessage` renders paragraphs, `- ` bullets, `# ` headings and fenced code. Pass a real
-Markdown view with `.body(element)` when you have one (Auris uses gpui-component's).
+`AssistantMessage` renders its text as `Markdown`. Pass a view of your own with
+`.body(element)` only for something Markdown cannot say.
 
 The composer's text area is a slot: pass your editable input entity with `.input(...)` and say
 whether it holds text with `.empty(bool)` — the composer then shows the placeholder under your

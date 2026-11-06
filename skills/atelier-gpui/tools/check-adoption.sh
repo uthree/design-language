@@ -101,6 +101,10 @@ check warn 'fn ([a-z_]*status_row|context_gauge|phase_label|changed_files_list)\
     "a hand-built activity line, plan or changed-files list: use atelier::agent::AgentActivity, PlanView or ChangedFiles"
 check warn 'fn (bezier|execution_order|undo_agent_node|input_mouse_down)\b' \
     "a node graph copied from the node_editor example: use atelier::graph::NodeCanvas"
+check warn 'fn ([a-z_]*choice_card|[a-z_]*queue_view|render_conversation_browser)\b' \
+    "a hand-built choice card, message queue or conversation list: use atelier::agent::ChoiceCard, MessageQueue or ConversationList"
+check warn 'TextView::markdown|text::TextView' \
+    "Markdown in a transcript: use atelier::Markdown, which selects, copies and follows links"
 check warn 'fn (render_nav|render_key_row|found_commands|[a-z_]*matches_query)\b' \
     "a hand-built preferences window or key list: use atelier::PreferencesWindow and KeybindingList"
 check error 'fn selectable_text\b' \
