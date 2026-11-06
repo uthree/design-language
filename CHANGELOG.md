@@ -10,6 +10,38 @@ does not bring the old ways back.
 Atelier has no tagged releases yet; applications pin a git revision. Each section names the
 merge it shipped in.
 
+## Unreleased — the conversation view
+
+### Added
+
+- `agent::ChatView`, the conversation as a view the application holds (`cx.new(|_|
+  ChatView::new("chat"))`). It keeps the entries (`ChatEntry::user`, `assistant`, `streaming`,
+  `reasoning`, `tool`, `approval`, `status`, `error`, `custom`), which tool calls and reasoning
+  are open, and where the person is reading: it follows the end while they are there, stays
+  put once they scroll up, and counts what arrives meanwhile on a "jump to latest" button.
+  `push` returns an `EntryId`; `append` streams text into an answer, reasoning or a tool's
+  detail; `finish`, `set_tool_state`, `answer`, `update_entry`, `replace`, `clear`, `remove`,
+  `jump_to_latest`, `set_thinking` and `set_logo` change it; `transcript_text` reads it out.
+  Consecutive tool calls are grouped and counted; an answered approval folds into one line and
+  emits `ChatEvent::Decided { entry, decision }`. `reading_width(..)` centres it for the middle
+  of a window, `capacity(..)` keeps the last entries.
+- `AgentPanel::chat(view)` puts a `ChatView` where the panel's transcript goes.
+- `Strings::jump_to_latest`, `new_messages`, `used_tools` and `approval_answers`, in English and
+  Japanese.
+- The `agent_desktop` example's conversation is a `ChatView`: approving or denying the tests
+  folds the card and the mock agent answers, and sent messages follow the end.
+- Web kit: `chat(element, options)` in `atelier.js`, the same view for the browser and Tauri,
+  with `.at-chat`, `.at-chat__jump`, `.at-message__actions`, `.at-approval--answered` and
+  `.at-notice` in `atelier.css`. The showcase's Agent view is driven by it.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A transcript `ScrollHandle` with "near the tail" checks, an unread count and a jump button | `ChatView`, which follows and counts by itself |
+| An application enum of chat rows with its own open/closed sets for tool calls and reasoning | `ChatEntry` and `ChatView::set_open` |
+| Approval buttons wired to a pending-request field and a folded "allowed" line drawn by hand | `ChatEntry::approval(..)` and `ChatEvent::Decided` |
+
 ## Unreleased — controls that move when used
 
 ### Added

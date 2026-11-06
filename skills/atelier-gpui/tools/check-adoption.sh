@@ -93,6 +93,8 @@ check error 'auris-(redo|bolt)\.svg' \
 # Agent surfaces.
 check error 'fn (user_message|assistant_message)\b' \
     "use UserMessage / AssistantMessage: .body(..) for your own Markdown view, .action(..) for Copy and Retry, AssistantMessage::anonymous() without the name line."
+check warn '\b(unread_entries|follow_tail|is_near_tail)\b' \
+    "a conversation that tracks its own tail and unread count: use atelier::agent::ChatView"
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

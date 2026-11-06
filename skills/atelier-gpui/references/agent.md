@@ -29,6 +29,54 @@ them. They know nothing about providers or transport.
   or undone there.
 - **Status by shape and colour**: `AgentStatus` has `label()`, `mark()` and `color(theme)`.
 
+## The conversation view
+
+`ChatView` is the conversation as one view you hold: the entries, which rows are open, and
+where the person is reading. Use it rather than pushing rows into `AgentPanel::entry` each frame
+once the conversation streams or grows.
+
+```rust
+let chat = cx.new(|_| ChatView::new("chat"));             // side panel
+let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)));   // middle of a window
+cx.subscribe(&chat, |app, _, event: &ChatEvent, cx| match event {
+    ChatEvent::Decided { entry, decision } => app.agent.answer(*entry, *decision),
+}).detach();
+
+chat.update(cx, |chat, cx| {
+    chat.push(ChatEntry::user(text).attachment("Piano · bars 17–24"), cx);
+    chat.set_thinking(Some("Reading the score".into()), cx);   // before the first token
+    let call = chat.push(ChatEntry::tool("read_notes", "Read 96 notes", ToolState::Running).icon(IconName::Eye), cx);
+    chat.append(call, &json, cx);                              // the call's detail
+    chat.set_tool_state(call, ToolState::Succeeded, cx);
+    chat.set_thinking(None, cx);
+    let answer = chat.push(ChatEntry::streaming().meta("Claude Opus 5.5"), cx);
+    chat.append(answer, delta, cx);                            // as tokens arrive
+    chat.finish(answer, cx);
+    chat.push(ChatEntry::approval("Create “Pad swell” on Strings?").body("Adds one clip.").allow_label("Create").offer_always(), cx);
+    chat.push(ChatEntry::custom(|_, _| DiffBlock::new("song.toml").into_any_element()), cx);
+});
+AgentPanel::new("agent", title).status(status).chat(chat.clone()).composer(composer)
+```
+
+- It **follows the end while the person is there** and stays put once they scroll up; what
+  arrives meanwhile is counted on a "jump to latest" button (`Strings::new_messages`). Call
+  `jump_to_latest` when the person sends, so they see the answer.
+- **Consecutive tool calls fold into one `ToolGroup`** titled with `Strings::used_tools`; a call
+  with a `.detail(..)` opens on click. Reasoning opens on click too. `set_open` opens one from
+  code.
+- **An approval answered folds into one line** ("Allowed: Run the tests?") and emits
+  `ChatEvent::Decided`; `answer(id, decision)` records one the runtime decided by rule;
+  `awaiting_approval()` says whether one waits.
+- Messages carry a hover copy button (`without_copy_buttons()` to leave them out); answers take
+  the provider's mark from `set_logo`; `anonymous()` drops the identity line.
+- `replace(entries)` opens another conversation at its end; `capacity(n)` keeps the last n;
+  `transcript_text()` gives the whole conversation as text; `entries()`/`entry(id)` read it
+  back; `update_entry(id, |entry| ..)` changes anything else.
+- Rows it has no kind for (diffs, plans, choice cards) go in as `ChatEntry::custom(..)`.
+
+On the web, `chat(element, { panel, logo, strings })` from `atelier.js` is the same view; see
+`web/README.md`.
+
 ## The panel
 
 ```rust

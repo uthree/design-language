@@ -26,7 +26,7 @@
       .panel { flex: 1; min-height: 0; overflow: auto; }
       .panel[hidden] { display: none; }
       .transcript-pane { display: flex; flex-direction: column; overflow: hidden; }
-      .transcript-pane .at-transcript { flex: 1; overflow: auto; width: 100%; }
+      .transcript-pane #chat { flex: 1; min-height: 0; }
       .composer-wrap { max-width: 760px; width: 100%; margin: 0 auto; padding: 0 var(--at-space-lg) var(--at-space-lg); }
       .welcome { position: relative; display: grid; place-items: center; }
       .welcome[hidden] { display: none; }
@@ -224,41 +224,17 @@
           </section>
 
           <section class="panel transcript-pane" data-view="agent" hidden>
-            <div class="at-transcript">
-              <span class="at-context-chip" style="align-self: flex-end"><span data-icon="file"></span>engine/tests/playback.rs</span>
-              <div class="at-user-message">The playback test fails about one run in ten on Windows. Find out why and fix it.</div>
-              <span class="at-thought"><span data-icon="brain"></span>Thought for 9 s<span data-icon="chevron-right"></span></span>
-              <div class="at-tool-group">
-                <div class="at-caption" style="padding: 4px 0">Used 3 tools</div>
-                <div class="at-tool-call"><span data-icon="code"></span>Ran the test 50 times<span class="at-tool-call__name">bash</span><span class="at-tool-call__done" data-icon="check"></span></div>
-                <div class="at-tool-call"><span data-icon="eye"></span>Read engine/src/transport.rs<span class="at-tool-call__name">read</span><span class="at-tool-call__done" data-icon="check"></span></div>
-                <div class="at-tool-call"><span data-icon="file"></span>Edited engine/src/transport.rs<span class="at-tool-call__name">edit</span><span class="at-tool-call__done" data-icon="check"></span></div>
-              </div>
-              <pre class="at-code">test playback::starts_from_zero ... FAILED
-
-assertion `left == right` failed
-  left: 0
- right: 512</pre>
-              <div class="at-assistant-message">
-                <div class="at-assistant-message__header"><span class="at-avatar at-avatar--agent"><span data-icon="logo-anthropic"></span></span><strong>Assistant</strong><span class="at-faint">Claude Opus 5.5 · 41 s</span></div>
-                <p>Found it. <code class="at-mono">play()</code> returns before the audio thread has taken its first block, so a position read right after it can still be zero.</p>
-              </div>
-              <div class="at-approval">
-                <strong><span data-icon="alert" style="color: var(--at-warning)"></span> Run the workspace tests?</strong>
-                <span class="at-small at-muted">Runs <span class="at-mono">cargo test --workspace</span>. Nothing is pushed.</span>
-                <div class="at-approval__actions"><span class="at-small at-muted">Always allow</span><span class="at-spacer"></span><button class="at-button at-button--sm">Deny</button><button class="at-button at-button--sm at-button--primary">Run</button></div>
-              </div>
-            </div>
+            <div id="chat"></div>
             <div class="composer-wrap">
               <div class="at-composer at-agent-glow">
                 <span class="at-context-chip"><span data-icon="paperclip"></span>Selection: 2 clips</span>
-                <textarea rows="2" placeholder="Reply, or describe a change…"></textarea>
+                <textarea id="draft" rows="2" placeholder="Reply, or describe a change…"></textarea>
                 <div class="at-composer__bar">
                   <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Attach"><span data-icon="paperclip"></span></button>
                   <button class="at-button at-button--ghost at-button--sm"><span data-icon="logo-anthropic"></span>Claude Opus 5.5<span class="at-button__after" data-icon="chevron-down"></span></button>
                   <span class="at-spacer"></span>
                   <span class="at-kbd">Enter</span>
-                  <button class="at-button at-button--primary at-button--icon at-composer__send" data-tooltip="Send"><span data-icon="arrow-up"></span></button>
+                  <button id="send" class="at-button at-button--primary at-button--icon at-composer__send" data-tooltip="Send"><span data-icon="arrow-up"></span></button>
                 </div>
               </div>
             </div>
@@ -304,7 +280,7 @@ assertion `left == right` failed
     </div>
 
     <script type="module">
-      import { hydrate, setTheme, theme } from "./atelier/atelier.js";
+      import { chat, hydrate, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -349,6 +325,47 @@ assertion `left == right` failed
       document.getElementById("appearance").addEventListener("atelier:select", (event) => setTheme({ appearance: event.detail.value }));
       document.getElementById("views").addEventListener("atelier:select", (event) => showView(event.detail.value));
       if (params.get("view")) showView(params.get("view"));
+
+      // The conversation: a ChatView driven as an application would, with a mock agent.
+      const conversation = chat(document.getElementById("chat"), { logo: "logo-anthropic" });
+      conversation.push({ kind: "user", text: "The playback test fails about one run in ten on Windows. Find out why and fix it.", attachments: ["engine/tests/playback.rs"] });
+      conversation.push({ kind: "reasoning", summary: "Thought for 9 s", text: "One in ten points at a race rather than a logic error. The test starts the transport and reads the position straight away; if the audio thread has not taken the first block yet, the position is still zero." });
+      conversation.push({ kind: "tool", name: "bash", summary: "Ran the test 50 times", state: "succeeded", icon: "code", detail: "$ for i in $(seq 50); do cargo test -p auris-engine playback; done\n→ 6 failures in 50 runs" });
+      conversation.push({ kind: "tool", name: "read", summary: "Read engine/src/transport.rs", state: "succeeded", icon: "eye" });
+      conversation.push({ kind: "tool", name: "edit", summary: "Edited engine/src/transport.rs", state: "succeeded", icon: "file" });
+      const output = Object.assign(document.createElement("pre"), { className: "at-code", textContent: "test playback::starts_from_zero ... FAILED\n\nassertion `left == right` failed\n  left: 0\n right: 512" });
+      conversation.push({ kind: "custom", element: output });
+      conversation.push({ kind: "assistant", meta: "Claude Opus 5.5 · 41 s", text: "Found it. play() returns before the audio thread has taken its first block, so a position read right after it can still be zero." });
+      conversation.push({ kind: "approval", title: "Run the workspace tests?", body: "Runs cargo test --workspace. Nothing is pushed.", allowLabel: "Run", offerAlways: true });
+      const reply = async (text) => {
+        const answer = conversation.push({ kind: "assistant", streaming: true, meta: "Claude Opus 5.5", text: "" });
+        for (const word of text.split(" ")) {
+          conversation.append(answer, (conversation.entries().find((entry) => entry.id === answer).text ? " " : "") + word);
+          await new Promise((done) => setTimeout(done, 40));
+        }
+        conversation.finish(answer);
+      };
+      document.getElementById("chat").addEventListener("atelier:decided", (event) => {
+        if (event.detail.decision === "deny") return reply("Understood. I will leave the tests for you to run.");
+        const run = conversation.push({ kind: "tool", name: "bash", summary: "Running the workspace tests", state: "running", icon: "code" });
+        setTimeout(() => {
+          conversation.setToolState(run, "succeeded");
+          reply("All 2,412 tests pass, including 50 runs of the playback test.");
+        }, 1200);
+      });
+      const draft = document.getElementById("draft");
+      const send = () => {
+        const text = draft.value.trim();
+        if (!text) return;
+        conversation.jumpToLatest();
+        conversation.push({ kind: "user", text });
+        draft.value = "";
+        reply("This page has no model behind it, so this is where the answer would stream in.");
+      };
+      draft.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) send(), event.preventDefault();
+      });
+      document.getElementById("send").addEventListener("click", send);
 
       const categories = document.getElementById("categories");
       for (let index = 0; index < 8; index++) {

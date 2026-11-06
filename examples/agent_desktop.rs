@@ -11,9 +11,8 @@
 mod common;
 
 use atelier::agent::{
-    AgentStatus, ApprovalCard, AssistantMessage, CodeBlock, Composer, ContextChip, ConversationRow,
-    DiffBlock, DiffLine, ReasoningBlock, ToolCall, ToolGroup, ToolState, UsageLimit, UsageMeter,
-    UserMessage,
+    AgentStatus, ChatEntry, ChatEvent, ChatView, CodeBlock, Composer, ContextChip, ConversationRow,
+    Decision, DiffBlock, DiffLine, ToolState, UsageLimit, UsageMeter,
 };
 use atelier::emoji::{self, EmojiMatch};
 use atelier::{
@@ -23,8 +22,8 @@ use atelier::{
 };
 use common::Themed;
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyDownEvent, ParentElement, Render, ScrollHandle, Styled,
-    Window, div, prelude::*, px,
+    Context, Entity, FocusHandle, IntoElement, KeyDownEvent, ParentElement, Render, Styled, Window,
+    div, prelude::*, px,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -32,8 +31,6 @@ struct AgentDesktop {
     choice: (Direction, Appearance),
     session: usize,
     pane_tab: usize,
-    reasoning_open: bool,
-    tool_open: bool,
     /// What is typed in the composer. The caret stays at its end: this is a stand-in for the
     /// application's own text input, without selection or an input method.
     draft: String,
@@ -41,9 +38,9 @@ struct AgentDesktop {
     emoji_selected: usize,
     /// Escape closed the suggestions; typing opens them again.
     emoji_dismissed: bool,
-    sent: Vec<String>,
     input: FocusHandle,
-    transcript_scroll: ScrollHandle,
+    /// The conversation: its entries, open rows and scrolling.
+    chat: Entity<ChatView>,
     /// Focus the composer on the first frame.
     autofocus: bool,
     model: usize,
@@ -111,6 +108,9 @@ impl AgentDesktop {
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.model = index;
                         this.model_menu = false;
+                        this.chat.update(cx, |chat, cx| {
+                            chat.set_logo(Some(MODELS[index].1.into()), cx)
+                        });
                         cx.notify();
                     })),
             );
@@ -138,11 +138,14 @@ impl AgentDesktop {
         }
     }
 
-    fn send(&mut self) {
+    fn send(&mut self, cx: &mut Context<Self>) {
         let text = emoji::replace_shortcodes(self.draft.trim());
         if !text.is_empty() {
-            self.sent.push(text);
-            self.transcript_scroll.scroll_to_bottom();
+            self.chat.update(cx, |chat, cx| {
+                // Sending is a request to see the answer: back to the end.
+                chat.jump_to_latest(cx);
+                chat.push(ChatEntry::user(text), cx);
+            });
         }
         self.draft.clear();
         self.emoji_selected = 0;
@@ -162,7 +165,7 @@ impl AgentDesktop {
             "down" if open => self.emoji_selected = (self.emoji_selected + 1) % count,
             "enter" if open => self.accept_emoji(self.emoji_selected),
             "escape" if open => self.emoji_dismissed = true,
-            "enter" => self.send(),
+            "enter" => self.send(cx),
             "backspace" => {
                 if let Some((at, _)) = self.draft.grapheme_indices(true).next_back() {
                     self.draft.truncate(at);
@@ -261,66 +264,41 @@ impl AgentDesktop {
             )
     }
 
-    fn transcript(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let theme = cx.theme();
-        let entries = div()
-            .flex()
-            .flex_col()
-            .gap(theme.spacing.lg)
-            .w_full()
-            .max_w(px(780.))
-            .child(
-                UserMessage::new(
-                    "The playback test fails about one run in ten on Windows. Find out why and fix it.",
-                )
-                .id("m1")
-                .attachment(ContextChip::new("ctx-test", IconName::File, "engine/tests/playback.rs")),
+    /// The conversation so far, as the session's entries. The diff, the plan and the code
+    /// output are rows the app draws itself.
+    fn conversation(model: usize) -> Vec<ChatEntry> {
+        vec![
+            ChatEntry::user(
+                "The playback test fails about one run in ten on Windows. Find out why and fix it.",
             )
-            .child(
-                ReasoningBlock::new(
-                    "reasoning",
-                    "Thought for 9 s",
-                    "One in ten points at a race rather than a logic error. The test starts the transport and reads the position straight away; if the audio thread has not taken the first block yet, the position is still zero.",
-                )
-                .open(self.reasoning_open)
-                .on_toggle(cx.listener(|this, _, _, cx| {
-                    this.reasoning_open = !this.reasoning_open;
-                    cx.notify();
-                })),
-            )
-            .child(
-                ToolGroup::new("Used 4 tools")
-                    .call(
-                        ToolCall::new("t1", "bash", "Ran the test 50 times", ToolState::Succeeded)
-                            .icon(IconName::Code)
-                            .detail("$ for i in $(seq 50); do cargo test -p auris-engine playback; done\n→ 6 failures in 50 runs")
-                            .open(self.tool_open)
-                            .on_toggle(cx.listener(|this, _, _, cx| {
-                                this.tool_open = !this.tool_open;
-                                cx.notify();
-                            })),
-                    )
-                    .call(ToolCall::new("t2", "read", "Read engine/src/transport.rs", ToolState::Succeeded).icon(IconName::Eye))
-                    .call(ToolCall::new("t3", "grep", "Searched for position()", ToolState::Succeeded).icon(IconName::Search))
-                    .call(ToolCall::new("t4", "edit", "Edited engine/src/transport.rs", ToolState::Succeeded).icon(IconName::File)),
-            )
-            .child(
+            .attachment("engine/tests/playback.rs"),
+            ChatEntry::reasoning(
+                "Thought for 9 s",
+                "One in ten points at a race rather than a logic error. The test starts the transport and reads the position straight away; if the audio thread has not taken the first block yet, the position is still zero.",
+            ),
+            ChatEntry::tool("bash", "Ran the test 50 times", ToolState::Succeeded)
+                .icon(IconName::Code)
+                .detail("$ for i in $(seq 50); do cargo test -p auris-engine playback; done\n→ 6 failures in 50 runs"),
+            ChatEntry::tool("read", "Read engine/src/transport.rs", ToolState::Succeeded)
+                .icon(IconName::Eye),
+            ChatEntry::tool("grep", "Searched for position()", ToolState::Succeeded)
+                .icon(IconName::Search),
+            ChatEntry::tool("edit", "Edited engine/src/transport.rs", ToolState::Succeeded)
+                .icon(IconName::File),
+            ChatEntry::custom(|_, _| {
                 CodeBlock::new(
                     "output",
                     "test playback::starts_from_zero ... FAILED\n\nassertion `left == right` failed\n  left: 0\n right: 512\n\nfailures: 1 of 50 runs",
                 )
                 .title("cargo test -p auris-engine playback")
-                .copyable(),
+                .copyable()
+                .into_any_element()
+            }),
+            ChatEntry::assistant(
+                "Found it. `play()` returns before the audio thread has taken its first block, so a position read right after it can still be zero.\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:",
             )
-            .child(
-                AssistantMessage::new(
-                    "Found it. `play()` returns before the audio thread has taken its first block, so a position read right after it can still be zero.\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:",
-                )
-                .id("m2")
-                .logo(MODELS[self.model].1)
-                .meta(format!("{} · 41 s", MODELS[self.model].0)),
-            )
-            .child(
+            .meta(format!("{} · 41 s", MODELS[model].0)),
+            ChatEntry::custom(|_, _| {
                 DiffBlock::new("engine/src/transport.rs")
                     .lines([
                         DiffLine::Hunk("@@ -88,7 +88,11 @@ impl Transport".into()),
@@ -333,9 +311,10 @@ impl AgentDesktop {
                         DiffLine::Added(93, "            .map_err(|_| Error::DeviceStalled)".into()),
                         DiffLine::Context(94, "    }".into()),
                     ])
-                    .action(Button::new("open-file", "Open").size(ControlSize::Small).ghost()),
-            )
-            .child(
+                    .action(Button::new("open-file", "Open").size(ControlSize::Small).ghost())
+                    .into_any_element()
+            }),
+            ChatEntry::custom(|_, _| {
                 StepList::new("tasks")
                     .step("Reproduce the failure", StepState::Done)
                     .step("Find the cause", StepState::Done)
@@ -344,32 +323,32 @@ impl AgentDesktop {
                         "Run the full test suite",
                         "Waiting for your approval",
                         StepState::Running,
-                    ),
-            )
-            .child(
-                ApprovalCard::new("approve-tests", "Run `cargo test --workspace`?")
-                    .body("Runs about 2,400 tests. Nothing is written outside target/.")
-                    .allow_label("Run")
-                    .on_always(|_, _, _| {}),
-            )
-            .children(
-                self.sent
-                    .iter()
-                    .enumerate()
-                    .map(|(index, text)| UserMessage::new(text.clone()).id(("sent", index))),
+                    )
+                    .into_any_element()
+            }),
+            ChatEntry::approval("Run `cargo test --workspace`?")
+                .body("Runs about 2,400 tests. Nothing is written outside target/.")
+                .allow_label("Run")
+                .offer_always(),
+        ]
+    }
+
+    /// What the mock agent does with an approval: say what it would do next.
+    fn decided(&mut self, event: &ChatEvent, cx: &mut Context<Self>) {
+        let ChatEvent::Decided { decision, .. } = event;
+        let reply = match decision {
+            Decision::Allow | Decision::AlwaysAllow => {
+                "Running the workspace tests now. I will report back when they finish."
+            }
+            Decision::Deny => "Understood. I will leave the tests for you to run.",
+        };
+        let model = self.model;
+        self.chat.update(cx, |chat, cx| {
+            chat.push(
+                ChatEntry::assistant(reply).meta(format!("{} · 2 s", MODELS[model].0)),
+                cx,
             );
-        div()
-            .id("transcript")
-            .flex()
-            .flex_col()
-            .items_center()
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .track_scroll(&self.transcript_scroll)
-            .px(theme.spacing.xl)
-            .py(theme.spacing.xl)
-            .child(entries)
+        });
     }
 
     fn changes_pane(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -511,7 +490,7 @@ impl Render for AgentDesktop {
                             .flex_1()
                             .min_w_0()
                             .bg(theme.colors.surface)
-                            .child(self.transcript(cx))
+                            .child(self.chat.clone())
                             .child(
                                 div()
                                     .flex()
@@ -536,7 +515,7 @@ impl Render for AgentDesktop {
                                                         Composer::completions,
                                                     )
                                                     .on_send(cx.listener(|this, _, _, cx| {
-                                                        this.send();
+                                                        this.send(cx);
                                                         cx.notify();
                                                     }))
                                                     .context(
@@ -664,20 +643,34 @@ impl AgentDesktop {
 const SIDEBAR_MIN_WINDOW: f32 = 1080.;
 
 fn main() {
-    common::run("Agent", 1500., 940., |choice, cx| AgentDesktop {
-        choice,
-        session: 0,
-        pane_tab: 0,
-        reasoning_open: false,
-        tool_open: true,
-        draft: common::argument("--draft").unwrap_or_default(),
-        emoji_selected: 0,
-        emoji_dismissed: false,
-        sent: Vec::new(),
-        input: cx.focus_handle(),
-        transcript_scroll: ScrollHandle::new(),
-        autofocus: true,
-        model: 0,
-        model_menu: false,
+    common::run("Agent", 1500., 940., |choice, cx| {
+        let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)));
+        chat.update(cx, |chat, cx| {
+            chat.replace(AgentDesktop::conversation(0), cx);
+            chat.set_logo(Some(MODELS[0].1.into()), cx);
+            // The bash call starts open, to show what a tool row holds.
+            let bash = chat.entries().nth(2).map(|(id, _)| id);
+            if let Some(id) = bash {
+                chat.set_open(id, true, cx);
+            }
+        });
+        cx.subscribe(
+            &chat,
+            |this: &mut AgentDesktop, _, event: &ChatEvent, cx| this.decided(event, cx),
+        )
+        .detach();
+        AgentDesktop {
+            choice,
+            session: 0,
+            pane_tab: 0,
+            draft: common::argument("--draft").unwrap_or_default(),
+            emoji_selected: 0,
+            emoji_dismissed: false,
+            input: cx.focus_handle(),
+            chat,
+            autofocus: true,
+            model: 0,
+            model_menu: false,
+        }
     });
 }

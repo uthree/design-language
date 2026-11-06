@@ -234,3 +234,364 @@ export function useVibrancy(enabled = true) {
   if (enabled) document.documentElement.dataset.vibrancy = "";
   else delete document.documentElement.dataset.vibrancy;
 }
+
+// ---------------------------------------------------------------- the conversation view
+
+/// The words a chat view draws itself, in English; pass `strings` to `chat()` to translate.
+export const CHAT_STRINGS = {
+  assistant: "Assistant",
+  allow: "Allow",
+  deny: "Deny",
+  alwaysAllow: "Always allow",
+  answers: { allow: "Allowed", alwaysAllow: "Always allowed", deny: "Denied" },
+  jumpToLatest: "Jump to latest",
+  newMessages: (count) => `${count} new`,
+  usedTools: (count) => `Used ${count} tools`,
+  copy: "Copy",
+};
+
+/// How close to the end, in pixels, still counts as reading the latest entry.
+const TAIL_SLACK = 64;
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+/// The little Markdown a chat answer needs, as `ChatView` draws it: paragraphs, `-` bullets,
+/// `#` headings and fenced code. Text is never parsed as HTML.
+function prose(target, text) {
+  target.replaceChildren();
+  const lines = text.split("\n");
+  let paragraph = [];
+  let list = null;
+  const flush = () => {
+    if (paragraph.length) target.append(element("p", null, paragraph.join(" ")));
+    paragraph = [];
+  };
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].trimStart();
+    if (!line.startsWith("- ")) list = null;
+    if (line.startsWith("```")) {
+      flush();
+      const code = [];
+      while (++index < lines.length && !lines[index].trimStart().startsWith("```")) code.push(lines[index]);
+      target.append(element("pre", "at-code", code.join("\n")));
+    } else if (line.startsWith("- ")) {
+      flush();
+      if (!list) target.append((list = element("ul")));
+      list.append(element("li", null, line.slice(2)));
+    } else if (line.startsWith("# ")) {
+      flush();
+      target.append(element("strong", null, line.slice(2)));
+    } else if (!line) {
+      flush();
+    } else {
+      paragraph.push(line);
+    }
+  }
+  flush();
+}
+
+function copyButton(text, strings) {
+  const button = element("button", "at-button at-button--ghost at-button--sm at-button--icon");
+  button.dataset.tooltip = strings.copy;
+  button.append(icon("copy"));
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(text());
+      button.replaceChildren(icon("check"));
+      setTimeout(() => button.replaceChildren(icon("copy")), 1500);
+    } catch {
+      // A page without clipboard access keeps its button as it was.
+    }
+  });
+  return button;
+}
+
+/// Turn `root` (an empty element) into the conversation view `ChatView` is in gpui: it keeps the
+/// entries, follows the end while the person is there, counts what arrives while they read
+/// further up on a "jump to latest" button, groups consecutive tool calls, and fires
+/// `atelier:decided` with `{ id, decision }` ("allow", "alwaysAllow" or "deny") when an approval
+/// is answered.
+///
+/// Entries are plain objects with a `kind`: `user` (`text`, `attachments`), `assistant` (`text`,
+/// `meta`, `streaming`), `reasoning` (`summary`, `text`), `tool` (`name`, `summary`, `state`:
+/// "running" | "succeeded" | "failed" | "awaiting", `detail`, `icon`), `approval` (`title`,
+/// `body`, `allowLabel`, `destructive`, `offerAlways`), `status`, `error` (`text`) or `custom`
+/// (`element`). `{ panel: true }` fits it to a side panel; without, it is a centred column.
+export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
+  const words = { ...CHAT_STRINGS, ...strings };
+  root.classList.add("at-chat");
+  root.classList.toggle("at-chat--panel", panel);
+  const scroll = element("div", "at-chat__scroll");
+  const transcript = element("div", "at-transcript");
+  scroll.append(transcript);
+  const jump = element("button", "at-button at-button--sm at-chat__jump");
+  jump.hidden = true;
+  root.replaceChildren(scroll, jump);
+
+  const entries = new Map();
+  let nextId = 0;
+  let unread = 0;
+  let following = true;
+
+  const remaining = () => scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
+  const atTail = () => remaining() <= (following ? TAIL_SLACK : 1);
+  const showJump = () => {
+    jump.hidden = atTail() || entries.size === 0;
+    jump.replaceChildren(icon("chevron-down"), unread ? words.newMessages(unread) : words.jumpToLatest);
+  };
+  // Run a change, then follow the end if the person was there, else count a new entry.
+  const change = (apply, counts) => {
+    const follow = atTail();
+    const result = apply();
+    following = follow;
+    if (follow) {
+      unread = 0;
+      scroll.scrollTop = scroll.scrollHeight;
+    } else if (counts) {
+      unread += 1;
+    }
+    showJump();
+    return result;
+  };
+  const jumpToLatest = () => {
+    following = true;
+    unread = 0;
+    scroll.scrollTop = scroll.scrollHeight;
+    showJump();
+  };
+  jump.addEventListener("click", jumpToLatest);
+  // A view that was hidden, resized or grew from below keeps showing its end while followed.
+  const keep = new ResizeObserver(() => {
+    if (following) scroll.scrollTop = scroll.scrollHeight;
+    showJump();
+  });
+  keep.observe(scroll);
+  keep.observe(transcript);
+  scroll.addEventListener("scroll", () => {
+    following = atTail();
+    if (following) unread = 0;
+    showJump();
+  });
+
+  const avatar = () => {
+    const mark = element("span", "at-avatar at-avatar--agent");
+    if (logo) mark.append(icon(logo));
+    return mark;
+  };
+
+  const draw = (entry) => {
+    switch (entry.kind) {
+      case "user": {
+        const node = element("div", "at-message at-message--user");
+        for (const label of entry.attachments || []) {
+          const chip = element("span", "at-context-chip");
+          chip.append(icon("file"), label);
+          node.append(chip);
+        }
+        const actions = element("div", "at-message__actions");
+        actions.append(copyButton(() => entry.text, words));
+        node.append(element("div", "at-user-message", entry.text), actions);
+        return { node };
+      }
+      case "assistant": {
+        const node = element("div", "at-assistant-message");
+        const header = element("div", "at-assistant-message__header");
+        header.append(avatar(), element("strong", null, words.assistant));
+        const meta = element("span", "at-faint", entry.meta || "");
+        header.append(meta);
+        const body = element("div", "at-assistant-message__body");
+        const actions = element("div", "at-message__actions");
+        actions.append(copyButton(() => entry.text, words));
+        node.append(header, body, actions);
+        const refresh = () => {
+          prose(body, entry.text || "");
+          if (entry.streaming) {
+            (body.lastElementChild || body).append(element("span", "at-assistant-message__caret"));
+          }
+          actions.hidden = Boolean(entry.streaming);
+          meta.textContent = entry.meta || "";
+        };
+        refresh();
+        return { node, refresh };
+      }
+      case "reasoning": {
+        const node = element("div", "at-stack");
+        const summary = element("span", "at-thought");
+        summary.tabIndex = 0;
+        summary.append(icon("brain"), entry.summary, icon("chevron-right"));
+        const text = element("div", "at-thought__text");
+        text.hidden = true;
+        const toggle = () => (text.hidden = !text.hidden);
+        summary.addEventListener("click", toggle);
+        summary.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") toggle(), event.preventDefault();
+        });
+        node.append(summary, text);
+        const refresh = () => (text.textContent = entry.text || "");
+        refresh();
+        return { node, refresh };
+      }
+      case "tool": {
+        const node = document.createDocumentFragment();
+        const row = element("div", "at-tool-call");
+        const detail = element("div", "at-tool-call__detail");
+        detail.hidden = true;
+        row.addEventListener("click", () => {
+          if (entry.detail) row.setAttribute("aria-expanded", String((detail.hidden = !detail.hidden) === false));
+        });
+        const refresh = () => {
+          const mark = {
+            running: () => element("span", "at-spinner"),
+            succeeded: () => Object.assign(icon("check"), { className: "at-icon at-tool-call__done" }),
+            failed: () => Object.assign(icon("close"), { className: "at-icon at-tool-call__failed" }),
+            awaiting: () => Object.assign(icon("alert"), { className: "at-icon at-tool-call__waiting" }),
+          }[entry.state || "running"]();
+          row.replaceChildren(
+            icon(entry.icon || "wrench"),
+            element("span", "at-tool-call__summary", entry.summary),
+            element("span", "at-tool-call__name", entry.name),
+            mark,
+          );
+          if (entry.detail) row.setAttribute("aria-expanded", String(!detail.hidden));
+          detail.textContent = entry.detail || "";
+        };
+        refresh();
+        node.append(row, detail);
+        return { node, parts: [row, detail], refresh };
+      }
+      case "approval": {
+        const node = element("div", "at-approval");
+        const refresh = () => {
+          if (entry.answer) {
+            node.className = `at-approval at-approval--answered${entry.answer === "deny" ? " at-approval--denied" : ""}`;
+            node.replaceChildren(
+              icon(entry.answer === "deny" ? "close" : "check"),
+              element("strong", null, words.answers[entry.answer]),
+              element("span", null, entry.title),
+            );
+            return;
+          }
+          const title = element("strong");
+          const alert = icon("alert");
+          alert.style.color = "var(--at-warning)";
+          title.append(alert, " ", entry.title);
+          const actions = element("div", "at-approval__actions");
+          const button = (label, decision, style) => {
+            const b = element("button", `at-button at-button--sm ${style}`, label);
+            b.addEventListener("click", () => answer(entry.id, decision, true));
+            return b;
+          };
+          if (entry.offerAlways) actions.append(button(words.alwaysAllow, "alwaysAllow", "at-button--ghost"));
+          actions.append(element("span", "at-spacer"), button(words.deny, "deny", ""));
+          actions.append(button(entry.allowLabel || words.allow, "allow", entry.destructive ? "at-button--danger" : "at-button--primary"));
+          node.replaceChildren(title);
+          if (entry.body) node.append(element("span", "at-small at-muted", entry.body));
+          node.append(actions);
+        };
+        refresh();
+        return { node, refresh };
+      }
+      case "status":
+      case "error": {
+        const node = element("div", `at-notice${entry.kind === "error" ? " at-notice--error" : ""}`);
+        if (entry.kind === "error") node.append(icon("alert"));
+        node.append(entry.text);
+        return { node };
+      }
+      default:
+        return { node: entry.element || element("div") };
+    }
+  };
+
+  // Consecutive tool calls share one group; its title counts them.
+  const toolGroup = () => {
+    const last = transcript.lastElementChild;
+    if (last && last.classList.contains("at-tool-group")) return last;
+    const group = element("div", "at-tool-group");
+    group.append(element("div", "at-tool-group__title"));
+    transcript.append(group);
+    return group;
+  };
+  const retitle = (group) => {
+    if (!group) return;
+    const count = group.querySelectorAll(":scope > .at-tool-call").length;
+    group.firstElementChild.textContent = words.usedTools(count);
+    // A lone call stands on its own, unframed, as it does in gpui.
+    group.classList.toggle("at-tool-group--single", count < 2);
+  };
+
+  const push = (input) => change(() => {
+    const id = nextId++;
+    const entry = { ...input, id };
+    const drawn = draw(entry);
+    const parts = drawn.parts || [drawn.node];
+    if (entry.kind === "tool") {
+      const group = toolGroup();
+      group.append(drawn.node);
+      retitle(group);
+      entry.group = group;
+    } else {
+      transcript.append(drawn.node);
+    }
+    hydrate(transcript);
+    entries.set(id, { entry, parts, refresh: drawn.refresh });
+    return id;
+  }, true);
+
+  const update = (id, changeEntry) => {
+    const held = entries.get(id);
+    if (!held) return false;
+    change(() => {
+      changeEntry(held.entry);
+      held.refresh?.();
+    }, false);
+    return true;
+  };
+
+  function answer(id, decision, fromClick = false) {
+    update(id, (entry) => (entry.answer = decision));
+    if (fromClick) root.dispatchEvent(new CustomEvent("atelier:decided", { bubbles: true, detail: { id, decision } }));
+  }
+
+  return {
+    push,
+    update,
+    append: (id, delta) =>
+      update(id, (entry) => {
+        if (entry.kind === "tool") entry.detail = (entry.detail || "") + delta;
+        else entry.text = (entry.text || "") + delta;
+      }),
+    finish: (id) => update(id, (entry) => (entry.streaming = false)),
+    setToolState: (id, state) => update(id, (entry) => (entry.state = state)),
+    answer: (id, decision) => answer(id, decision),
+    remove(id) {
+      const held = entries.get(id);
+      if (!held) return;
+      for (const part of held.parts) part.remove();
+      if (held.entry.group) {
+        if (!held.entry.group.querySelector(".at-tool-call")) held.entry.group.remove();
+        else retitle(held.entry.group);
+      }
+      entries.delete(id);
+      showJump();
+    },
+    clear() {
+      entries.clear();
+      transcript.replaceChildren();
+      jumpToLatest();
+    },
+    jumpToLatest,
+    get awaitingApproval() {
+      return [...entries.values()].some(({ entry }) => entry.kind === "approval" && !entry.answer);
+    },
+    get unread() {
+      return unread;
+    },
+    entries: () => [...entries.values()].map(({ entry }) => entry),
+  };
+}

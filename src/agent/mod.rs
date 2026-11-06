@@ -1,4 +1,4 @@
-//! Agent surfaces: the side panel, the transcript and the composer.
+//! Agent surfaces: the side panel, the conversation view, the transcript rows and the composer.
 //!
 //! The pieces are presentational and take plain values, so an application maps its own
 //! conversation model onto them; nothing here knows how a model is called. The rules they
@@ -15,6 +15,7 @@
 //! * **Tool work is collapsed by default** and grouped, so a long turn reads as its answer.
 //! * **Approvals name the object and the verb**, with the safe choice as the default.
 
+mod chat;
 mod code;
 mod composer;
 mod effort;
@@ -23,6 +24,7 @@ mod panel;
 mod transcript;
 mod usage;
 
+pub use chat::{ChatEntry, ChatEvent, ChatView, CustomEntry, Decision, EntryId};
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};
 pub use effort::{EffortButton, EffortPicker};

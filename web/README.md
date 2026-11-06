@@ -78,6 +78,7 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `ProgressBar`, `Spinner`, `Skeleton`, `LevelMeter` | `.at-progress`, `.at-spinner`, `.at-skeleton`, `.at-meter` |
 | `TitleBar`, `Toolbar`, `Sidebar`, `StatusBar` | `.at-title-bar`, `.at-toolbar`, `.at-sidebar`, `.at-status-bar`, each with `.at-chrome` |
 | `Composer`, `ContextChip`, user and assistant messages | `.at-composer`, `.at-context-chip`, `.at-user-message`, `.at-assistant-message` |
+| `ChatView` (`push`, `append`, `finish`, `set_tool_state`, `answer`, `jump_to_latest`, `ChatEvent::Decided`) | `chat(element, { panel, logo, strings })` from `atelier.js`, returning `push`, `append`, `finish`, `setToolState`, `answer`, `jumpToLatest`; `atelier:decided` events with `{ id, decision }` |
 | `Tooltip` | `data-tooltip="…"` on any element |
 
 Icons are `<span data-icon="sparkles"></span>`; `hydrate()` from `atelier.js` draws them, and
