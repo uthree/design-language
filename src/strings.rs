@@ -95,6 +95,16 @@ pub struct Strings {
     pub plan: SharedString,
     /// The heading of the list of files the agent changed.
     pub changed_files: SharedString,
+    /// The note under a graph node the assistant added.
+    pub added_by_agent: SharedString,
+    /// Keep what the assistant added.
+    pub keep: SharedString,
+    /// Undo what the assistant added.
+    pub undo: SharedString,
+    /// Pan a canvas back to where it started.
+    pub reset_view: SharedString,
+    /// A graph node whose last result was reused.
+    pub cached: SharedString,
 }
 
 impl Default for Strings {
@@ -182,6 +192,11 @@ impl Strings {
             ],
             plan: "Plan".into(),
             changed_files: "Changed files".into(),
+            added_by_agent: "Added by the assistant".into(),
+            keep: "Keep".into(),
+            undo: "Undo".into(),
+            reset_view: "Reset view".into(),
+            cached: "Cached".into(),
         }
     }
 
@@ -265,6 +280,11 @@ impl Strings {
             ],
             plan: "計画".into(),
             changed_files: "変更したファイル".into(),
+            added_by_agent: "アシスタントが追加".into(),
+            keep: "残す".into(),
+            undo: "元に戻す".into(),
+            reset_view: "表示をリセット".into(),
+            cached: "キャッシュ".into(),
         }
     }
 

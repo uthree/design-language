@@ -15,17 +15,17 @@ use atelier::agent::{
     AgentPanel, AgentStatus, AgentToggle, AskBar, AssistantMessage, Composer, ContextChip,
     ToolCall, ToolGroup, ToolState, UserMessage,
 };
+use atelier::graph::{GraphNode, NodeCanvas, NodeCanvasEvent, NodeField, NodeId, NodeState, Wire};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ButtonVariant, ControlSize, Direction,
-    Disclosure, Divider, Edge, Icon, IconName, Label, ListItem, ProviderLogo, SectionHeader,
-    Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StatusDot, TaskProgress,
-    TextColor, TextField, TextSize, Theme, TitleBar, Tone, Tooltip, WindowFrame,
+    Disclosure, Divider, Edge, IconName, Label, ListItem, ProviderLogo, SectionHeader, Segment,
+    SegmentedControl, Sidebar, Skeleton, Slider, StatusDot, TaskProgress, TextColor, TextField,
+    TextSize, Theme, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
-    Bounds, Context, Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, PathBuilder, Pixels, Point, Render, ScrollWheelEvent, SharedString, Styled,
-    Task, Window, canvas, div, fill, point, prelude::*, px, relative, size,
+    AnyElement, App, Context, Entity, Hsla, IntoElement, ParentElement, Pixels, Render,
+    SharedString, Styled, Task, Window, div, prelude::*, px,
 };
 
 /// How long one simulated unit of work takes.
@@ -337,99 +337,15 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum NodeState {
-    Idle,
-    Queued,
-    /// Running, with progress from 0 to 1.
-    Running(f32),
-    /// Finished in this many seconds.
-    Done(f32),
-    /// Nothing upstream changed, so the last result was reused.
-    Cached,
-}
-
-struct Node {
-    id: usize,
+/// What the application knows about a node that the canvas does not: what it is and whether
+/// its last result can be reused.
+struct AppNode {
     kind: Kind,
-    /// Top-left corner on the canvas, before panning.
-    position: Point<Pixels>,
     params: Vec<(&'static str, Param)>,
-    /// Added by the assistant and not yet kept.
-    by_agent: bool,
-    state: NodeState,
     /// Has produced a result that a later run could reuse.
     has_result: bool,
-    /// A parameter changed since the last run.
+    /// A parameter or an input changed since the last run.
     dirty: bool,
-}
-
-impl Node {
-    fn new(id: usize, kind: Kind, x: f32, y: f32) -> Self {
-        Self {
-            id,
-            kind,
-            position: point(px(x), px(y)),
-            params: kind.spec().params.to_vec(),
-            by_agent: false,
-            state: NodeState::Idle,
-            has_result: false,
-            dirty: false,
-        }
-    }
-}
-
-/// A wire from one node's output to another node's input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Link {
-    from: usize,
-    output: usize,
-    to: usize,
-    input: usize,
-}
-
-/// What the pointer is doing on the canvas.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Drag {
-    None,
-    Pan(Point<Pixels>),
-    Node(usize, Point<Pixels>),
-    /// A wire from an output, following the pointer (window coordinates).
-    Wire {
-        from: usize,
-        output: usize,
-        cursor: Point<Pixels>,
-    },
-}
-
-/// Where the ports sit inside a node, so wires can be drawn without measuring the nodes.
-#[derive(Clone, Copy)]
-struct Geometry {
-    header: Pixels,
-    row: Pixels,
-    pad: Pixels,
-}
-
-impl Geometry {
-    fn new(theme: &Theme) -> Self {
-        Self {
-            header: theme.density.row + px(4.),
-            row: theme.density.control_sm + px(2.),
-            pad: theme.spacing.xs,
-        }
-    }
-
-    /// The centre of a port's socket, relative to the canvas before panning. The extra pixel
-    /// is the node's border.
-    fn port(&self, node: &Node, index: usize, output: bool) -> Point<Pixels> {
-        let x = if output {
-            node.position.x + node.kind.width()
-        } else {
-            node.position.x
-        };
-        let y = node.position.y + px(1.) + self.header + self.pad + self.row * (index as f32 + 0.5);
-        point(x, y)
-    }
 }
 
 /// A finished run, for the queue history.
@@ -441,12 +357,9 @@ struct RunRecord {
 
 struct NodeEditor {
     choice: (Direction, Appearance),
-    nodes: Vec<Node>,
-    links: Vec<Link>,
-    next_id: usize,
-    pan: Point<Pixels>,
-    selected: Option<usize>,
-    drag: Drag,
+    canvas: Entity<NodeCanvas>,
+    nodes: Vec<(NodeId, AppNode)>,
+    selected: Option<NodeId>,
     collapsed: Vec<Category>,
     agent_open: bool,
     run: Option<Task<()>>,
@@ -461,50 +374,105 @@ impl Themed for NodeEditor {
     }
 }
 
+/// A parameter as a row on the node's card.
+fn field(name: &'static str, param: Param) -> NodeField {
+    match param {
+        Param::Number(value, unit) => NodeField::number(name, unit.format(value), value),
+        Param::Choice(options, selected) => NodeField::choice(name, options[selected]),
+        Param::Text(text) => NodeField::text(name, text),
+    }
+}
+
+/// The card for a kind of node, at a place on the canvas.
+fn graph_node(kind: Kind, params: &[(&'static str, Param)], x: f32, y: f32) -> GraphNode {
+    let spec = kind.spec();
+    let mut node = GraphNode::new(spec.title)
+        .icon(spec.category.icon())
+        .width(kind.width())
+        .at(x, y);
+    for (name, data) in spec.inputs {
+        node = node.input(*name, *data as usize);
+    }
+    for (name, data) in spec.outputs {
+        node = node.output(*name, *data as usize);
+    }
+    for (name, param) in params {
+        node = node.field(field(name, *param));
+    }
+    if kind == Kind::Preview {
+        node = node.body(preview(NodeState::Idle, false));
+    }
+    node
+}
+
 impl NodeEditor {
-    fn new(choice: (Direction, Appearance)) -> Self {
-        let mut nodes = vec![
-            Node::new(0, Kind::LoadModel, 0., 20.),
-            Node::new(1, Kind::TempoKey, 0., 250.),
-            Node::new(2, Kind::Prompt, 228., 0.),
-            Node::new(3, Kind::NegativePrompt, 228., 236.),
-            Node::new(4, Kind::EmptyLatent, 228., 410.),
-            Node::new(5, Kind::Sampler, 476., 60.),
-            Node::new(6, Kind::Decode, 724., 60.),
-            Node::new(7, Kind::Normalize, 724., 200.),
-            Node::new(8, Kind::Preview, 952., 30.),
-            Node::new(9, Kind::Save, 952., 250.),
+    fn new(choice: (Direction, Appearance), cx: &mut Context<Self>) -> Self {
+        let canvas =
+            cx.new(|_| NodeCanvas::new("graph").port_types(DataType::ALL.map(DataType::label)));
+        let layout = [
+            (Kind::LoadModel, 0., 20.),
+            (Kind::TempoKey, 0., 250.),
+            (Kind::Prompt, 228., 0.),
+            (Kind::NegativePrompt, 228., 236.),
+            (Kind::EmptyLatent, 228., 410.),
+            (Kind::Sampler, 476., 60.),
+            (Kind::Decode, 724., 60.),
+            (Kind::Normalize, 724., 200.),
+            (Kind::Preview, 952., 30.),
+            (Kind::Save, 952., 250.),
         ];
-        nodes[7].by_agent = true;
-        let link = |from, output, to, input| Link {
-            from,
-            output,
-            to,
-            input,
-        };
+        let mut nodes = Vec::new();
+        canvas.update(cx, |canvas, cx| {
+            let ids: Vec<NodeId> = layout
+                .iter()
+                .map(|(kind, x, y)| {
+                    let params = kind.spec().params.to_vec();
+                    // The assistant added the normalizer; it waits to be kept.
+                    let node =
+                        graph_node(*kind, &params, *x, *y).by_agent(*kind == Kind::Normalize);
+                    let id = canvas.add(node, cx);
+                    nodes.push((
+                        id,
+                        AppNode {
+                            kind: *kind,
+                            params,
+                            has_result: false,
+                            dirty: false,
+                        },
+                    ));
+                    id
+                })
+                .collect();
+            for (from, output, to, input) in [
+                (0, 1, 2, 0),
+                (1, 0, 2, 1),
+                (1, 1, 2, 2),
+                (0, 1, 3, 0),
+                (1, 0, 4, 0),
+                (0, 0, 5, 0),
+                (2, 0, 5, 1),
+                (3, 0, 5, 2),
+                (4, 0, 5, 3),
+                (5, 0, 6, 0),
+                (0, 2, 6, 1),
+                (6, 0, 7, 0),
+                (7, 0, 8, 0),
+                (7, 0, 9, 0),
+            ] {
+                canvas.connect(Wire::new(ids[from], output, ids[to], input), cx);
+            }
+            canvas.select(Some(ids[5]), cx);
+        });
+        cx.subscribe(&canvas, |this, _, event: &NodeCanvasEvent, cx| {
+            this.canvas_event(event, cx)
+        })
+        .detach();
+        let selected = canvas.read(cx).selected();
         Self {
             choice,
+            canvas,
             nodes,
-            links: vec![
-                link(0, 1, 2, 0),
-                link(1, 0, 2, 1),
-                link(1, 1, 2, 2),
-                link(0, 1, 3, 0),
-                link(1, 0, 4, 0),
-                link(0, 0, 5, 0),
-                link(2, 0, 5, 1),
-                link(3, 0, 5, 2),
-                link(4, 0, 5, 3),
-                link(5, 0, 6, 0),
-                link(0, 2, 6, 1),
-                link(6, 0, 7, 0),
-                link(7, 0, 8, 0),
-                link(7, 0, 9, 0),
-            ],
-            next_id: 10,
-            pan: point(px(16.), px(24.)),
-            selected: Some(5),
-            drag: Drag::None,
+            selected,
             collapsed: Vec::new(),
             agent_open: false,
             run: None,
@@ -518,132 +486,120 @@ impl NodeEditor {
         }
     }
 
-    fn node(&self, id: usize) -> Option<&Node> {
-        self.nodes.iter().find(|node| node.id == id)
+    fn node(&self, id: NodeId) -> Option<&AppNode> {
+        self.nodes
+            .iter()
+            .find(|(node, _)| *node == id)
+            .map(|(_, node)| node)
     }
 
-    fn node_mut(&mut self, id: usize) -> Option<&mut Node> {
-        self.nodes.iter_mut().find(|node| node.id == id)
+    fn node_mut(&mut self, id: NodeId) -> Option<&mut AppNode> {
+        self.nodes
+            .iter_mut()
+            .find(|(node, _)| *node == id)
+            .map(|(_, node)| node)
     }
 
-    fn data_type(&self, id: usize, index: usize, output: bool) -> Option<DataType> {
-        let spec = self.node(id)?.kind.spec();
-        let ports = if output { spec.outputs } else { spec.inputs };
-        ports.get(index).map(|(_, data)| *data)
+    /// Keep the application's model in step with what the person did on the canvas.
+    fn canvas_event(&mut self, event: &NodeCanvasEvent, cx: &mut Context<Self>) {
+        match event {
+            NodeCanvasEvent::Selected(id) => self.selected = *id,
+            NodeCanvasEvent::Connected(wire) | NodeCanvasEvent::Disconnected(wire) => {
+                self.mark_dirty(wire.to, cx)
+            }
+            NodeCanvasEvent::Removed(id) | NodeCanvasEvent::Undone(id) => {
+                self.nodes.retain(|(node, _)| node != id);
+                if self.selected == Some(*id) {
+                    self.selected = None;
+                }
+            }
+            NodeCanvasEvent::Moved(_) | NodeCanvasEvent::Kept(_) => {}
+        }
+        cx.notify();
     }
 
     // Graph edits.
 
-    fn select(&mut self, id: usize) {
-        self.selected = Some(id);
-        // The touched node comes to the front, as it does in ComfyUI.
-        if let Some(index) = self.nodes.iter().position(|node| node.id == id) {
-            let node = self.nodes.remove(index);
-            self.nodes.push(node);
-        }
-    }
-
-    fn connect(&mut self, from: usize, output: usize, to: usize, input: usize) {
-        if from == to || self.data_type(from, output, true) != self.data_type(to, input, false) {
-            return;
-        }
-        // An input takes one wire; the new one replaces it.
-        self.links
-            .retain(|link| !(link.to == to && link.input == input));
-        self.links.push(Link {
-            from,
-            output,
-            to,
-            input,
+    fn add_node(&mut self, kind: Kind, cx: &mut Context<Self>) {
+        let params = kind.spec().params.to_vec();
+        let step = (self.nodes.len() % 6) as f32 * 24.;
+        let id = self.canvas.update(cx, |canvas, cx| {
+            // Near the top-left of the visible canvas, stepped so new nodes don't stack exactly.
+            let pan = canvas.pan();
+            let x = 160. + step - f32::from(pan.x);
+            let y = 80. + step - f32::from(pan.y);
+            let id = canvas.add(graph_node(kind, &params, x, y), cx);
+            canvas.select(Some(id), cx);
+            id
         });
-        self.mark_dirty(to);
-    }
-
-    fn add_node(&mut self, kind: Kind) {
-        let id = self.next_id;
-        self.next_id += 1;
-        // Near the top-left of the visible canvas, stepped so new nodes don't stack exactly.
-        let step = (id % 6) as f32 * 24.;
-        let position = point(px(160. + step), px(80. + step)) - self.pan;
-        let mut node = Node::new(id, kind, 0., 0.);
-        node.position = position;
-        self.nodes.push(node);
+        self.nodes.push((
+            id,
+            AppNode {
+                kind,
+                params,
+                has_result: false,
+                dirty: false,
+            },
+        ));
         self.selected = Some(id);
     }
 
-    fn remove_node(&mut self, id: usize) {
-        self.nodes.retain(|node| node.id != id);
-        self.links.retain(|link| link.from != id && link.to != id);
+    fn remove_node(&mut self, id: NodeId, cx: &mut Context<Self>) {
+        self.canvas.update(cx, |canvas, cx| canvas.remove(id, cx));
+        self.nodes.retain(|(node, _)| *node != id);
         if self.selected == Some(id) {
             self.selected = None;
         }
     }
 
-    /// Undo the assistant's node: take it out and wire what it sat between back together.
-    fn undo_agent_node(&mut self, id: usize) {
-        let source = self
-            .links
-            .iter()
-            .find(|link| link.to == id)
-            .map(|link| (link.from, link.output));
-        let targets: Vec<_> = self
-            .links
-            .iter()
-            .filter(|link| link.from == id)
-            .map(|link| (link.to, link.input))
-            .collect();
-        self.remove_node(id);
-        if let Some((from, output)) = source {
-            for (to, input) in targets {
-                self.connect(from, output, to, input);
+    /// A changed node, and everything downstream of it, has to run again.
+    fn mark_dirty(&mut self, id: NodeId, cx: &mut Context<Self>) {
+        for id in self.canvas.read(cx).downstream(id) {
+            if let Some(node) = self.node_mut(id) {
+                node.dirty = true;
             }
         }
     }
 
-    /// A changed node, and everything downstream of it, has to run again.
-    fn mark_dirty(&mut self, id: usize) {
-        let mut pending = vec![id];
-        while let Some(id) = pending.pop() {
-            if let Some(node) = self.node_mut(id) {
-                if node.dirty {
-                    continue;
-                }
-                node.dirty = true;
-            }
-            pending.extend(
-                self.links
-                    .iter()
-                    .filter(|link| link.from == id)
-                    .map(|link| link.to),
-            );
-        }
+    /// Change a parameter, on the card as well.
+    fn set_param(&mut self, id: NodeId, index: usize, param: Param, cx: &mut Context<Self>) {
+        let Some(node) = self.node_mut(id) else {
+            return;
+        };
+        node.params[index].1 = param;
+        let row = field(node.params[index].0, param);
+        self.canvas.update(cx, |canvas, cx| {
+            canvas.update_node(id, |node| node.fields[index] = row, cx)
+        });
+        self.mark_dirty(id, cx);
+    }
+
+    /// Show a node's place in the run, and for the preview, what it can play.
+    fn set_state(&self, id: NodeId, state: NodeState, cx: &mut Context<Self>) {
+        let preview_result = self
+            .node(id)
+            .filter(|node| node.kind == Kind::Preview)
+            .map(|node| node.has_result);
+        self.canvas.update(cx, |canvas, cx| {
+            canvas.update_node(
+                id,
+                |node| {
+                    node.state = state;
+                    if let Some(has_result) = preview_result {
+                        *node = node.clone().body(preview(state, has_result));
+                    }
+                },
+                cx,
+            )
+        });
     }
 
     // Running.
 
-    /// Nodes in an order where every node comes after the nodes that feed it.
-    fn execution_order(&self) -> Vec<usize> {
-        let mut order = Vec::new();
-        let mut remaining: Vec<usize> = self.nodes.iter().map(|node| node.id).collect();
-        remaining.sort();
-        while !remaining.is_empty() {
-            let ready = remaining.iter().position(|id| {
-                self.links
-                    .iter()
-                    .filter(|link| link.to == *id)
-                    .all(|link| !remaining.contains(&link.from))
-            });
-            // A cycle leaves nothing ready; run the rest in id order rather than hang.
-            let index = ready.unwrap_or(0);
-            order.push(remaining.remove(index));
-        }
-        order
-    }
-
     fn start_run(&mut self, cx: &mut Context<Self>) {
-        let order = self.execution_order();
-        for node in &mut self.nodes {
-            node.state = NodeState::Queued;
+        let order = self.canvas.read(cx).execution_order();
+        for id in &order {
+            self.set_state(*id, NodeState::Queued, cx);
         }
         self.run_progress = (0, order.len());
         let number = self.history.len() + 1;
@@ -654,17 +610,21 @@ impl NodeEditor {
                 // Decide whether the node runs or reuses its result, as ComfyUI's cache does.
                 let Ok(work) = this.update(cx, |this, cx| {
                     this.run_progress.0 = index;
-                    let Some(node) = this.node_mut(id) else {
+                    let Some(node) = this.node(id) else {
                         return 0;
                     };
                     let spec = node.kind.spec();
                     let reuse = node.has_result && !node.dirty && node.kind != Kind::Sampler;
-                    node.state = if reuse {
-                        NodeState::Cached
-                    } else {
-                        NodeState::Running(0.)
-                    };
                     this.running_title = spec.title;
+                    this.set_state(
+                        id,
+                        if reuse {
+                            NodeState::Cached
+                        } else {
+                            NodeState::Running(0.)
+                        },
+                        cx,
+                    );
                     cx.notify();
                     if reuse { 0 } else { spec.work }
                 }) else {
@@ -679,10 +639,7 @@ impl NodeEditor {
                     let progress = tick as f32 / work as f32;
                     if this
                         .update(cx, |this, cx| {
-                            if let Some(node) = this.node_mut(id) {
-                                node.state = NodeState::Running(progress);
-                            }
-                            cx.notify();
+                            this.set_state(id, NodeState::Running(progress), cx)
                         })
                         .is_err()
                     {
@@ -693,10 +650,10 @@ impl NodeEditor {
                 seconds += took;
                 let _ = this.update(cx, |this, cx| {
                     if let Some(node) = this.node_mut(id) {
-                        node.state = NodeState::Done(took);
                         node.has_result = true;
                         node.dirty = false;
                     }
+                    this.set_state(id, NodeState::Done(Some(took)), cx);
                     cx.notify();
                 });
             }
@@ -716,89 +673,17 @@ impl NodeEditor {
     fn stop_run(&mut self, cx: &mut Context<Self>) {
         // Dropping the task cancels it.
         self.run = None;
-        for node in &mut self.nodes {
-            if matches!(node.state, NodeState::Queued | NodeState::Running(_)) {
-                node.state = NodeState::Idle;
-            }
+        let unfinished: Vec<NodeId> = self
+            .canvas
+            .read(cx)
+            .nodes()
+            .filter(|(_, node)| matches!(node.state, NodeState::Queued | NodeState::Running(_)))
+            .map(|(id, _)| id)
+            .collect();
+        for id in unfinished {
+            self.set_state(id, NodeState::Idle, cx);
         }
         cx.notify();
-    }
-
-    // Pointer handling on the canvas.
-
-    fn canvas_mouse_down(&mut self, event: &MouseDownEvent, cx: &mut Context<Self>) {
-        if event.button == MouseButton::Left {
-            self.selected = None;
-        }
-        self.drag = Drag::Pan(event.position);
-        cx.notify();
-    }
-
-    fn canvas_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        if event.pressed_button.is_none() {
-            // The button came up outside the window.
-            if self.drag != Drag::None {
-                self.drag = Drag::None;
-                cx.notify();
-            }
-            return;
-        }
-        match self.drag {
-            Drag::None => return,
-            Drag::Pan(last) => {
-                self.pan += event.position - last;
-                self.drag = Drag::Pan(event.position);
-            }
-            Drag::Node(id, last) => {
-                if let Some(node) = self.node_mut(id) {
-                    node.position += event.position - last;
-                }
-                self.drag = Drag::Node(id, event.position);
-            }
-            Drag::Wire { from, output, .. } => {
-                self.drag = Drag::Wire {
-                    from,
-                    output,
-                    cursor: event.position,
-                };
-            }
-        }
-        cx.notify();
-    }
-
-    fn canvas_mouse_up(&mut self, cx: &mut Context<Self>) {
-        // A wire let go anywhere but on an input is dropped.
-        self.drag = Drag::None;
-        cx.notify();
-    }
-
-    fn canvas_scroll(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
-        self.pan += event.delta.pixel_delta(px(20.));
-        cx.notify();
-    }
-
-    fn input_mouse_down(&mut self, id: usize, input: usize, event: &MouseDownEvent) {
-        // Pulling a connected input picks its wire up again, to move or drop it.
-        if let Some(index) = self
-            .links
-            .iter()
-            .position(|link| link.to == id && link.input == input)
-        {
-            let link = self.links.remove(index);
-            self.mark_dirty(id);
-            self.drag = Drag::Wire {
-                from: link.from,
-                output: link.output,
-                cursor: event.position,
-            };
-        }
-    }
-
-    fn input_mouse_up(&mut self, id: usize, input: usize) {
-        if let Drag::Wire { from, output, .. } = self.drag {
-            self.connect(from, output, id, input);
-        }
-        self.drag = Drag::None;
     }
 
     // Rendering.
@@ -835,7 +720,11 @@ impl NodeEditor {
                 if spec.category != category {
                     continue;
                 }
-                let count = self.nodes.iter().filter(|node| node.kind == kind).count();
+                let count = self
+                    .nodes
+                    .iter()
+                    .filter(|(_, node)| node.kind == kind)
+                    .count();
                 list = list.child(
                     ListItem::new(("library", kind as usize), spec.title)
                         .icon(category.icon())
@@ -849,7 +738,7 @@ impl NodeEditor {
                             )
                         })
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.add_node(kind);
+                            this.add_node(kind, cx);
                             cx.notify();
                         })),
                 );
@@ -879,574 +768,6 @@ impl NodeEditor {
             )
     }
 
-    fn socket(
-        &self,
-        node: &Node,
-        index: usize,
-        output: bool,
-        theme: &Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        const HIT: f32 = 18.;
-        let id = node.id;
-        let spec = node.kind.spec();
-        let (name, data) = if output {
-            spec.outputs[index]
-        } else {
-            spec.inputs[index]
-        };
-        let color = data.color(theme);
-        let connected = self.links.iter().any(|link| {
-            if output {
-                link.from == id && link.output == index
-            } else {
-                link.to == id && link.input == index
-            }
-        });
-        // While a wire is being dragged, inputs it can't join step back.
-        let compatible = match self.drag {
-            Drag::Wire {
-                from, output: o, ..
-            } => output || (from != id && self.data_type(from, o, true) == Some(data)),
-            _ => true,
-        };
-        let offset = -(px(1.) + px(HIT / 2.));
-        let row = Geometry::new(theme).row;
-        let tooltip = SharedString::from(format!("{name} · {}", data.label()));
-        div()
-            .id((if output { "out" } else { "in" }, id * 16 + index))
-            .absolute()
-            .top((row - px(HIT)) / 2.)
-            .when(output, |hit| hit.right(offset))
-            .when(!output, |hit| hit.left(offset))
-            .size(px(HIT))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_crosshair()
-            .opacity(if compatible { 1. } else { 0.3 })
-            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
-            .child(
-                div()
-                    .size(px(10.))
-                    .rounded_full()
-                    .border_2()
-                    .border_color(color)
-                    .bg(if connected {
-                        color
-                    } else {
-                        theme.colors.elevated
-                    }),
-            )
-            .when(output, |hit| {
-                hit.on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                        this.drag = Drag::Wire {
-                            from: id,
-                            output: index,
-                            cursor: event.position,
-                        };
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                )
-            })
-            .when(!output, |hit| {
-                hit.on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                        this.input_mouse_down(id, index, event);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                )
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |this, _: &MouseUpEvent, _, cx| {
-                        this.input_mouse_up(id, index);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                )
-            })
-    }
-
-    fn widget(name: &'static str, param: Param, theme: &Theme) -> impl IntoElement + use<> {
-        let row = Geometry::new(theme).row;
-        let well = div()
-            .relative()
-            .rounded(theme.shape.radius_xs)
-            .bg(theme.colors.sunken)
-            .overflow_hidden();
-        match param {
-            Param::Number(value, unit) => well
-                .h(row)
-                .flex()
-                .items_center()
-                .justify_between()
-                .px(theme.spacing.sm)
-                .child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .top_0()
-                        .bottom_0()
-                        .w(relative(value))
-                        .bg(theme.colors.hover),
-                )
-                .child(
-                    Label::new(name)
-                        .size(TextSize::XSmall)
-                        .color(TextColor::Muted),
-                )
-                .child(Label::new(unit.format(value)).size(TextSize::XSmall).mono()),
-            Param::Choice(options, selected) => well
-                .h(row)
-                .flex()
-                .items_center()
-                .gap(theme.spacing.xs)
-                .px(theme.spacing.sm)
-                .child(
-                    Label::new(name)
-                        .size(TextSize::XSmall)
-                        .color(TextColor::Muted),
-                )
-                .child(div().flex_1())
-                .child(Label::new(options[selected]).size(TextSize::XSmall))
-                .child(
-                    Icon::new(IconName::ChevronDown)
-                        .size(px(10.))
-                        .color(theme.colors.text_muted),
-                ),
-            Param::Text(text) => well
-                .flex()
-                .flex_col()
-                .gap(theme.spacing.xxs)
-                .p(theme.spacing.sm)
-                .child(
-                    Label::new(name)
-                        .size(TextSize::XSmall)
-                        .color(TextColor::Muted),
-                )
-                .child(Label::new(text).size(TextSize::XSmall)),
-        }
-    }
-
-    fn state_mark(node: &Node, theme: &Theme) -> impl IntoElement + use<> {
-        let mark = div().flex().items_center().gap(theme.spacing.xs);
-        match node.state {
-            NodeState::Idle if node.by_agent => mark.child(
-                Icon::new(IconName::Sparkles)
-                    .size(px(12.))
-                    .color(theme.colors.agent),
-            ),
-            NodeState::Idle => mark,
-            NodeState::Queued => mark.child(
-                Label::new("Queued")
-                    .size(TextSize::XSmall)
-                    .color(TextColor::Faint),
-            ),
-            NodeState::Running(progress) => mark
-                .child(
-                    Label::new(format!("{:.0} %", progress * 100.))
-                        .size(TextSize::XSmall)
-                        .mono()
-                        .color(TextColor::Muted),
-                )
-                .child(
-                    Spinner::new(("node-spinner", node.id))
-                        .size(px(12.))
-                        .color(theme.colors.accent),
-                ),
-            NodeState::Done(seconds) => mark
-                .child(
-                    Label::new(format!("{seconds:.1} s"))
-                        .size(TextSize::XSmall)
-                        .mono()
-                        .color(TextColor::Faint),
-                )
-                .child(
-                    Icon::new(IconName::Check)
-                        .size(px(12.))
-                        .color(theme.colors.success),
-                ),
-            NodeState::Cached => mark.child(
-                Label::new("Cached")
-                    .size(TextSize::XSmall)
-                    .color(TextColor::Faint),
-            ),
-        }
-    }
-
-    fn preview(node: &Node, theme: &Theme) -> impl IntoElement + use<> {
-        let body = div().px(theme.spacing.sm).pb(theme.spacing.sm);
-        match node.state {
-            NodeState::Done(_) | NodeState::Cached => body.child(
-                AudioPlayer::new(("preview", node.id), 0., "0:00", "0:32").peaks(preview_peaks()),
-            ),
-            NodeState::Queued | NodeState::Running(_) => body.child(
-                Skeleton::new(("preview-skeleton", node.id))
-                    .w_full()
-                    .h(px(44.)),
-            ),
-            NodeState::Idle if node.has_result => body.child(
-                AudioPlayer::new(("preview", node.id), 0., "0:00", "0:32").peaks(preview_peaks()),
-            ),
-            NodeState::Idle => body.child(
-                div()
-                    .h(px(44.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(theme.shape.radius_xs)
-                    .bg(theme.colors.sunken)
-                    .child(
-                        Label::new("Run the workflow to hear the take")
-                            .size(TextSize::XSmall)
-                            .color(TextColor::Faint),
-                    ),
-            ),
-        }
-    }
-
-    fn render_node(&self, node: &Node, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let theme = cx.theme().clone();
-        let geometry = Geometry::new(&theme);
-        let spec = node.kind.spec();
-        let id = node.id;
-        let selected = self.selected == Some(id);
-        let running = matches!(node.state, NodeState::Running(_));
-        let dragging = matches!(self.drag, Drag::Node(dragged, _) if dragged == id);
-        let rows = spec.inputs.len().max(spec.outputs.len());
-        let border = if node.by_agent {
-            theme.colors.agent
-        } else if selected || running {
-            theme.colors.accent
-        } else {
-            theme.colors.border_strong
-        };
-        let inner = Theme::concentric(theme.shape.radius_md, px(1.));
-
-        let header = div()
-            .h(geometry.header)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.sm)
-            .px(theme.spacing.sm)
-            .rounded_t(inner)
-            .border_b_1()
-            .border_color(theme.colors.separator)
-            .when(selected, |header| header.bg(theme.colors.selected))
-            .child(
-                Icon::new(spec.category.icon())
-                    .size(px(13.))
-                    .color(theme.colors.text_muted),
-            )
-            .child(
-                div().flex_1().min_w_0().child(
-                    Label::new(spec.title)
-                        .size(TextSize::Small)
-                        .weight(theme.typography.label_weight)
-                        .truncate(),
-                ),
-            )
-            .child(Self::state_mark(node, &theme));
-
-        let ports = div()
-            .flex()
-            .flex_col()
-            .pt(geometry.pad)
-            .children((0..rows).map(|row| {
-                let port_label = |name: &'static str| {
-                    Label::new(name)
-                        .size(TextSize::XSmall)
-                        .color(TextColor::Muted)
-                };
-                div()
-                    .relative()
-                    .h(geometry.row)
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px(theme.spacing.md)
-                    .child(
-                        spec.inputs
-                            .get(row)
-                            .map(|(name, _)| port_label(name).into_any_element())
-                            .unwrap_or_else(|| div().into_any_element()),
-                    )
-                    .child(
-                        spec.outputs
-                            .get(row)
-                            .map(|(name, _)| port_label(name).into_any_element())
-                            .unwrap_or_else(|| div().into_any_element()),
-                    )
-                    .when(row < spec.inputs.len(), |r| {
-                        r.child(self.socket(node, row, false, &theme, cx))
-                    })
-                    .when(row < spec.outputs.len(), |r| {
-                        r.child(self.socket(node, row, true, &theme, cx))
-                    })
-            }));
-
-        let params = div()
-            .flex()
-            .flex_col()
-            .gap(theme.spacing.xs)
-            .px(theme.spacing.sm)
-            .pt(theme.spacing.xs)
-            .pb(theme.spacing.sm)
-            .children(
-                node.params
-                    .iter()
-                    .map(|(name, param)| Self::widget(name, *param, &theme)),
-            );
-
-        div()
-            .id(("node", id))
-            .absolute()
-            .left(self.pan.x + node.position.x)
-            .top(self.pan.y + node.position.y)
-            .w(node.kind.width())
-            .flex()
-            .flex_col()
-            .rounded(theme.shape.radius_md)
-            .bg(theme.colors.elevated)
-            .border_1()
-            .border_color(border)
-            .when(node.by_agent, |node| node.border_dashed())
-            .shadow(if dragging {
-                theme.elevation.medium.clone()
-            } else {
-                theme.elevation.low.clone()
-            })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                    this.select(id);
-                    this.drag = Drag::Node(id, event.position);
-                    cx.stop_propagation();
-                    cx.notify();
-                }),
-            )
-            .child(header)
-            .when(running, |node_box| {
-                node_box.child(
-                    div().h(px(2.)).bg(theme.colors.accent_wash).child(
-                        div()
-                            .h_full()
-                            .w(relative(match node.state {
-                                NodeState::Running(progress) => progress,
-                                _ => 0.,
-                            }))
-                            .bg(theme.colors.accent),
-                    ),
-                )
-            })
-            .child(ports)
-            .when(!node.params.is_empty(), |node_box| node_box.child(params))
-            .when(node.kind == Kind::Preview, |node_box| {
-                node_box.child(Self::preview(node, &theme))
-            })
-            .when(node.by_agent, |node_box| {
-                node_box.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(theme.spacing.xs)
-                        .px(theme.spacing.sm)
-                        .py(theme.spacing.sm)
-                        .rounded_b(inner)
-                        .border_t_1()
-                        .border_color(theme.colors.separator)
-                        .bg(theme.colors.agent_wash)
-                        .child(
-                            Label::new("Added by the assistant")
-                                .size(TextSize::XSmall)
-                                .color(TextColor::Agent),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .justify_end()
-                                .gap(theme.spacing.sm)
-                                .child(
-                                    Button::new(("undo-agent", id), "Undo")
-                                        .ghost()
-                                        .icon(IconName::Undo)
-                                        .size(ControlSize::Small)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.undo_agent_node(id);
-                                            cx.notify();
-                                        })),
-                                )
-                                .child(
-                                    Button::new(("keep-agent", id), "Keep")
-                                        .size(ControlSize::Small)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            if let Some(node) = this.node_mut(id) {
-                                                node.by_agent = false;
-                                            }
-                                            cx.notify();
-                                        })),
-                                ),
-                        ),
-                )
-            })
-    }
-
-    /// The dot grid and the wires, painted under the nodes.
-    fn wires(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let theme = cx.theme();
-        let geometry = Geometry::new(theme);
-        let pan = self.pan;
-        let highlight = self.selected;
-        let wires: Vec<_> = self
-            .links
-            .iter()
-            .filter_map(|link| {
-                let from = self.node(link.from)?;
-                let to = self.node(link.to)?;
-                let data = self.data_type(link.from, link.output, true)?;
-                let strong = highlight == Some(link.from) || highlight == Some(link.to);
-                Some((
-                    pan + geometry.port(from, link.output, true),
-                    pan + geometry.port(to, link.input, false),
-                    data.color(theme),
-                    strong,
-                ))
-            })
-            .collect();
-        let pending = match self.drag {
-            Drag::Wire {
-                from,
-                output,
-                cursor,
-            } => self.node(from).and_then(|node| {
-                let data = self.data_type(from, output, true)?;
-                Some((
-                    pan + geometry.port(node, output, true),
-                    cursor,
-                    data.color(theme),
-                ))
-            }),
-            _ => None,
-        };
-        let dot = theme.colors.grid;
-        let spacing = px(24.);
-        canvas(
-            |_, _, _| {},
-            move |bounds: Bounds<Pixels>, _, window, _| {
-                let origin = bounds.origin;
-                let start_x = pan.x % spacing;
-                let start_y = pan.y % spacing;
-                let mut y = start_y;
-                while y < bounds.size.height {
-                    let mut x = start_x;
-                    while x < bounds.size.width {
-                        window.paint_quad(fill(
-                            Bounds::new(origin + point(x, y), size(px(1.5), px(1.5))),
-                            dot,
-                        ));
-                        x += spacing;
-                    }
-                    y += spacing;
-                }
-                for (from, to, color, strong) in &wires {
-                    let width = if *strong { px(3.) } else { px(2.) };
-                    if let Some(path) = bezier(origin + *from, origin + *to, width) {
-                        window.paint_path(path, if *strong { *color } else { color.opacity(0.8) });
-                    }
-                }
-                if let Some((from, cursor, color)) = pending
-                    && let Some(path) = bezier(origin + from, cursor, px(2.))
-                {
-                    window.paint_path(path, color);
-                }
-            },
-        )
-        .size_full()
-    }
-
-    fn legend(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let theme = cx.theme();
-        div()
-            .absolute()
-            .left(theme.spacing.lg)
-            .bottom(theme.spacing.lg)
-            .flex()
-            .items_center()
-            .gap(theme.spacing.md)
-            .px(theme.spacing.md)
-            .py(theme.spacing.xs)
-            .rounded(theme.shape.radius_md)
-            .bg(theme.colors.overlay)
-            .border_1()
-            .border_color(theme.colors.border)
-            .shadow(theme.elevation.medium.clone())
-            .child(
-                Button::new("reset-view", "Reset view")
-                    .ghost()
-                    .size(ControlSize::Small)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.pan = point(px(16.), px(24.));
-                        cx.notify();
-                    })),
-            )
-            .child(Divider::vertical())
-            .children(DataType::ALL.into_iter().map(|data| {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(theme.spacing.xs)
-                    .child(StatusDot::new(data.color(theme)))
-                    .child(
-                        Label::new(data.label())
-                            .size(TextSize::XSmall)
-                            .color(TextColor::Muted),
-                    )
-            }))
-    }
-
-    fn graph(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let theme = cx.theme().clone();
-        let nodes: Vec<_> = self
-            .nodes
-            .iter()
-            .map(|node| self.render_node(node, cx).into_any_element())
-            .collect();
-        div()
-            .id("graph")
-            .relative()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .overflow_hidden()
-            .bg(theme.colors.background)
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, event, _, cx| this.canvas_mouse_down(event, cx)),
-            )
-            .on_mouse_down(
-                MouseButton::Middle,
-                cx.listener(|this, event, _, cx| this.canvas_mouse_down(event, cx)),
-            )
-            .on_mouse_move(cx.listener(|this, event, _, cx| this.canvas_mouse_move(event, cx)))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _, _, cx| this.canvas_mouse_up(cx)),
-            )
-            .on_mouse_up(
-                MouseButton::Middle,
-                cx.listener(|this, _, _, cx| this.canvas_mouse_up(cx)),
-            )
-            .on_scroll_wheel(cx.listener(|this, event, _, cx| this.canvas_scroll(event, cx)))
-            .child(div().absolute().inset_0().child(self.wires(cx)))
-            .children(nodes)
-            .child(self.legend(cx))
-    }
-
     fn inspector(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme().clone();
         let body = div()
@@ -1459,19 +780,24 @@ impl NodeEditor {
             .gap(theme.spacing.xl)
             .p(theme.spacing.lg);
 
-        let selection = match self.selected.and_then(|id| self.node(id)) {
-            Some(node) => {
+        let graph = self.canvas.read(cx);
+        let wire_count = graph.wires().len();
+        let node_by_agent = self
+            .selected
+            .and_then(|id| graph.node(id))
+            .is_some_and(|node| node.by_agent);
+        let sources: Vec<Option<(NodeId, usize)>> = match self.selected {
+            Some(id) => (0..16).map(|input| graph.source(id, input)).collect(),
+            None => Vec::new(),
+        };
+        let selection = match self.selected.and_then(|id| Some((id, self.node(id)?))) {
+            Some((id, node)) => {
                 let spec = node.kind.spec();
-                let id = node.id;
                 let inputs = spec.inputs.iter().enumerate().map(|(index, (name, data))| {
-                    let source = self
-                        .links
-                        .iter()
-                        .find(|link| link.to == id && link.input == index)
-                        .and_then(|link| {
-                            let from = self.node(link.from)?.kind.spec();
-                            Some(format!("{} · {}", from.title, from.outputs[link.output].0))
-                        });
+                    let source = sources[index].and_then(|(from, output)| {
+                        let from = self.node(from)?.kind.spec();
+                        Some(format!("{} · {}", from.title, from.outputs[output].0))
+                    });
                     div()
                         .flex()
                         .items_center()
@@ -1500,16 +826,11 @@ impl NodeEditor {
                     .enumerate()
                     .map(|(index, (name, param))| match *param {
                         Param::Number(value, unit) => Slider::new(value)
-                            .id(("param", id * 16 + index))
+                            .id(("param", id.0 as usize * 16 + index))
                             .label(*name)
                             .readout(unit.format(value))
                             .on_change(cx.listener(move |this, value: &f32, _, cx| {
-                                if let Some(node) = this.node_mut(id)
-                                    && let Param::Number(_, unit) = node.params[index].1
-                                {
-                                    node.params[index].1 = Param::Number(*value, unit);
-                                }
-                                this.mark_dirty(id);
+                                this.set_param(id, index, Param::Number(*value, unit), cx);
                                 cx.notify();
                             }))
                             .into_any_element(),
@@ -1524,19 +845,19 @@ impl NodeEditor {
                             )
                             .child(
                                 SegmentedControl::new(
-                                    ("param", id * 16 + index),
+                                    ("param", id.0 as usize * 16 + index),
                                     options.iter().map(|option| Segment::label(*option)),
                                     selected,
                                 )
                                 .size(ControlSize::Small)
                                 .on_select(cx.listener(
                                     move |this, choice: &usize, _, cx| {
-                                        if let Some(node) = this.node_mut(id)
-                                            && let Param::Choice(options, _) = node.params[index].1
-                                        {
-                                            node.params[index].1 = Param::Choice(options, *choice);
-                                        }
-                                        this.mark_dirty(id);
+                                        this.set_param(
+                                            id,
+                                            index,
+                                            Param::Choice(options, *choice),
+                                            cx,
+                                        );
                                         cx.notify();
                                     },
                                 )),
@@ -1561,9 +882,9 @@ impl NodeEditor {
                     .child(SectionHeader::new(spec.title).description(format!(
                         "{} · node {}",
                         spec.category.label(),
-                        id
+                        id.0
                     )))
-                    .when(node.by_agent, |section| {
+                    .when(node_by_agent, |section| {
                         section.child(
                             Badge::new("Added by the assistant")
                                 .tone(Tone::Agent)
@@ -1597,7 +918,7 @@ impl NodeEditor {
                                 .icon(IconName::Trash)
                                 .size(ControlSize::Small)
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.remove_node(id);
+                                    this.remove_node(id, cx);
                                     cx.notify();
                                 })),
                         ),
@@ -1608,7 +929,7 @@ impl NodeEditor {
                 .description(format!(
                     "{} nodes · {} links. Select a node to see its inputs and parameters.",
                     self.nodes.len(),
-                    self.links.len()
+                    wire_count
                 ))
                 .into_any_element(),
         };
@@ -1757,13 +1078,43 @@ fn preview_peaks() -> Vec<f32> {
         .collect()
 }
 
-/// A wire from an output to an input, leaving and entering horizontally.
-fn bezier(from: Point<Pixels>, to: Point<Pixels>, width: Pixels) -> Option<gpui::Path<Pixels>> {
-    let reach = ((to.x - from.x).abs() * 0.5).max(px(48.));
-    let mut builder = PathBuilder::stroke(width);
-    builder.move_to(from);
-    builder.cubic_bezier_to(to, point(from.x + reach, from.y), point(to.x - reach, to.y));
-    builder.build().ok()
+/// The preview node's player, or what stands in for it before the take exists.
+fn preview(
+    state: NodeState,
+    has_result: bool,
+) -> impl Fn(NodeId, &mut Window, &mut App) -> AnyElement + 'static {
+    move |id, _, cx| {
+        let theme = cx.theme();
+        match state {
+            NodeState::Done(_) | NodeState::Cached => {
+                AudioPlayer::new(("preview", id.0 as usize), 0., "0:00", "0:32")
+                    .peaks(preview_peaks())
+                    .into_any_element()
+            }
+            NodeState::Queued | NodeState::Running(_) => {
+                Skeleton::new(("preview-skeleton", id.0 as usize))
+                    .w_full()
+                    .h(px(44.))
+                    .into_any_element()
+            }
+            _ if has_result => AudioPlayer::new(("preview", id.0 as usize), 0., "0:00", "0:32")
+                .peaks(preview_peaks())
+                .into_any_element(),
+            _ => div()
+                .h(px(44.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(theme.shape.radius_xs)
+                .bg(theme.colors.sunken)
+                .child(
+                    Label::new("Run the workflow to hear the take")
+                        .size(TextSize::XSmall)
+                        .color(TextColor::Faint),
+                )
+                .into_any_element(),
+        }
+    }
 }
 
 impl Render for NodeEditor {
@@ -1775,21 +1126,7 @@ impl Render for NodeEditor {
         let wide = window.viewport_size().width >= px(1180.);
         let agent_width = if wide { 380. } else { 320. };
         let running = self.run.is_some();
-        let missing = self
-            .nodes
-            .iter()
-            .map(|node| {
-                let spec = node.kind.spec();
-                (0..spec.inputs.len())
-                    .filter(|input| {
-                        !self
-                            .links
-                            .iter()
-                            .any(|link| link.to == node.id && link.input == *input)
-                    })
-                    .count()
-            })
-            .sum::<usize>();
+        let missing = self.canvas.read(cx).unconnected_inputs();
         let run_button = if running {
             Button::new("stop", "Stop")
                 .icon(IconName::Stop)
@@ -1840,7 +1177,14 @@ impl Render for NodeEditor {
                     .flex_1()
                     .min_h_0()
                     .when(wide, |row| row.child(self.library(cx)))
-                    .child(self.graph(cx))
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .child(self.canvas.clone()),
+                    )
                     .map(|row| {
                         if self.agent_open {
                             row.child(self.agent_panel(agent_width, cx).into_any_element())
@@ -1853,7 +1197,5 @@ impl Render for NodeEditor {
 }
 
 fn main() {
-    common::run("Workflow", 1760., 1000., |choice, _| {
-        NodeEditor::new(choice)
-    });
+    common::run("Workflow", 1760., 1000., NodeEditor::new);
 }

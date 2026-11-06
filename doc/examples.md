@@ -72,7 +72,8 @@ again. Empty space or the scroll wheel pans. Run steps through the graph in depe
 shows each node's state and the sampler's progress, and reuses unchanged nodes on the next run.
 Port and wire colours come from `colors.ports`, with the type also named on the port, in a tooltip
 and in the legend. The loudness node was added by the assistant: it is drawn dashed in the agent
-colour with Keep and Undo on the node, and the assistant panel holds the conversation.
+colour with Keep and Undo on the node, and the assistant panel holds the conversation. The graph
+itself is `atelier::graph::NodeCanvas`; the example keeps only what the nodes mean.
 
 ![Node editor](images/node-editor.png)
 

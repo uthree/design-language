@@ -32,6 +32,37 @@ its code bumps the minor version while Atelier is below 1.0.
   already did without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders` for Macs
   without full Xcode.
 
+## Unreleased — the node canvas
+
+### Added
+
+- `atelier::graph::NodeCanvas`, a node graph on a pannable canvas, taken out of the
+  `node_editor` example. It is a view the application holds: it keeps the nodes, wires,
+  selection and pan, and reports what the person did as `NodeCanvasEvent`s (`Selected`, `Moved`,
+  `Connected`, `Disconnected`, `Removed`, `Kept`, `Undone`), already applied. The person drags
+  nodes by their cards, draws a wire from an output to an input of the same type (others step
+  back while it is held), picks a wire up by its input, pans with the background, the middle
+  button or the wheel, deletes the selected node with Delete, and keeps or undoes a node the
+  assistant added. `.port_types([..])` names the types for the tooltips and the legend; their
+  colours are `colors.ports`.
+- `graph::GraphNode` (`.at(..)`, `.width(..)`, `.icon(..)`, `.input(..)`, `.output(..)`,
+  `.field(..)`, `.state(..)`, `.by_agent(..)`, `.body(..)`), `NodeField` (`number`, `choice`,
+  `text`), `NodeState` (`Idle`, `Queued`, `Running`, `Done`, `Cached`, `Failed`), `Port`,
+  `Wire` and `NodeId`. The canvas answers `execution_order()`, `downstream(id)`,
+  `source(id, input)`, `unconnected_inputs()` and `can_connect(wire)`.
+- `Strings::added_by_agent`, `keep`, `undo`, `reset_view` and `cached`, in English and Japanese.
+- The `node_editor` example now draws its graph with `NodeCanvas` and keeps only its node kinds,
+  parameters, run and inspector.
+- Web kit: `nodeCanvas(..)` in `atelier.js` with `.at-node-canvas` and `.at-node` in
+  `atelier.css`, firing `atelier:node-*` events. The web showcase has a node canvas on its
+  components page. The node editor is no longer listed as not yet ported.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A graph copied from `examples/node_editor.rs`: its `Drag`, `Geometry`, socket and wire painting, `bezier`, `execution_order` | `graph::NodeCanvas` |
+
 ## Unreleased — what the agent is doing, its plan and its changes
 
 ### Added

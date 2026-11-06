@@ -2032,3 +2032,229 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------- node canvas */
+
+/* `graph::NodeCanvas`: nodes on a pannable dot grid, wires under them. `nodeCanvas(..)` in
+   atelier.js builds and drives it; give the element a height. */
+.at-node-canvas {
+  position: relative;
+  overflow: hidden;
+  min-height: 240px;
+  outline: none;
+  background:
+    radial-gradient(circle, var(--at-grid) 0.75px, transparent 1.25px) var(--_pan-x, 0) var(--_pan-y, 0) / 24px 24px,
+    var(--at-background);
+  cursor: default;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.at-node-canvas__wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.at-node-canvas__wires path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+.at-node-canvas__wires path.is-strong {
+  stroke-width: 3;
+  opacity: 1;
+}
+
+.at-node-canvas__layer {
+  position: absolute;
+  inset: 0;
+  transform: translate(var(--_pan-x, 0), var(--_pan-y, 0));
+  pointer-events: none;
+}
+
+.at-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--at-border-strong);
+  border-radius: var(--at-radius-md);
+  background: var(--at-elevated);
+  box-shadow: var(--at-shadow-low);
+  color: var(--at-text);
+  font-size: var(--at-size-sm);
+  pointer-events: auto;
+}
+
+.at-node.is-selected,
+.at-node.is-running { border-color: var(--at-accent); }
+.at-node.is-failed { border-color: var(--at-danger); }
+.at-node.is-dragging { box-shadow: var(--at-shadow-medium); }
+.at-node--agent { border: 1px dashed var(--at-agent); }
+
+.at-node__header {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  height: calc(var(--at-row) + 4px);
+  padding: 0 var(--at-space-sm);
+  border-bottom: 1px solid var(--at-separator);
+  border-radius: calc(var(--at-radius-md) - 1px) calc(var(--at-radius-md) - 1px) 0 0;
+  font-weight: var(--at-label-weight);
+}
+
+.at-node.is-selected .at-node__header { background: var(--at-selected); }
+.at-node__header .at-icon { width: 13px; height: 13px; color: var(--at-text-muted); }
+
+.at-node__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-node__state {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-xs);
+  color: var(--at-text-faint);
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xs);
+  font-weight: normal;
+}
+
+.at-node__state .at-spinner { width: 12px; height: 12px; }
+.at-node__state--done::after { content: "✓"; color: var(--at-success); font-family: var(--at-font-ui, inherit); }
+.at-node__state--failed { color: var(--at-danger); }
+.at-node__state--agent { color: var(--at-agent); }
+
+.at-node__progress {
+  height: 2px;
+  background: var(--at-accent-wash);
+}
+
+.at-node__progress > span {
+  display: block;
+  height: 100%;
+  background: var(--at-accent);
+}
+
+.at-node__ports { padding-top: var(--at-space-xs); }
+
+.at-node__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: calc(var(--at-control-sm) + 2px);
+  padding: 0 var(--at-space-md);
+  color: var(--at-text-muted);
+  font-size: var(--at-size-xs);
+}
+
+/* A socket: an 18 px target around a 10 px ring in its type's colour, filled once wired. */
+.at-node__socket {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  cursor: crosshair;
+  --_color: var(--at-port-0);
+}
+
+.at-node__socket::before {
+  content: "";
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--_color);
+  border-radius: 50%;
+  background: var(--at-elevated);
+}
+
+.at-node__socket.is-wired::before { background: var(--_color); }
+.at-node__socket.is-muted { opacity: 0.3; }
+.at-node__socket--in { left: -10px; }
+.at-node__socket--out { right: -10px; }
+.at-node__socket[data-kind="1"] { --_color: var(--at-port-1); }
+.at-node__socket[data-kind="2"] { --_color: var(--at-port-2); }
+.at-node__socket[data-kind="3"] { --_color: var(--at-port-3); }
+.at-node__socket[data-kind="4"] { --_color: var(--at-port-4); }
+
+.at-node__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-xs);
+  padding: var(--at-space-xs) var(--at-space-sm) var(--at-space-sm);
+}
+
+/* A field: `--fraction` fills a number's well. */
+.at-node__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  min-height: calc(var(--at-control-sm) + 2px);
+  padding: 0 var(--at-space-sm);
+  overflow: hidden;
+  border-radius: var(--at-radius-xs);
+  background: linear-gradient(90deg, var(--at-hover) calc(var(--fraction, 0) * 100%), var(--at-sunken) 0);
+  font-size: var(--at-size-xs);
+}
+
+.at-node__field > :first-child { color: var(--at-text-muted); }
+.at-node__field > :last-child { margin-inline-start: auto; font-family: var(--at-font-mono); }
+.at-node__field--choice > :last-child { font-family: inherit; }
+.at-node__field--choice > :last-child::after { content: " ⌄"; color: var(--at-text-muted); }
+
+.at-node__field--text {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--at-space-xxs);
+  padding: var(--at-space-sm);
+}
+
+.at-node__field--text > :last-child { margin: 0; font-family: inherit; }
+
+.at-node__agent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-xs);
+  padding: var(--at-space-sm);
+  border-top: 1px solid var(--at-separator);
+  border-radius: 0 0 calc(var(--at-radius-md) - 1px) calc(var(--at-radius-md) - 1px);
+  background: var(--at-agent-wash);
+  color: var(--at-agent);
+  font-size: var(--at-size-xs);
+}
+
+.at-node__agent > div { display: flex; justify-content: flex-end; gap: var(--at-space-sm); }
+
+.at-node-canvas__legend {
+  position: absolute;
+  bottom: var(--at-space-lg);
+  left: var(--at-space-lg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--at-space-md);
+  padding: var(--at-space-xs) var(--at-space-md);
+  border: 1px solid var(--at-border);
+  border-radius: var(--at-radius-md);
+  background: var(--at-overlay);
+  box-shadow: var(--at-shadow-medium);
+  color: var(--at-text-muted);
+  font-size: var(--at-size-xs);
+}
+
+.at-node-canvas__legend > span { display: inline-flex; align-items: center; gap: var(--at-space-xs); }

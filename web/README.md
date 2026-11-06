@@ -83,6 +83,7 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `AgentActivity`, `AgentPhase` | `activity(element, { phase, detail, progress, elapsed, rate, tokens, context, labels })`; `.at-activity`; `AGENT_PHASES` |
 | `PlanView`, `StepList` | `planView(element, { title, steps, open })`, firing `atelier:toggle`; `.at-plan`, `ol.at-steps > li.at-step--done/running/pending/failed/skipped` |
 | `ChangedFiles`, `FileChange`, `ChangeKind` | `changedFiles(element, { title, files, actions })`, firing `atelier:open-file` with `{ index, path }`; `.at-changes`, `.at-change[data-kind]` |
+| `graph::NodeCanvas`, `GraphNode`, `NodeField`, `Wire`, `NodeState` | `nodeCanvas(element, { portTypes, nodes, wires, legend, labels })`, returning `add`, `remove`, `update`, `setState`, `connect`, `disconnect`, `select`, `undoAgentNode`, `resetView`, `nodes`, `wires`, `downstream`, `executionOrder`; `atelier:node-select`, `node-move`, `node-connect`, `node-disconnect`, `node-remove`, `node-keep`, `node-undo`; `.at-node-canvas`, `.at-node` |
 | `MenuItem::description`, `.danger()` | `.at-menu-item--described` with `.at-menu-item__text` and `.at-menu-item__description`, `.at-menu-item--danger` |
 | `ChatView` (`push`, `append`, `finish`, `set_tool_state`, `answer`, `jump_to_latest`, `ChatEvent::Decided`) | `chat(element, { panel, logo, strings })` from `atelier.js`, returning `push`, `append`, `finish`, `setToolState`, `answer`, `jumpToLatest`; `atelier:decided` events with `{ id, decision }` |
 | `Tooltip` | `data-tooltip="…"` on any element |
@@ -170,7 +171,7 @@ to WebAssembly would bring them over. The liquid-metal backdrop is not ported ye
 ## Not yet
 
 The prototype covers the tokens, the core controls, the window frame, the agent transcript and
-composer, dialogs and approvals, the activity line, plan and changed files, and the backdrops. Still to come: menus that open (the menu is
-styled, not positioned; the permission picker's menu is the exception), completions, the node editor, plots and the instrument controls such as
+composer, dialogs and approvals, the activity line, plan and changed files, the node canvas, and the backdrops. Still to come: menus that open (the menu is
+styled, not positioned; the permission picker's menu is the exception), completions, plots and the instrument controls such as
 `PianoKeyboard`, `NoteRoll` and `ReadoutStrip`/`Readout`, and the effort picker's `note` and
 `EffortButton::disabled`. `IconName::Menu` is in the generated icons.

@@ -332,8 +332,37 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
 
 ## Node graphs
 
-There is no node-graph component: compose one from the pieces above on a `canvas`, as
-`examples/node_editor.rs` does, and read that example before drawing a graph.
+`atelier::graph::NodeCanvas` is the canvas: a view you hold that keeps the nodes, wires,
+selection and pan, and reports what the person did. Your model stays yours; `examples/node_editor.rs`
+keeps its node kinds and parameters beside it and listens to the events.
+
+```rust
+let canvas = cx.new(|_| NodeCanvas::new("graph").port_types(["Model", "Latent", "Audio"]));
+canvas.update(cx, |canvas, cx| {
+    let decode = canvas.add(
+        GraphNode::new("Decode audio")
+            .icon(IconName::Waveform)
+            .at(240., 40.)
+            .input("Latent", 1)                       // index into port_types: picks colours.ports[1]
+            .output("Audio", 2)
+            .field(NodeField::number("Gain", "−3 dB", 0.4)),
+        cx,
+    );
+    canvas.connect(Wire::new(sampler, 0, decode, 0), cx);   // refused unless the types match
+});
+cx.subscribe(&canvas, |this, _, event: &NodeCanvasEvent, cx| match event {
+    NodeCanvasEvent::Connected(wire) | NodeCanvasEvent::Disconnected(wire) => this.mark_dirty(wire.to),
+    NodeCanvasEvent::Removed(id) | NodeCanvasEvent::Undone(id) => this.forget(*id),
+    _ => {}
+}).detach();
+```
+
+Put it in a `relative` container with a size; it fills it. While a run goes, set each node's
+`NodeState` (`Queued`, `Running(progress)`, `Done(Some(seconds))`, `Cached`, `Failed`) and walk
+`execution_order()`; `downstream(id)` is what a change invalidates and `unconnected_inputs()` is
+what stops a run. `GraphNode::body(|id, window, cx| ..)` adds a preview or player under the
+fields. Edit parameters in an inspector beside the canvas and put the new row back with
+`update_node`. The rules the canvas already follows:
 
 - Each port and its wires take the colour for their data type from `colors.ports`, and the type
   is also named — on the port, in a tooltip and in a legend. Never the agent colour.
