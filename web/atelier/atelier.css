@@ -1730,3 +1730,305 @@ dialog.at-dialog::backdrop {
   border-radius: var(--at-control-sm-radius);
   font-size: var(--at-size-sm);
 }
+
+/* ---------------------------------------------------------------- activity, plan, changes */
+
+/* `agent::AgentActivity`: one line of what a running turn is doing. */
+.at-activity {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  min-width: 0;
+  height: var(--at-control-sm);
+  color: var(--at-text-faint);
+  font-size: var(--at-size-xs);
+}
+
+.at-activity__phase {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--at-space-xs);
+  color: var(--at-agent);
+  font-weight: var(--at-label-weight);
+  white-space: nowrap;
+}
+
+.at-activity__phase .at-spinner {
+  width: 12px;
+  height: 12px;
+  border-top-color: var(--at-agent);
+}
+
+.at-activity--approval .at-activity__phase { color: var(--at-warning); }
+
+.at-activity__detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-activity__figure {
+  flex: none;
+  font-family: var(--at-font-mono);
+  white-space: nowrap;
+}
+
+/* The context gauge; set `--value` (0–1). Warns past 80 % and alarms past 95 %. */
+.at-activity__context {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--at-space-xxs);
+  --_color: var(--at-accent);
+}
+
+.at-activity__context::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: conic-gradient(var(--_color) calc(var(--value, 0) * 360deg), var(--at-sunken) 0);
+  -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+}
+
+.at-activity__context--warning { --_color: var(--at-warning); color: var(--at-warning); }
+.at-activity__context--danger { --_color: var(--at-danger); color: var(--at-danger); }
+
+/* A step list, as `StepList` draws it: a marker per step joined by a line. */
+.at-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.at-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: var(--at-space-sm);
+  padding-bottom: var(--at-space-md);
+  color: var(--at-text-faint);
+  font-size: var(--at-size-md);
+}
+
+.at-step:last-child { padding-bottom: 0; }
+
+.at-step::before {
+  content: "";
+  grid-row: 1 / span 2;
+  align-self: start;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin: 2px;
+  border: 1px solid var(--at-border-strong);
+  border-radius: 50%;
+}
+
+.at-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 2px;
+  left: 7.25px;
+  width: 1.5px;
+  background: var(--at-border);
+}
+
+.at-step__detail {
+  grid-column: 2;
+  color: var(--at-text-faint);
+  font-size: var(--at-size-sm);
+}
+
+.at-step--done { color: var(--at-text-muted); }
+.at-step--done::before {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 0;
+  background: var(--at-success) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 10px no-repeat;
+}
+.at-step--done:not(:last-child)::after { background: color-mix(in srgb, var(--at-success) 50%, transparent); }
+
+.at-step--running { color: var(--at-text); font-weight: var(--at-label-weight); }
+.at-step--running .at-step__detail { font-weight: normal; }
+.at-step--running::before {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 2px solid var(--at-border-strong);
+  border-top-color: var(--at-accent);
+  animation: at-spin 0.8s linear infinite;
+}
+
+.at-step--failed { color: var(--at-danger); }
+.at-step--failed::before {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 0;
+  background: var(--at-danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M7 7l10 10M17 7L7 17'/%3E%3C/svg%3E") center / 10px no-repeat;
+}
+
+/* `agent::PlanView`: a header that folds the plan to the step in progress. */
+.at-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-xs);
+}
+
+.at-plan__header {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  height: var(--at-row);
+  padding: 0 var(--at-space-sm);
+  border: 0;
+  border-radius: var(--at-radius-sm);
+  background: none;
+  color: var(--at-text);
+  font: inherit;
+  font-size: var(--at-size-sm);
+  font-weight: var(--at-label-weight);
+  text-align: start;
+  cursor: pointer;
+}
+
+.at-plan__header:hover { background: var(--at-hover); }
+.at-plan__header:focus-visible { outline: 2px solid var(--at-focus-ring); outline-offset: -2px; }
+
+.at-plan__header::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  opacity: 0.5;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.at-plan--closed .at-plan__header::before { transform: rotate(-90deg); }
+
+.at-plan__count {
+  color: var(--at-text-faint);
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xs);
+  font-weight: normal;
+}
+
+.at-plan__header .at-progress {
+  width: 64px;
+  height: 3px;
+  margin-inline-start: auto;
+}
+
+.at-plan__header .at-progress--done > span { background: var(--at-success); }
+
+.at-plan > .at-steps { padding: 0 var(--at-space-sm) var(--at-space-xs); }
+
+/* Closed, only the step in progress (or the next one) stays. */
+.at-plan--closed .at-step:not(.at-step--current) { display: none; }
+.at-plan--closed .at-step::after { display: none; }
+.at-plan--closed .at-step { padding-bottom: 0; }
+
+/* `agent::ChangedFiles`: the files a turn changed, name before folder. */
+.at-changes {
+  display: flex;
+  flex-direction: column;
+}
+
+.at-changes__header {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  min-height: var(--at-row);
+  padding: 0 var(--at-space-sm);
+  font-size: var(--at-size-sm);
+}
+
+.at-changes__title { font-weight: var(--at-label-weight); }
+.at-changes__count { color: var(--at-text-faint); font-family: var(--at-font-mono); font-size: var(--at-size-xs); }
+.at-changes__header > :last-child:not(.at-changes__lines) { margin-inline-start: auto; }
+
+.at-changes__lines {
+  display: flex;
+  flex: none;
+  gap: var(--at-space-xs);
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xs);
+  white-space: nowrap;
+}
+
+.at-changes__lines > :first-child { color: var(--at-success); }
+.at-changes__lines > :last-child { color: var(--at-danger); }
+
+.at-change {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-sm);
+  width: 100%;
+  height: var(--at-row);
+  padding: 0 var(--at-space-sm);
+  border: 0;
+  border-radius: var(--at-radius-sm);
+  background: none;
+  color: var(--at-text);
+  font: inherit;
+  font-size: var(--at-size-sm);
+  text-align: start;
+}
+
+button.at-change { cursor: pointer; }
+button.at-change:hover { background: var(--at-hover); }
+button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outline-offset: -2px; }
+
+/* The kind: `data-kind="A|M|D|R"`. */
+.at-change::before {
+  content: attr(data-kind);
+  flex: none;
+  width: 12px;
+  color: var(--at-warning);
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xs);
+  font-weight: var(--at-label-weight);
+}
+
+.at-change[data-kind="A"]::before { color: var(--at-success); }
+.at-change[data-kind="D"]::before { color: var(--at-danger); }
+.at-change[data-kind="R"]::before { color: var(--at-text-muted); }
+
+.at-change__path {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--at-space-xs);
+  min-width: 0;
+}
+
+.at-change__name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-change[data-kind="D"] .at-change__name { color: var(--at-text-muted); text-decoration: line-through; }
+
+.at-change__folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text-faint);
+  font-size: var(--at-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

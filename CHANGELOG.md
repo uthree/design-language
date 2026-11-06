@@ -32,6 +32,38 @@ its code bumps the minor version while Atelier is below 1.0.
   already did without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders` for Macs
   without full Xcode.
 
+## Unreleased — what the agent is doing, its plan and its changes
+
+### Added
+
+- `agent::AgentActivity`, one line of what a running turn is doing: its `AgentPhase`
+  (`Waiting`, `Reading`, `Thinking`, `Writing`, `Tool`, `Approval`, `Compacting`, `Reviewing`)
+  and `.detail(..)`, then whichever figures the backend reports: `.progress(..)` through a
+  phase, `.tokens(..)`, `.rate(..)` in tokens per second, `.elapsed(..)` and `.context(..)` as
+  a ring that warns past 80 % and alarms past 95 %. The phase leads; the figures give way first.
+- `agent::PlanView`, the agent's plan: a header with how many steps are done and a thin bar
+  over a `StepList`. Pressing the header folds it to the step in progress (or the next one);
+  it holds that itself unless you pass `.open(..)` and `.on_toggle(..)`.
+- `agent::ChangedFiles` and `FileChange` (`ChangeKind::Added`, `Modified`, `Deleted`,
+  `Renamed`): the files a turn changed, name before folder, lines added and removed per file
+  and in total, `.action(..)` in the header for "Keep all", `.on_open(|index, ..|)` per row.
+- `Strings::agent_phases`, `plan` and `changed_files`, in English and Japanese.
+- The `agent_desktop` example shows the activity line above the composer (it follows the
+  approval: needs approval, then running the tests; `--activity tool|thinking|compacting`
+  starts elsewhere), and its changes pane is a `PlanView` over `ChangedFiles`.
+- Web kit: `activity(..)`, `planView(..)` and `changedFiles(..)` in `atelier.js`, with
+  `.at-activity`, `.at-plan`, `.at-steps`/`.at-step` and `.at-changes`/`.at-change` in
+  `atelier.css`. A plan in static markup folds through `hydrate`. The web showcase's agent view
+  has all three.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A status row of phase, tok/s, elapsed time and a context gauge laid out by hand | `AgentActivity` |
+| A plan drawn as a bare `StepList` with its own header and count | `PlanView` |
+| Changed files as `ListItem`s with `+n`/`−n` labels in the trailing slot | `ChangedFiles` |
+
 ## Unreleased — dialogs, approvals and permission modes
 
 ### Added

@@ -6,20 +6,22 @@
 //! ```text
 //! cargo run --example agent_desktop -- [--direction glass|studio|mono] [--appearance dark|light]
 //!     [--draft "いい感じ :thi"] [--permission ask|plan|bypass] [--push-request]
+//!     [--activity tool|thinking|compacting]
 //! ```
 
 mod common;
 
 use atelier::agent::{
-    AgentStatus, ApprovalDialog, ChatEntry, ChatEvent, ChatView, CodeBlock, Composer, ContextChip,
-    ConversationRow, Decision, DiffBlock, DiffLine, PermissionMode, PermissionPicker, ToolState,
-    UsageLimit, UsageMeter,
+    AgentActivity, AgentPhase, AgentStatus, ApprovalDialog, ChangeKind, ChangedFiles, ChatEntry,
+    ChatEvent, ChatView, CodeBlock, Composer, ContextChip, ConversationRow, Decision, DiffBlock,
+    DiffLine, FileChange, PermissionMode, PermissionPicker, PlanView, ToolState, UsageLimit,
+    UsageMeter,
 };
 use atelier::emoji::{self, EmojiMatch};
 use atelier::{
     ActiveTheme, Appearance, Avatar, Badge, Button, ControlSize, Direction, Divider, Edge,
-    FocusNext, IconName, Label, ListItem, MenuItem, Popover, ProviderLogo, Sidebar, StepList,
-    StepState, Tabs, TaskProgress, TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
+    FocusNext, IconName, Label, MenuItem, Popover, ProviderLogo, Sidebar, StepList, StepState,
+    Tabs, TaskProgress, TextColor, TextField, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -50,6 +52,8 @@ struct AgentDesktop {
     permission: PermissionMode,
     /// The mock agent asked to push the branch and waits for the dialog's answer.
     push_request: bool,
+    /// What the running turn is doing, or `None` once it has ended.
+    activity: Option<AgentPhase>,
 }
 
 impl Themed for AgentDesktop {
@@ -359,32 +363,37 @@ impl AgentDesktop {
         if *decision != Decision::Deny && self.permission != PermissionMode::Bypass {
             self.push_request = true;
         }
+        self.activity = (*decision != Decision::Deny).then_some(AgentPhase::Tool);
         cx.notify();
     }
 
     fn changes_pane(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let file = |index: usize, path: &'static str, added: u32, removed: u32| {
-            ListItem::new(("changed", index), path)
-                .icon(IconName::File)
-                .trailing(
-                    div()
-                        .flex()
-                        .gap(px(6.))
-                        .child(
-                            Label::new(format!("+{added}"))
-                                .size(TextSize::XSmall)
-                                .mono()
-                                .color(TextColor::Success),
-                        )
-                        .child(
-                            Label::new(format!("−{removed}"))
-                                .size(TextSize::XSmall)
-                                .mono()
-                                .color(TextColor::Danger),
-                        ),
-                )
-        };
+        let running = self.activity == Some(AgentPhase::Tool);
+        let plan = PlanView::new("plan")
+            .step("Reproduce the failure", StepState::Done)
+            .step("Find the cause", StepState::Done)
+            .step("Fix the start-up race", StepState::Done)
+            .step_with_detail(
+                "Run the full test suite",
+                if running {
+                    "cargo test --workspace"
+                } else {
+                    "Waiting for your approval"
+                },
+                StepState::Running,
+            )
+            .step("Push the branch", StepState::Pending);
+        let files = ChangedFiles::new("changed")
+            .file(FileChange::new("engine/src/transport.rs", 9, 1))
+            .file(FileChange::new("engine/tests/playback.rs", 4, 6))
+            .file(FileChange::new("engine/src/error.rs", 3, 0).kind(ChangeKind::Added))
+            .action(
+                Button::new("keep-all", "Keep all")
+                    .size(ControlSize::Small)
+                    .ghost(),
+            )
+            .on_open(|_, _, _| {});
         Sidebar::new(Edge::Right)
             .w(px(320.))
             .child(
@@ -410,19 +419,16 @@ impl AgentDesktop {
                     .flex_1()
                     .gap(theme.spacing.xxs)
                     .p(theme.spacing.sm)
+                    .child(plan)
+                    .child(div().h(theme.spacing.sm))
+                    .child(files)
                     .child(
                         div()
                             .flex()
-                            .items_center()
                             .px(theme.spacing.sm)
                             .py(theme.spacing.xs)
-                            .child(Label::caption("3 files changed"))
-                            .child(div().flex_1())
                             .child(Badge::new("claude/fix-playback").icon(IconName::Code)),
                     )
-                    .child(file(0, "engine/src/transport.rs", 9, 1))
-                    .child(file(1, "engine/tests/playback.rs", 4, 6))
-                    .child(file(2, "engine/src/error.rs", 3, 0))
                     .child(div().h(theme.spacing.lg))
                     .child(
                         TaskProgress::new("tests", "Workspace tests")
@@ -502,6 +508,16 @@ impl Render for AgentDesktop {
                             .min_w_0()
                             .bg(theme.colors.surface)
                             .child(self.chat.clone())
+                            .children(self.activity.map(|phase| {
+                                div().flex().justify_center().px(theme.spacing.xl).child(
+                                    div()
+                                        .w_full()
+                                        .max_w(px(780.))
+                                        .px(theme.spacing.sm)
+                                        .pb(theme.spacing.xs)
+                                        .child(self.activity_strip(phase)),
+                                )
+                            }))
                             .child(
                                 div()
                                     .flex()
@@ -617,6 +633,21 @@ impl Render for AgentDesktop {
 }
 
 impl AgentDesktop {
+    /// The running turn's line above the composer. The figures are fixed in this mock; an app
+    /// passes what its backend reports.
+    fn activity_strip(&self, phase: AgentPhase) -> AgentActivity {
+        let activity = AgentActivity::new("activity", phase)
+            .elapsed(std::time::Duration::from_secs(47))
+            .context(0.38);
+        match phase {
+            AgentPhase::Approval => activity.detail("Run `cargo test --workspace`?"),
+            AgentPhase::Tool => activity.detail("cargo test --workspace"),
+            AgentPhase::Writing | AgentPhase::Thinking => activity.tokens(1_240).rate(62.),
+            AgentPhase::Compacting => activity.progress(0.4).context(0.93),
+            _ => activity,
+        }
+    }
+
     /// The mock agent's request to push, over the whole window until it is answered.
     fn push_dialog(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         self.push_request.then(|| {
@@ -736,6 +767,13 @@ fn main() {
                 _ => PermissionMode::Ask,
             },
             push_request: std::env::args().any(|arg| arg == "--push-request"),
+            activity: Some(match common::argument("--activity").as_deref() {
+                Some("tool") => AgentPhase::Tool,
+                Some("thinking") => AgentPhase::Thinking,
+                Some("writing") => AgentPhase::Writing,
+                Some("compacting") => AgentPhase::Compacting,
+                _ => AgentPhase::Approval,
+            }),
         }
     });
 }
