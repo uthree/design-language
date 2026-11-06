@@ -27,6 +27,7 @@
       .panel[hidden] { display: none; }
       .transcript-pane { display: flex; flex-direction: column; overflow: hidden; }
       .transcript-pane #chat { flex: 1; min-height: 0; }
+      #activity { padding: 0 var(--at-space-sm) var(--at-space-xs); }
       .composer-wrap { max-width: 760px; width: 100%; margin: 0 auto; padding: 0 var(--at-space-lg) var(--at-space-lg); }
       .welcome { position: relative; display: grid; place-items: center; }
       .welcome[hidden] { display: none; }
@@ -237,6 +238,7 @@
           <section class="panel transcript-pane" data-view="agent" hidden>
             <div id="chat"></div>
             <div class="composer-wrap">
+              <div id="activity"></div>
               <div class="at-composer at-agent-glow">
                 <span class="at-context-chip"><span data-icon="paperclip"></span>Selection: 2 clips</span>
                 <textarea id="draft" rows="2" placeholder="Reply, or describe a change…"></textarea>
@@ -271,11 +273,9 @@
             <div class="at-tabs"><button aria-selected="true">Changes</button><button>Tasks</button><button>Terminal</button></div>
           </div>
           <div class="inspector__body">
-            <div class="at-section-header"><span class="at-caption">3 files changed</span><span class="at-badge"><span data-icon="code"></span>claude/fix-playback</span></div>
-            <div class="at-list" style="padding: 0">
-              <button class="at-list-item"><span data-icon="file"></span><span class="at-list-item__label">engine/src/transport.rs</span><span class="at-mono at-small" style="color: var(--at-success)">+9</span><span class="at-mono at-small" style="color: var(--at-danger)">−1</span></button>
-              <button class="at-list-item"><span data-icon="file"></span><span class="at-list-item__label">engine/tests/playback.rs</span><span class="at-mono at-small" style="color: var(--at-success)">+4</span><span class="at-mono at-small" style="color: var(--at-danger)">−6</span></button>
-            </div>
+            <div id="plan"></div>
+            <div id="changes"></div>
+            <div class="row"><span class="at-badge"><span data-icon="code"></span>claude/fix-playback</span></div>
             <div class="at-card at-card--padded">
               <div class="row"><span data-icon="code"></span><strong>Workspace tests</strong><span class="at-spacer"></span><span class="at-small at-faint">Queued</span></div>
               <span class="at-small at-muted">Starts when you allow it</span>
@@ -292,7 +292,7 @@
     </div>
 
     <script type="module">
-      import { approvalDialog, chat, hydrate, openDialog, permissionPicker, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, hydrate, openDialog, permissionPicker, planView, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -358,11 +358,53 @@
         conversation.finish(answer);
       };
       const permission = permissionPicker(document.getElementById("permission"));
+      // What the running turn is doing, its plan and what it changed.
+      const strip = document.getElementById("activity");
+      const planSteps = (running) => [
+        { label: "Reproduce the failure", state: "done" },
+        { label: "Find the cause", state: "done" },
+        { label: "Fix the start-up race", state: "done" },
+        { label: "Run the full test suite", detail: running ? "cargo test --workspace" : "Waiting for your approval", state: running === "done" ? "done" : "running" },
+        { label: "Push the branch", state: "pending" },
+      ];
+      const plan = document.getElementById("plan");
+      planView(plan, { steps: planSteps(false) });
+      changedFiles(document.getElementById("changes"), {
+        files: [
+          { path: "engine/src/transport.rs", added: 9, removed: 1 },
+          { path: "engine/tests/playback.rs", added: 4, removed: 6 },
+          { path: "engine/src/error.rs", kind: "A", added: 3, removed: 0 },
+        ],
+        actions: [Object.assign(document.createElement("button"), { className: "at-button at-button--ghost at-button--sm", textContent: "Keep all" })],
+      });
+      const turnStarted = Date.now() - 47000;
+      let phase = "approval";
+      const drawActivity = () => {
+        if (!phase) return strip.replaceChildren();
+        activity(strip, {
+          phase,
+          detail: phase === "approval" ? "Run the workspace tests?" : phase === "tool" ? "cargo test --workspace" : "",
+          elapsed: (Date.now() - turnStarted) / 1000,
+          context: 0.38,
+        });
+      };
+      drawActivity();
+      setInterval(drawActivity, 1000);
       document.getElementById("chat").addEventListener("atelier:decided", (event) => {
-        if (event.detail.decision === "deny") return reply("Understood. I will leave the tests for you to run.");
+        if (event.detail.decision === "deny") {
+          phase = null;
+          drawActivity();
+          return reply("Understood. I will leave the tests for you to run.");
+        }
+        phase = "tool";
+        drawActivity();
+        planView(plan, { steps: planSteps(true) });
         const run = conversation.push({ kind: "tool", name: "bash", summary: "Running the workspace tests", state: "running", icon: "code" });
         setTimeout(async () => {
           conversation.setToolState(run, "succeeded");
+          phase = null;
+          drawActivity();
+          planView(plan, { steps: planSteps("done") });
           await reply("All 2,412 tests pass, including 50 runs of the playback test.");
           if (permission.mode === "bypass") return;
           // Pushing leaves the machine, so the mock agent asks in a dialog.

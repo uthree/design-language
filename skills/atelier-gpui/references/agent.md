@@ -103,6 +103,37 @@ The permission mode sits in the composer row:
 Offer only the modes your runtime enforces. `Bypass` stays red while chosen; do not add a
 second warning for it. Show the mode in the status bar too (`mode.label(cx)`).
 
+## What the agent is doing, its plan, its changes
+
+While a turn runs, put one `AgentActivity` line above the composer (or in the status bar) and
+remove it when the turn ends; `AgentStatusLabel` says how it ended.
+
+```rust
+AgentActivity::new("activity", AgentPhase::Tool)
+    .detail("cargo test --workspace")      // what the phase is working on
+    .elapsed(turn_started.elapsed())
+    .rate(tokens_per_second)               // while Writing
+    .context(used / window)                // ring: warns past 80 %, alarms past 95 %
+```
+
+Pass only the figures your backend reports. `AgentPhase::Approval` is the one phase drawn in the
+warning colour; use it while a `ChatEntry::approval` or `ApprovalDialog` waits.
+
+The plan and the files changed go in the side pane, plan first:
+
+```rust
+PlanView::new("plan")                      // folds to the step in progress when its header is pressed
+    .step("Find the cause", StepState::Done)
+    .step_with_detail("Run the tests", "cargo test --workspace", StepState::Running)
+ChangedFiles::new("changed")
+    .file(FileChange::new("engine/src/transport.rs", 9, 1))
+    .file(FileChange::new("engine/src/error.rs", 3, 0).kind(ChangeKind::Added))
+    .action(Button::new("keep", "Keep all").size(ControlSize::Small).ghost())
+    .on_open(cx.listener(|this, index: &usize, window, cx| this.open_diff(*index, window, cx)))
+```
+
+Rebuild both from the agent's latest plan and diff each frame; neither keeps a copy.
+
 ## The panel
 
 ```rust

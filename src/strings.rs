@@ -88,6 +88,13 @@ pub struct Strings {
     pub permission_modes: [SharedString; 5],
     /// What each permission mode lets the agent do, in the same order.
     pub permission_details: [SharedString; 5],
+    /// A running turn's phases: waiting, reading, thinking, writing, running a tool, awaiting
+    /// approval, compacting, reviewing.
+    pub agent_phases: [SharedString; 8],
+    /// The heading of the agent's plan.
+    pub plan: SharedString,
+    /// The heading of the list of files the agent changed.
+    pub changed_files: SharedString,
 }
 
 impl Default for Strings {
@@ -163,6 +170,18 @@ impl Strings {
                 "A reviewer model answers each request. Unsure ones come to you.".into(),
                 "Runs everything without asking. Use only in a sandbox.".into(),
             ],
+            agent_phases: [
+                "Waiting".into(),
+                "Reading".into(),
+                "Thinking".into(),
+                "Writing".into(),
+                "Running".into(),
+                "Needs approval".into(),
+                "Compacting".into(),
+                "Reviewing".into(),
+            ],
+            plan: "Plan".into(),
+            changed_files: "Changed files".into(),
         }
     }
 
@@ -234,6 +253,18 @@ impl Strings {
                 "レビュー用のモデルが各リクエストに答え、迷うものはあなたに回します。".into(),
                 "すべて確認なしで実行します。サンドボックスの中でだけ使ってください。".into(),
             ],
+            agent_phases: [
+                "応答待ち".into(),
+                "読み込み中".into(),
+                "考え中".into(),
+                "書き込み中".into(),
+                "実行中".into(),
+                "承認待ち".into(),
+                "圧縮中".into(),
+                "レビュー中".into(),
+            ],
+            plan: "計画".into(),
+            changed_files: "変更したファイル".into(),
         }
     }
 

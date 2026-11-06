@@ -110,6 +110,26 @@ export function hydrate(root = document) {
     }
   }
   for (const knob of root.querySelectorAll(".at-knob")) knobify(knob);
+  for (const plan of root.querySelectorAll(".at-plan")) foldablePlan(plan);
+}
+
+/// A plan's header folds it to the step in progress, marked `.at-step--current`.
+function foldablePlan(plan) {
+  const steps = [...plan.querySelectorAll(".at-step")];
+  for (const step of steps) step.classList.remove("at-step--current");
+  const current =
+    steps.find((step) => step.matches(".at-step--running, .at-step--failed")) ||
+    steps.find((step) => !step.matches(".at-step--done, .at-step--skipped"));
+  current?.classList.add("at-step--current");
+  const header = plan.querySelector(".at-plan__header");
+  if (!header || header.dataset.atReady) return;
+  header.dataset.atReady = "1";
+  header.setAttribute("aria-expanded", String(!plan.classList.contains("at-plan--closed")));
+  header.addEventListener("click", () => {
+    const open = plan.classList.toggle("at-plan--closed") === false;
+    header.setAttribute("aria-expanded", String(open));
+    plan.dispatchEvent(new CustomEvent("atelier:toggle", { bubbles: true, detail: { open } }));
+  });
 }
 
 /// The knob's sweep: from 7:30 clockwise to 4:30, in radians from +x, y pointing down.
@@ -748,4 +768,124 @@ export function permissionPicker(root, { mode = "ask", modes = Object.keys(PERMI
       draw();
     },
   };
+}
+
+/// A running turn's phases, as `agent::AgentPhase` names them.
+export const AGENT_PHASES = {
+  waiting: "Waiting",
+  reading: "Reading",
+  thinking: "Thinking",
+  writing: "Writing",
+  tool: "Running",
+  approval: "Needs approval",
+  compacting: "Compacting",
+  reviewing: "Reviewing",
+};
+
+/// "12 s", "1:05", "1:02:05", as `AgentActivity` writes elapsed time.
+function formatElapsed(seconds) {
+  seconds = Math.floor(seconds);
+  const pad = (n) => String(n).padStart(2, "0");
+  if (seconds < 60) return `${seconds} s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}:${pad(seconds % 60)}`;
+  return `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+}
+
+/// "820", "1.2k", "34k", "1.5M".
+function formatCount(count) {
+  if (count < 1000) return String(count);
+  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+  if (count < 1000000) return `${Math.floor(count / 1000)}k`;
+  return `${(count / 1000000).toFixed(1)}M`;
+}
+
+/// `agent::AgentActivity`: draw what a running turn is doing into `root`. Call again with new
+/// figures as they come; every one but `phase` is optional. `elapsed` is in seconds,
+/// `context` and `progress` are 0–1.
+export function activity(root, { phase = "waiting", detail, progress, elapsed, rate, tokens, context, labels = {} } = {}) {
+  const approval = phase === "approval";
+  root.className = `at-activity${approval ? " at-activity--approval" : ""}`;
+  root.replaceChildren();
+  const lead = element("span", "at-activity__phase");
+  lead.append(approval ? element("span", "at-status-dot at-status-dot--warning") : element("span", "at-spinner"));
+  let label = labels[phase] || AGENT_PHASES[phase] || phase;
+  if (progress != null) label += ` ${Math.round(progress * 100)} %`;
+  lead.append(label);
+  root.append(lead, element("span", "at-activity__detail", detail || ""));
+  if (tokens != null) root.append(element("span", "at-activity__figure", `${formatCount(tokens)} tok`));
+  if (rate != null) root.append(element("span", "at-activity__figure", `${Math.round(rate)} tok/s`));
+  if (elapsed != null) root.append(element("span", "at-activity__figure", formatElapsed(elapsed)));
+  if (context != null) {
+    const tone = context >= 0.95 ? " at-activity__context--danger" : context >= 0.8 ? " at-activity__context--warning" : "";
+    const gauge = element("span", `at-activity__context${tone}`);
+    gauge.style.setProperty("--value", String(context));
+    gauge.append(element("span", "at-activity__figure", `${Math.round(context * 100)} %`));
+    root.append(gauge);
+  }
+  return root;
+}
+
+/// `agent::PlanView`: draw the agent's plan into `root`, replacing what was there. Each step is
+/// `{ label, detail, state }` with `state` one of pending, running, done, failed, skipped. The
+/// header folds it to the step in progress and fires `atelier:toggle` with `{ open }`.
+export function planView(root, { title = "Plan", steps = [], open } = {}) {
+  const closed = open === undefined ? root.classList.contains("at-plan--closed") : !open;
+  root.className = `at-plan${closed ? " at-plan--closed" : ""}`;
+  root.replaceChildren();
+  const settled = steps.filter((step) => step.state === "done" || step.state === "skipped").length;
+  const header = element("button", "at-plan__header");
+  header.type = "button";
+  const bar = element("span", `at-progress${settled === steps.length && steps.length ? " at-progress--done" : ""}`);
+  const fill = element("span");
+  fill.style.width = `${steps.length ? (settled / steps.length) * 100 : 0}%`;
+  bar.append(fill);
+  header.append(element("span", "", title), element("span", "at-plan__count", `${settled}/${steps.length}`), bar);
+  const list = element("ol", "at-steps");
+  for (const step of steps) {
+    const item = element("li", `at-step at-step--${step.state || "pending"}`);
+    item.append(element("span", "", step.label));
+    if (step.detail) item.append(element("span", "at-step__detail", step.detail));
+    list.append(item);
+  }
+  root.append(header, list);
+  foldablePlan(root);
+  return root;
+}
+
+/// `agent::ChangedFiles`: draw the files a turn changed into `root`. Each file is
+/// `{ path, kind, added, removed }` with `kind` one of A, M (the default), D, R. Pressing a row
+/// fires `atelier:open-file` with `{ index, path }`. `actions` go at the header's end.
+export function changedFiles(root, { title = "Changed files", files = [], actions = [] } = {}) {
+  root.className = "at-changes";
+  root.replaceChildren();
+  const lines = (added, removed) => {
+    const counts = element("span", "at-changes__lines");
+    counts.append(element("span", "", `+${added}`), element("span", "", `−${removed}`));
+    return counts;
+  };
+  const total = files.reduce((sum, file) => [sum[0] + (file.added || 0), sum[1] + (file.removed || 0)], [0, 0]);
+  const header = element("div", "at-changes__header");
+  header.append(
+    element("span", "at-changes__title", title),
+    element("span", "at-changes__count", String(files.length)),
+    lines(...total),
+    ...actions,
+  );
+  root.append(header);
+  files.forEach((file, index) => {
+    const row = element("button", "at-change");
+    row.type = "button";
+    row.dataset.kind = file.kind || "M";
+    const path = file.path.replace(/\/+$/, "");
+    const at = path.lastIndexOf("/");
+    const name = element("span", "at-change__path");
+    name.append(element("span", "at-change__name", path.slice(at + 1)), element("span", "at-change__folder", at < 0 ? "" : path.slice(0, at)));
+    row.append(name, lines(file.added || 0, file.removed || 0));
+    row.title = path;
+    row.addEventListener("click", () =>
+      root.dispatchEvent(new CustomEvent("atelier:open-file", { bubbles: true, detail: { index, path } })),
+    );
+    root.append(row);
+  });
+  return root;
 }
