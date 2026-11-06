@@ -107,12 +107,49 @@ impl Category {
 /// A node parameter, drawn as a widget row in the node and as a control in the inspector.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Param {
-    /// A number shown as a filled bar: its position in the range and its formatted value.
-    Number(f32, &'static str),
+    /// A number shown as a filled bar: its position in the range, from 0 to 1, and its unit.
+    Number(f32, Unit),
     /// One of a few options.
     Choice(&'static [&'static str], usize),
     /// Free text, such as a prompt.
     Text(&'static str),
+}
+
+/// How a number parameter maps its position, from 0 to 1, to the value it shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unit {
+    Bpm,
+    Duration,
+    Batch,
+    Seed,
+    Steps,
+    Guidance,
+    Lufs,
+    TruePeak,
+    Percent,
+}
+
+impl Unit {
+    fn readout(self, value: f32) -> SharedString {
+        match self {
+            Unit::Bpm => format!("{:.0} BPM", value * 200.),
+            Unit::Duration => {
+                let seconds = (value * 128.).round() as u32;
+                format!("{}:{:02}", seconds / 60, seconds % 60)
+            }
+            Unit::Batch => format!("{:.0}", 1. + (value * 4.).round()),
+            Unit::Seed => {
+                let seed = (value * 1_004_402.).round() as u32;
+                format!("{} {:03}", seed / 1000, seed % 1000)
+            }
+            Unit::Steps => format!("{:.0}", value * 100.),
+            Unit::Guidance => format!("{:.1}", value * 10.),
+            Unit::Lufs => format!("{:.0} LUFS", value * 35. - 35.).replace('-', "−"),
+            Unit::TruePeak => format!("{:.1} dBTP", value * 5. - 5.).replace('-', "−"),
+            Unit::Percent => format!("{:.0} %", value * 100.),
+        }
+        .into()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -197,7 +234,7 @@ impl Kind {
                 inputs: &[],
                 outputs: &[("Tempo", Value), ("Key", Value)],
                 params: &[
-                    ("Tempo", Param::Number(0.42, "84 BPM")),
+                    ("Tempo", Param::Number(0.42, Unit::Bpm)),
                     ("Key", Param::Choice(&["D minor", "F major", "A minor"], 0)),
                 ],
                 work: 1,
@@ -208,8 +245,8 @@ impl Kind {
                 inputs: &[("Tempo", Value)],
                 outputs: &[("Latent", Latent)],
                 params: &[
-                    ("Length", Param::Number(0.25, "0:32")),
-                    ("Batch", Param::Number(0.25, "2")),
+                    ("Length", Param::Number(0.25, Unit::Duration)),
+                    ("Batch", Param::Number(0.25, Unit::Batch)),
                 ],
                 work: 1,
             },
@@ -224,9 +261,9 @@ impl Kind {
                 ],
                 outputs: &[("Latent", Latent)],
                 params: &[
-                    ("Seed", Param::Number(0.48, "482 113")),
-                    ("Steps", Param::Number(0.3, "30")),
-                    ("Guidance", Param::Number(0.45, "4.5")),
+                    ("Seed", Param::Number(0.48, Unit::Seed)),
+                    ("Steps", Param::Number(0.3, Unit::Steps)),
+                    ("Guidance", Param::Number(0.45, Unit::Guidance)),
                     ("Sampler", Param::Choice(&["Euler", "DPM++ 2M", "DDIM"], 1)),
                 ],
                 work: 30,
@@ -245,8 +282,8 @@ impl Kind {
                 inputs: &[("Audio", Audio)],
                 outputs: &[("Audio", Audio)],
                 params: &[
-                    ("Target", Param::Number(0.6, "−14 LUFS")),
-                    ("True peak", Param::Number(0.8, "−1.0 dBTP")),
+                    ("Target", Param::Number(0.6, Unit::Lufs)),
+                    ("True peak", Param::Number(0.8, Unit::TruePeak)),
                 ],
                 work: 3,
             },
@@ -256,8 +293,8 @@ impl Kind {
                 inputs: &[("Audio", Audio)],
                 outputs: &[("Audio", Audio)],
                 params: &[
-                    ("Size", Param::Number(0.7, "70 %")),
-                    ("Mix", Param::Number(0.25, "25 %")),
+                    ("Size", Param::Number(0.7, Unit::Percent)),
+                    ("Mix", Param::Number(0.25, Unit::Percent)),
                 ],
                 work: 4,
             },
@@ -943,7 +980,7 @@ impl NodeEditor {
             .bg(theme.colors.sunken)
             .overflow_hidden();
         match param {
-            Param::Number(value, readout) => well
+            Param::Number(value, unit) => well
                 .h(row)
                 .flex()
                 .items_center()
@@ -963,7 +1000,11 @@ impl NodeEditor {
                         .size(TextSize::XSmall)
                         .color(TextColor::Muted),
                 )
-                .child(Label::new(readout).size(TextSize::XSmall).mono()),
+                .child(
+                    Label::new(unit.readout(value))
+                        .size(TextSize::XSmall)
+                        .mono(),
+                ),
             Param::Choice(options, selected) => well
                 .h(row)
                 .flex()
@@ -1462,9 +1503,19 @@ impl NodeEditor {
                     .iter()
                     .enumerate()
                     .map(|(index, (name, param))| match *param {
-                        Param::Number(value, readout) => Slider::new(value)
+                        Param::Number(value, unit) => Slider::new(value)
+                            .id(("param", id * 16 + index))
                             .label(*name)
-                            .readout(readout)
+                            .readout(unit.readout(value))
+                            .on_change(cx.listener(move |this, value: &f32, _, cx| {
+                                if let Some(node) = this.node_mut(id)
+                                    && let Param::Number(_, unit) = node.params[index].1
+                                {
+                                    node.params[index].1 = Param::Number(*value, unit);
+                                }
+                                this.mark_dirty(id);
+                                cx.notify();
+                            }))
                             .into_any_element(),
                         Param::Choice(options, selected) => div()
                             .flex()

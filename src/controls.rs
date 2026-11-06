@@ -1,19 +1,35 @@
 //! Value controls: switches, checkboxes, segmented controls, sliders and knobs.
 //!
-//! These are presentational: they draw a value and report clicks. Dragging, keyboard stepping
-//! and value mapping stay with the application, which already owns the value and its undo.
+//! Every one of them works as it is dropped in: the user can click, drag, Tab to and step it,
+//! and it moves. How the application hears about it is up to the application:
+//!
+//! - **Store the value.** Pass the value the application keeps and a handler that stores the
+//!   new one (`on_change`, or `on_select` on a [`SegmentedControl`]). The control then shows
+//!   only what it is given, so the application can clamp, undo or ignore a change.
+//! - **Leave it to the control.** With no handler, the control keeps the value it was moved to
+//!   for itself, starting from the one it was built with, and takes the application's value
+//!   again whenever that changes. Good for a mock-up, a demo, or a setting nobody reads yet.
+//!
+//! Either way the control needs an id that stays the same between frames. A [`Slider`] or a
+//! [`Knob`] built without [`Slider::id`] only shows its value, like a meter; `disabled(true)`
+//! greys any of them out and leaves them unmoved.
 
 use std::f32::consts::PI;
+use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Div, ElementId, Hsla, InteractiveElement, Interactivity,
-    IntoElement, ParentElement, PathBuilder, Pixels, RenderOnce, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Window, canvas, div, fill, point,
-    prelude::FluentBuilder, px, relative, size,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    PathBuilder, Pixels, Point, RenderOnce, SharedString, Stateful, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, canvas, div, fill, point, prelude::FluentBuilder, px,
+    relative, size,
 };
 
 use crate::button::ControlSize;
-use crate::focus::{focusable, selector};
+use crate::focus::{
+    CONTROL_CONTEXT, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT, focusable,
+    selector,
+};
 use crate::icon::{Icon, IconName, IconSource};
 use crate::motion::{lerp, transition};
 use crate::text::{Label, TextColor, TextSize};
@@ -29,7 +45,28 @@ pub(crate) fn on_fill(theme: &Theme) -> Hsla {
     }
 }
 
-/// An on/off switch, drawn as a track and a thumb.
+/// The state a [`Switch`] or [`Checkbox`] draws and the handler its click runs: the
+/// application's, or one that flips the state the control keeps for itself.
+fn toggle(
+    id: &ElementId,
+    on: bool,
+    on_click: Option<ClickHandler>,
+    disabled: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> (bool, Option<ClickHandler>) {
+    if on_click.is_some() || disabled {
+        return (on, on_click);
+    }
+    let (on, set) = held(id, on, window, cx);
+    (
+        on,
+        Some(Box::new(move |_, window, cx| set(&!on, window, cx))),
+    )
+}
+
+/// An on/off switch, drawn as a track and a thumb. Without a handler it flips by itself; see
+/// the [module notes](self).
 #[derive(IntoElement)]
 pub struct Switch {
     id: ElementId,
@@ -81,7 +118,16 @@ impl Switch {
 }
 
 impl RenderOnce for Switch {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (on, on_click) = toggle(
+            &self.id,
+            self.on,
+            self.on_click.take(),
+            self.disabled,
+            window,
+            cx,
+        );
+        self.on = on;
         let theme = cx.theme().clone();
         let height = (theme.density.control_sm - px(2.)).max(px(18.));
         let width = height * 1.75;
@@ -160,14 +206,14 @@ impl RenderOnce for Switch {
         if self.disabled {
             return row.opacity(0.45);
         }
-        if let Some(handler) = self.on_click {
+        if let Some(handler) = on_click {
             row = row.on_click(handler);
         }
         row
     }
 }
 
-/// A checkbox, with an optional label.
+/// A checkbox, with an optional label. Without a handler it flips by itself.
 #[derive(IntoElement)]
 pub struct Checkbox {
     id: ElementId,
@@ -219,7 +265,16 @@ impl Checkbox {
 }
 
 impl RenderOnce for Checkbox {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (checked, on_click) = toggle(
+            &self.id,
+            self.checked,
+            self.on_click.take(),
+            self.disabled,
+            window,
+            cx,
+        );
+        self.checked = checked;
         let theme = cx.theme().clone();
         let fill_color = on_fill(&theme);
         let mark = theme.text_on(fill_color);
@@ -270,7 +325,7 @@ impl RenderOnce for Checkbox {
         if self.disabled {
             return row.opacity(0.45);
         }
-        if let Some(handler) = self.on_click {
+        if let Some(handler) = on_click {
             row = row.on_click(handler);
         }
         row
@@ -307,9 +362,10 @@ impl Segment {
     }
 }
 
-type SelectHandler = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
+type SelectHandler = Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>;
 
-/// Mutually exclusive choices drawn as one control, the way macOS draws them.
+/// Mutually exclusive choices drawn as one control, the way macOS draws them. Without
+/// [`SegmentedControl::on_select`] it keeps the choice the user makes for itself.
 #[derive(IntoElement)]
 pub struct SegmentedControl {
     id: ElementId,
@@ -344,13 +400,17 @@ impl SegmentedControl {
     /// Called with the index of the segment clicked or pressed with Enter or Space. Each segment
     /// is a tab stop.
     pub fn on_select(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
-        self.on_select = Some(std::rc::Rc::new(handler));
+        self.on_select = Some(Rc::new(handler));
         self
     }
 }
 
 impl RenderOnce for SegmentedControl {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (selected_index, on_select) = match self.on_select {
+            Some(handler) => (self.selected, handler),
+            None => held(&self.id, self.selected, window, cx),
+        };
         let theme = cx.theme().clone();
         let theme = &theme;
         let height = self.size.height(theme);
@@ -371,7 +431,7 @@ impl RenderOnce for SegmentedControl {
             .children({
                 let mut items = Vec::new();
                 for (index, segment) in self.segments.into_iter().enumerate() {
-                    let selected = index == self.selected;
+                    let selected = index == selected_index;
                     let selected_fill = mix(
                         theme.colors.elevated,
                         theme.colors.text,
@@ -417,9 +477,8 @@ impl RenderOnce for SegmentedControl {
                         let hover = theme.colors.hover;
                         item = item.hover(move |style| style.bg(hover));
                     }
-                    if let Some(handler) = self.on_select.clone() {
-                        item = item.on_click(move |_, window, cx| handler(&index, window, cx));
-                    }
+                    let handler = on_select.clone();
+                    item = item.on_click(move |_, window, cx| handler(&index, window, cx));
                     // The chosen segment's fill fades in as the old one's fades out.
                     items.push(transition(
                         item,
@@ -439,13 +498,326 @@ impl RenderOnce for SegmentedControl {
     }
 }
 
-/// A horizontal slider showing a normalised value from 0 to 1.
+/// A change to a value control's value, from 0 to 1.
+pub(crate) type ValueHandler = Rc<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
+type Formatter = Rc<dyn Fn(f32) -> SharedString + 'static>;
+
+/// Where a control's new value goes.
+pub(crate) type Setter<T> = Rc<dyn Fn(&T, &mut Window, &mut App) + 'static>;
+
+/// The value a control keeps for itself while the application gives it no handler. It starts at
+/// the value the control was built with and follows that value whenever the application changes
+/// it; in between it keeps whatever the user set.
+struct Held<T> {
+    given: T,
+    value: T,
+}
+
+/// The value to draw and where a change goes, for a control the application does not listen to:
+/// state kept under `id` between frames, so the control still moves when it is used.
+pub(crate) fn held<T: Clone + PartialEq + 'static>(
+    id: &ElementId,
+    given: T,
+    window: &mut Window,
+    cx: &mut App,
+) -> (T, Setter<T>) {
+    let state = window.use_keyed_state(
+        ElementId::NamedChild(Box::new(id.clone()), "held".into()),
+        cx,
+        {
+            let given = given.clone();
+            move |_, _| Held {
+                given: given.clone(),
+                value: given,
+            }
+        },
+    );
+    let value = state.update(cx, |held, _| {
+        if held.given != given {
+            held.given = given.clone();
+            held.value = given;
+        }
+        held.value.clone()
+    });
+    let set = Rc::new(move |value: &T, _: &mut Window, cx: &mut App| {
+        state.update(cx, |held, cx| {
+            held.value = value.clone();
+            cx.notify();
+        })
+    });
+    (value, set)
+}
+
+/// How the pointer moves a value control.
+#[derive(Clone, Copy)]
+enum Gesture {
+    /// The value is where the pointer is along the control, `inset` in from either end: a click
+    /// jumps there and a drag follows.
+    Along { inset: Pixels },
+    /// A drag up or to the right turns the value up from where it was, [`TURN_TRAVEL`] pixels for
+    /// the whole range; a click alone changes nothing.
+    Turn,
+}
+
+/// Pixels of drag that turn a knob through its whole range.
+const TURN_TRAVEL: f32 = 200.;
+
+/// Where a value control was last drawn and the drag in progress on it.
+#[derive(Default)]
+struct Drag {
+    bounds: Bounds<Pixels>,
+    dragging: bool,
+    from: Point<Pixels>,
+    from_value: f32,
+}
+
+/// The live parts of a [`Slider`] or [`Knob`].
+struct Live {
+    id: ElementId,
+    value: f32,
+    step: f32,
+    reset: Option<f32>,
+    set: ValueHandler,
+}
+
+/// Make `element`, already a tab stop, move a value from 0 to 1: the pointer per `gesture`, a
+/// double click back to `reset`, and the arrow keys, Home and End once Tab has reached it.
+fn value_control(
+    element: Stateful<Div>,
+    live: Live,
+    gesture: Gesture,
+    window: &mut Window,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let Live {
+        id,
+        value,
+        step,
+        reset,
+        set,
+    } = live;
+    let state = window.use_keyed_state(
+        ElementId::NamedChild(Box::new(id), "drag".into()),
+        cx,
+        |_, _| Drag::default(),
+    );
+    let dragging = state.read(cx).dragging;
+    let at = move |drag: &Drag, position: Point<Pixels>| -> f32 {
+        match gesture {
+            Gesture::Along { inset } => {
+                let span = (drag.bounds.size.width - inset * 2.).max(px(1.));
+                f32::from(position.x - drag.bounds.left() - inset) / f32::from(span)
+            }
+            Gesture::Turn => {
+                let moved =
+                    f32::from(position.x - drag.from.x) - f32::from(position.y - drag.from.y);
+                drag.from_value + moved / TURN_TRAVEL
+            }
+        }
+        .clamp(0., 1.)
+    };
+    let step_to = |to: f32| {
+        let set = set.clone();
+        move |window: &mut Window, cx: &mut App| set(&to.clamp(0., 1.), window, cx)
+    };
+    let (back, forward, start, end) = (
+        step_to(value - step),
+        step_to(value + step),
+        step_to(0.),
+        step_to(1.),
+    );
+    element
+        .key_context(format!("{CONTROL_CONTEXT} {TRACK_CONTEXT}").as_str())
+        .on_action(move |_: &StepBackward, window, cx| back(window, cx))
+        .on_action(move |_: &StepForward, window, cx| forward(window, cx))
+        .on_action(move |_: &StepToStart, window, cx| start(window, cx))
+        .on_action(move |_: &StepToEnd, window, cx| end(window, cx))
+        .on_mouse_down(MouseButton::Left, {
+            let (state, set) = (state.clone(), set.clone());
+            move |event: &MouseDownEvent, window, cx| {
+                if event.click_count == 2 {
+                    if let Some(reset) = reset {
+                        set(&reset, window, cx);
+                    }
+                    return;
+                }
+                let next = state.update(cx, |drag, cx| {
+                    drag.dragging = true;
+                    drag.from = event.position;
+                    drag.from_value = value;
+                    cx.notify();
+                    at(drag, event.position)
+                });
+                if matches!(gesture, Gesture::Along { .. }) {
+                    set(&next, window, cx);
+                }
+            }
+        })
+        .child(
+            canvas(
+                {
+                    let state = state.clone();
+                    move |bounds, _, cx| state.update(cx, |drag, _| drag.bounds = bounds)
+                },
+                move |_, _, window, _| {
+                    if !dragging {
+                        return;
+                    }
+                    // Follow the pointer anywhere in the window until the button comes up.
+                    window.on_mouse_event({
+                        let state = state.clone();
+                        move |event: &MouseMoveEvent, phase, window, cx| {
+                            if phase.bubble() && event.pressed_button == Some(MouseButton::Left) {
+                                let next = at(state.read(cx), event.position);
+                                set(&next, window, cx);
+                            }
+                        }
+                    });
+                    window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
+                        if phase.bubble() {
+                            state.update(cx, |drag, cx| {
+                                drag.dragging = false;
+                                cx.notify();
+                            });
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
+        )
+}
+
+/// The builder state [`Slider`] and [`Knob`] share.
+#[derive(Default)]
+struct ValueParts {
+    id: Option<ElementId>,
+    label: Option<SharedString>,
+    readout: Option<SharedString>,
+    readout_with: Option<Formatter>,
+    bipolar: bool,
+    step: Option<f32>,
+    reset: Option<f32>,
+    disabled: bool,
+    on_change: Option<ValueHandler>,
+}
+
+impl ValueParts {
+    /// The value to draw, the readout to show under or beside it, and the live parts, if the
+    /// control has an id and is not disabled.
+    fn resolve(
+        &mut self,
+        value: f32,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (f32, Option<SharedString>, Option<Live>) {
+        let live = match (&self.id, self.disabled) {
+            (Some(id), false) => {
+                let (value, set) = match self.on_change.take() {
+                    Some(handler) => (value, handler),
+                    None => held(id, value, window, cx),
+                };
+                Some(Live {
+                    id: id.clone(),
+                    value,
+                    step: self.step.unwrap_or(0.01),
+                    reset: self.reset.or(self.bipolar.then_some(0.5)),
+                    set,
+                })
+            }
+            _ => None,
+        };
+        let value = live.as_ref().map_or(value, |live| live.value);
+        let readout = match &self.readout_with {
+            Some(format) => Some(format(value)),
+            None => self.readout.take(),
+        };
+        (value, readout, live)
+    }
+}
+
+/// Builders a [`Slider`] and a [`Knob`] share.
+macro_rules! value_builders {
+    ($name:ident) => {
+        impl $name {
+            /// Make it a control the user moves, keeping `id` between frames: a drag, the arrow
+            /// keys, Home and End, and a double click back to [`Self::default_value`]. Without
+            /// [`Self::on_change`] it keeps the value it is moved to for itself, starting from the
+            /// one it was built with; it takes that one again whenever the application passes a
+            /// different one. Without an id it only shows its value.
+            pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+                self.parts.id = Some(id.into());
+                self
+            }
+
+            /// Called with the new value, from 0 to 1, as the user moves it: store it and pass
+            /// it back on the next render. The control then shows only the value it is given.
+            /// Needs [`Self::id`].
+            pub fn on_change(
+                mut self,
+                handler: impl Fn(&f32, &mut Window, &mut App) + 'static,
+            ) -> Self {
+                self.parts.on_change = Some(Rc::new(handler));
+                self
+            }
+
+            /// Formatted value, for example "-6.0 dB". Prefer [`Self::readout_with`] for a live
+            /// control, so the readout follows the value as it moves.
+            pub fn readout(mut self, readout: impl Into<SharedString>) -> Self {
+                self.parts.readout = Some(readout.into());
+                self
+            }
+
+            /// Format the value shown, from 0 to 1, into the readout.
+            pub fn readout_with(mut self, format: impl Fn(f32) -> SharedString + 'static) -> Self {
+                self.parts.readout_with = Some(Rc::new(format));
+                self
+            }
+
+            /// How far one arrow key moves the value; 0.01 by default.
+            pub fn step(mut self, step: f32) -> Self {
+                self.parts.step = Some(step);
+                self
+            }
+
+            /// The value a double click returns to; the centre for a bipolar control, and none
+            /// otherwise.
+            pub fn default_value(mut self, value: f32) -> Self {
+                self.parts.reset = Some(value.clamp(0., 1.));
+                self
+            }
+
+            /// Greyed out, out of the Tab order and unmoved by the pointer.
+            pub fn disabled(mut self, disabled: bool) -> Self {
+                self.parts.disabled = disabled;
+                self
+            }
+        }
+    };
+}
+
+/// A horizontal slider over a value from 0 to 1.
+///
+/// Give it an [`id`](Slider::id) and the user can move it: a click or drag along the track, the
+/// arrow keys, Home and End once Tab reaches it, and a double click back to its default. Listen
+/// with [`on_change`](Slider::on_change) and store the value, or leave it to keep its own:
+///
+/// ```ignore
+/// Slider::new(self.volume)
+///     .id("volume")
+///     .label("Volume")
+///     .readout_with(|value| format!("{:.1} dB", (value - 1.) * 24.).into())
+///     .on_change(cx.listener(|this, value: &f32, _, cx| {
+///         this.volume = *value;
+///         cx.notify();
+///     }))
+/// ```
 #[derive(IntoElement)]
 pub struct Slider {
     value: f32,
-    label: Option<SharedString>,
-    readout: Option<SharedString>,
-    bipolar: bool,
+    parts: ValueParts,
 }
 
 impl Slider {
@@ -453,97 +825,108 @@ impl Slider {
     pub fn new(value: f32) -> Self {
         Self {
             value: value.clamp(0., 1.),
-            label: None,
-            readout: None,
-            bipolar: false,
+            parts: ValueParts::default(),
         }
     }
 
     /// Caption to the left.
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
+        self.parts.label = Some(label.into());
         self
     }
 
-    /// Formatted value to the right, for example "-6.0 dB".
-    pub fn readout(mut self, readout: impl Into<SharedString>) -> Self {
-        self.readout = Some(readout.into());
-        self
-    }
-
-    /// Fill from the centre, for pan and other signed values.
+    /// Fill from the centre, for pan and other signed values. A double click returns it there.
     pub fn bipolar(mut self) -> Self {
-        self.bipolar = true;
+        self.parts.bipolar = true;
         self
     }
 }
 
+value_builders!(Slider);
+
 impl RenderOnce for Slider {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (value, readout, live) = self.parts.resolve(self.value, window, cx);
+        let theme = cx.theme().clone();
         let track_height = px(4.);
         let thumb = px(14.);
-        let (start, end) = if self.bipolar {
-            (self.value.min(0.5), self.value.max(0.5))
+        let (start, end) = if self.parts.bipolar {
+            (value.min(0.5), value.max(0.5))
         } else {
-            (0., self.value)
+            (0., value)
+        };
+        let track = div()
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .h(thumb)
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top((thumb - track_height) / 2.)
+                    .h(track_height)
+                    .rounded(track_height / 2.)
+                    .bg(theme.colors.sunken)
+                    .border_1()
+                    .border_color(theme.colors.border),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(relative(start))
+                    .w(relative(end - start))
+                    .top((thumb - track_height) / 2.)
+                    .h(track_height)
+                    .rounded(track_height / 2.)
+                    .bg(on_fill(&theme)),
+            )
+            // The thumb's left edge sits at value × (width − thumb), so it never overhangs.
+            .child(
+                div()
+                    .absolute()
+                    .left(relative(value))
+                    .ml(-thumb * value)
+                    .top_0()
+                    .size(thumb)
+                    .rounded(thumb / 2.)
+                    .bg(gpui::white())
+                    .border_1()
+                    .border_color(gpui::black().opacity(0.12))
+                    .shadow(theme.elevation.medium.clone()),
+            );
+        let track = match live {
+            Some(live) => {
+                let id = live.id.clone();
+                let element = focusable(track.id(id.clone()), &id, false, thumb / 2., window, cx)
+                    .cursor_pointer();
+                value_control(
+                    element,
+                    live,
+                    Gesture::Along { inset: thumb / 2. },
+                    window,
+                    cx,
+                )
+                .into_any_element()
+            }
+            None => track.into_any_element(),
         };
         div()
             .flex()
             .items_center()
             .gap(px(10.))
             .w_full()
-            .children(self.label.map(|label| {
+            .when(self.parts.disabled, |row| row.opacity(0.45))
+            .children(self.parts.label.take().map(|label| {
                 div().w(px(64.)).flex_none().child(
                     Label::new(label)
                         .size(TextSize::Small)
                         .color(TextColor::Muted),
                 )
             }))
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .min_w_0()
-                    .h(thumb)
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .top((thumb - track_height) / 2.)
-                            .h(track_height)
-                            .rounded(track_height / 2.)
-                            .bg(theme.colors.sunken)
-                            .border_1()
-                            .border_color(theme.colors.border),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .left(relative(start))
-                            .w(relative(end - start))
-                            .top((thumb - track_height) / 2.)
-                            .h(track_height)
-                            .rounded(track_height / 2.)
-                            .bg(on_fill(theme)),
-                    )
-                    // The thumb's left edge sits at value × (width − thumb), so it never overhangs.
-                    .child(
-                        div()
-                            .absolute()
-                            .left(relative(self.value))
-                            .ml(-thumb * self.value)
-                            .top_0()
-                            .size(thumb)
-                            .rounded(thumb / 2.)
-                            .bg(gpui::white())
-                            .border_1()
-                            .border_color(gpui::black().opacity(0.12))
-                            .shadow(theme.elevation.medium.clone()),
-                    ),
-            )
-            .children(self.readout.map(|readout| {
+            .child(track)
+            .children(readout.map(|readout| {
                 div().w(px(56.)).flex_none().flex().justify_end().child(
                     Label::new(readout)
                         .size(TextSize::Small)
@@ -555,14 +938,27 @@ impl RenderOnce for Slider {
 }
 
 /// A rotary knob, the creator-tool control: a 270° arc, a pointer and a value underneath.
+///
+/// Give it an [`id`](Knob::id) and the user can turn it: a drag up or to the right turns it up,
+/// the arrow keys, Home and End step it once Tab reaches it, and a double click returns it to
+/// its default. Listen with [`on_change`](Knob::on_change), or leave it to keep its own value:
+///
+/// ```ignore
+/// Knob::new(self.drive)
+///     .id("drive")
+///     .label("Drive")
+///     .readout_with(|value| format!("{:.0} %", value * 100.).into())
+///     .on_change(cx.listener(|this, value: &f32, _, cx| {
+///         this.drive = *value;
+///         cx.notify();
+///     }))
+/// ```
 #[derive(IntoElement)]
 pub struct Knob {
     value: f32,
     diameter: Pixels,
-    label: Option<SharedString>,
-    readout: Option<SharedString>,
-    bipolar: bool,
     color: Option<Hsla>,
+    parts: ValueParts,
 }
 
 impl Knob {
@@ -571,10 +967,8 @@ impl Knob {
         Self {
             value: value.clamp(0., 1.),
             diameter: px(40.),
-            label: None,
-            readout: None,
-            bipolar: false,
             color: None,
+            parts: ValueParts::default(),
         }
     }
 
@@ -586,19 +980,13 @@ impl Knob {
 
     /// Name under the knob.
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
+        self.parts.label = Some(label.into());
         self
     }
 
-    /// Formatted value under the name.
-    pub fn readout(mut self, readout: impl Into<SharedString>) -> Self {
-        self.readout = Some(readout.into());
-        self
-    }
-
-    /// Draw the arc from twelve o'clock, for pan and detune.
+    /// Draw the arc from twelve o'clock, for pan and detune. A double click returns it there.
     pub fn bipolar(mut self) -> Self {
-        self.bipolar = true;
+        self.parts.bipolar = true;
         self
     }
 
@@ -608,6 +996,8 @@ impl Knob {
         self
     }
 }
+
+value_builders!(Knob);
 
 /// The knob's sweep: from 7:30 clockwise to 4:30, in radians from +x, y pointing down.
 const SWEEP_START: f32 = 0.75 * PI;
@@ -641,8 +1031,9 @@ pub(crate) fn arc(
 }
 
 impl RenderOnce for Knob {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (value, readout, live) = self.parts.resolve(self.value, window, cx);
+        let theme = cx.theme().clone();
         let diameter = self.diameter;
         let track = theme.colors.sunken;
         let ring = theme.colors.border_strong;
@@ -655,8 +1046,7 @@ impl RenderOnce for Knob {
         );
         let body_edge = theme.colors.border_strong;
         let pointer = theme.colors.text;
-        let value = self.value;
-        let bipolar = self.bipolar;
+        let bipolar = self.parts.bipolar;
 
         let dial = canvas(
             |_, _, _| {},
@@ -711,22 +1101,37 @@ impl RenderOnce for Knob {
             },
         )
         .size(diameter);
+        let dial = match live {
+            Some(live) => {
+                let id = live.id.clone();
+                let element = focusable(
+                    div().id(id.clone()).size(diameter).child(dial),
+                    &id,
+                    false,
+                    diameter / 2.,
+                    window,
+                    cx,
+                )
+                .rounded(diameter / 2.)
+                .cursor_ns_resize();
+                value_control(element, live, Gesture::Turn, window, cx).into_any_element()
+            }
+            None => dial.into_any_element(),
+        };
 
         div()
             .flex()
             .flex_col()
             .items_center()
             .gap(px(2.))
+            .when(self.parts.disabled, |knob| knob.opacity(0.45))
             .child(dial)
-            .children(self.label.map(|label| {
+            .children(self.parts.label.take().map(|label| {
                 Label::new(label)
                     .size(TextSize::XSmall)
                     .color(TextColor::Muted)
             }))
-            .children(
-                self.readout
-                    .map(|readout| Label::new(readout).size(TextSize::XSmall).mono()),
-            )
+            .children(readout.map(|readout| Label::new(readout).size(TextSize::XSmall).mono()))
     }
 }
 

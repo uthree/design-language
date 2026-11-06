@@ -136,3 +136,61 @@ pub fn run<V: Themed>(
             cx.activate(true);
         });
 }
+
+/// Readouts for the sample sliders and knobs, from their value of 0 to 1. Demo data: an
+/// application formats its own units.
+pub mod readout {
+    use gpui::SharedString;
+
+    /// "62 %".
+    pub fn percent(value: f32) -> SharedString {
+        format!("{:.0} %", value * 100.).into()
+    }
+
+    /// "0.62".
+    pub fn fraction(value: f32) -> SharedString {
+        format!("{value:.2}").into()
+    }
+
+    /// A fader: 0 dB at three quarters, −∞ at the bottom, +6 dB at the top.
+    pub fn volume_db(value: f32) -> SharedString {
+        if value <= 0.001 {
+            return "−∞ dB".into();
+        }
+        let db = if value >= 0.75 {
+            (value - 0.75) * 24.
+        } else {
+            60. * (value / 0.75).log10()
+        };
+        signed(db, 1, " dB")
+    }
+
+    /// A gain of ±12 dB around the centre.
+    pub fn gain_db(value: f32) -> SharedString {
+        signed((value - 0.5) * 24., 1, "")
+    }
+
+    /// Pan from L 50 through C to R 50.
+    pub fn pan(value: f32) -> SharedString {
+        let amount = ((value - 0.5) * 100.).round() as i32;
+        match amount {
+            0 => "C".into(),
+            amount if amount < 0 => format!("L {}", -amount).into(),
+            amount => format!("R {amount}").into(),
+        }
+    }
+
+    /// `amount` with an explicit sign and a true minus, to `decimals` places.
+    pub fn signed(amount: f32, decimals: usize, unit: &str) -> SharedString {
+        let scale = 10f32.powi(decimals as i32);
+        let amount = (amount * scale).round() / scale;
+        let sign = if amount > 0. {
+            "+"
+        } else if amount < 0. {
+            "−"
+        } else {
+            ""
+        };
+        format!("{sign}{:.decimals$}{unit}", amount.abs()).into()
+    }
+}

@@ -24,6 +24,7 @@ use atelier::{
     TextField, TextSize, TitleBar, Tone, WindowFrame, menu_separator,
 };
 use common::Themed;
+use common::readout::{pan, percent, signed, volume_db};
 use gpui::{
     AnyElement, Context, IntoElement, ParentElement, Pixels, Render, Styled, Window, deferred, div,
     prelude::*, px,
@@ -836,14 +837,42 @@ impl Legend {
             Sample::Slider => column()
                 .w_full()
                 .gap(theme.spacing.md)
-                .child(Slider::new(0.72).label("音量").readout("-3.2 dB"))
-                .child(Slider::new(0.4).bipolar().label("パン").readout("L20"))
+                .child(
+                    Slider::new(0.72)
+                        .id("legend-volume")
+                        .label("音量")
+                        .default_value(0.75)
+                        .readout_with(volume_db),
+                )
+                .child(
+                    Slider::new(0.4)
+                        .id("legend-pan")
+                        .bipolar()
+                        .label("パン")
+                        .readout_with(pan),
+                )
                 .into_any_element(),
             Sample::Knobs => line()
                 .gap(theme.spacing.lg)
-                .child(Knob::new(0.8).label("ドライブ").readout("80 %"))
-                .child(Knob::new(0.35).label("トーン").readout("2.4k"))
-                .child(Knob::new(0.62).bipolar().label("チューン").readout("+12"))
+                .child(
+                    Knob::new(0.8)
+                        .id("legend-drive")
+                        .label("ドライブ")
+                        .readout_with(percent),
+                )
+                .child(
+                    Knob::new(0.35)
+                        .id("legend-tone")
+                        .label("トーン")
+                        .readout_with(|value| format!("{:.1}k", 0.2 + value * 6.).into()),
+                )
+                .child(
+                    Knob::new(0.62)
+                        .id("legend-tune")
+                        .bipolar()
+                        .label("チューン")
+                        .readout_with(|value| signed((value - 0.5) * 100., 0, "")),
+                )
                 .into_any_element(),
             Sample::Number => div()
                 .w(px(180.))

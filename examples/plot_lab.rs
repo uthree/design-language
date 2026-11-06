@@ -23,6 +23,7 @@ use atelier::{
     TextColor, TextSize, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
+use common::readout::fraction;
 use gpui::{
     App, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
     prelude::*, px,
@@ -885,15 +886,35 @@ impl PlotLab {
                         div()
                             .flex()
                             .gap(theme.spacing.lg)
-                            .child(Knob::new(0.5).label("f₀").readout("1.00 Hz"))
-                            .child(Knob::new(0.15).label("ζ").readout("0.15"))
-                            .child(Knob::new(0.4).label("x₀").readout("1.0 m")),
+                            .child(
+                                Knob::new(0.5)
+                                    .id("f0")
+                                    .label("f₀")
+                                    .readout_with(|value| format!("{:.2} Hz", value * 2.).into()),
+                            )
+                            .child(Knob::new(0.15).id("zeta").label("ζ").readout_with(fraction))
+                            .child(
+                                Knob::new(0.4)
+                                    .id("x0")
+                                    .label("x₀")
+                                    .readout_with(|value| format!("{:.1} m", value * 2.5).into()),
+                            ),
                     ),
                 )
                 .child(
                     group("Gas")
-                        .child(Slider::new(0.3).label("T").readout("300 K"))
-                        .child(Slider::new(0.28).label("m").readout("28 u")),
+                        .child(
+                            Slider::new(0.3)
+                                .id("temperature")
+                                .label("T")
+                                .readout_with(|value| format!("{:.0} K", value * 1000.).into()),
+                        )
+                        .child(
+                            Slider::new(0.28)
+                                .id("mass")
+                                .label("m")
+                                .readout_with(|value| format!("{:.0} u", value * 100.).into()),
+                        ),
                 );
         }
         let view = VIEWS
@@ -920,14 +941,27 @@ impl PlotLab {
                         )),
                     )
                     .child(
+                        // These two store their value: the plot turns with them.
                         Slider::new((self.azimuth + 180.) / 360.)
+                            .id("azimuth")
                             .label("Azimuth")
-                            .readout(format!("{:.1}°", self.azimuth).replace('-', "−")),
+                            .step(1. / 72.)
+                            .readout(format!("{:.1}°", self.azimuth).replace('-', "−"))
+                            .on_change(cx.listener(|this, value: &f32, _, cx| {
+                                this.azimuth = value * 360. - 180.;
+                                cx.notify();
+                            })),
                     )
                     .child(
                         Slider::new((self.elevation + 90.) / 180.)
+                            .id("elevation")
                             .label("Elevation")
-                            .readout(format!("{:.1}°", self.elevation).replace('-', "−")),
+                            .step(1. / 36.)
+                            .readout(format!("{:.1}°", self.elevation).replace('-', "−"))
+                            .on_change(cx.listener(|this, value: &f32, _, cx| {
+                                this.elevation = value * 180. - 90.;
+                                cx.notify();
+                            })),
                     )
                     .child(
                         Switch::new("spin", self.spin)

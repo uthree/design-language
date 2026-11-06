@@ -9,6 +9,7 @@ use gpui::{
 };
 
 use crate::button::{Button, ButtonVariant, ControlSize};
+use crate::controls::held;
 use crate::display::Spinner;
 use crate::focus::{
     CONTROL_CONTEXT, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT, focusable,
@@ -36,6 +37,9 @@ const VOLUME_STEP: f32 = 0.05;
 /// [`AudioPlayer::seek_step`]), Home and End; the volume does the same with
 /// [`AudioPlayer::on_volume`]. The player only reports where the person asked to go: the position
 /// belongs to the playback clock, so the application seeks and draws the next position itself.
+///
+/// A player given no handlers keeps its own state instead, so it can be dropped into a mock-up
+/// and still be used: Play turns to Pause, the scrubber and the volume move, and Mute mutes.
 ///
 /// The length may change while it plays — a draft that is still being written — since the
 /// player is drawn afresh from the position and the times each frame.
@@ -161,12 +165,47 @@ impl AudioPlayer {
     }
 }
 
+impl AudioPlayer {
+    /// Give every part the application does not listen to state of its own, so that a player
+    /// dropped in without handlers still plays, seeks, turns up and mutes when it is used.
+    fn hold_unheard(&mut self, window: &mut Window, cx: &mut App) {
+        let id = self.id.clone();
+        let part = |name: &'static str| ElementId::NamedChild(Box::new(id.clone()), name.into());
+        if self.on_play.is_none() {
+            let (playing, set) = held(&part("playing"), self.playing, window, cx);
+            self.playing = playing;
+            self.on_play = Some(Box::new(move |_, window, cx| set(&!playing, window, cx)));
+        }
+        if self.on_seek.is_none() {
+            let (position, set) = held(&part("position"), self.position, window, cx);
+            self.position = position;
+            self.on_seek = Some(set);
+        }
+        let Some(volume) = self.volume else {
+            return;
+        };
+        if self.on_volume.is_none() {
+            let (volume, set) = held(&part("level"), volume, window, cx);
+            self.volume = Some(volume);
+            self.on_volume = Some(set);
+        }
+        if self.on_mute.is_none() {
+            let (muted, set) = held(&part("muted"), self.muted, window, cx);
+            self.muted = muted;
+            self.on_mute = Some(Box::new(move |_, window, cx| set(&!muted, window, cx)));
+        }
+    }
+}
+
 impl RenderOnce for AudioPlayer {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let waiting = self.disabled || self.loading;
+        if !waiting {
+            self.hold_unheard(window, cx);
+        }
         let theme = cx.theme().clone();
         let colors = &theme.colors;
         let height = theme.density.control_lg;
-        let waiting = self.disabled || self.loading;
         let play = if self.loading {
             div()
                 .flex()
