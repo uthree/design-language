@@ -111,7 +111,7 @@ pub fn init(cx: &mut gpui::App, theme: Theme) {
 pub mod prelude {
     pub use crate::{
         ActiveStrings, ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card,
-        Checkbox, ControlSize, Direction, Divider, EmptyState, FormField, FormGroup, Icon,
+        Checkbox, ControlSize, Dialog, Direction, Divider, EmptyState, FormField, FormGroup, Icon,
         IconName, Label, ListItem, MenuItem, Popover, SectionHeader, Sidebar, Slider, Spinner,
         StatusBar, Strings, Switch, Tabs, TextColor, TextField, TextSize, Theme, TitleBar, Tone,
         Toolbar, Tooltip, WindowFrame,
