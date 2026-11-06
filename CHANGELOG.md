@@ -7,8 +7,36 @@ dependency to a newer revision, read the sections in between, delete what they l
 over your sources to find what is left. Add the script to the application's CI so new code
 does not bring the old ways back.
 
-Atelier has no tagged releases yet; applications pin a git revision. Each section names the
-merge it shipped in.
+Applications pin a release tag, `vX.Y.Z`, which matches the version in `Cargo.toml` (see
+"Install" in the README). A `## vX.Y.Z` heading marks where a release was tagged: it contains
+every section below it down to the previous one. Sections headed **Unreleased** above the
+newest tag are on `main` but in no release yet; when a release is tagged, the version in
+`Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
+its code bumps the minor version while Atelier is below 1.0.
+
+## v0.3.0 — first tagged release
+
+Everything below, down to the start of this file, ships in v0.3.0. Applications that pinned a
+revision (Auris Studio pins `b584b12`) can move to
+`atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }`; read the
+sections from the one that names their revision upwards.
+
+## Unreleased — usable as a library
+
+### Added
+
+- Release tags. `v0.3.0` is the first; the crate's version is 0.3.0 to match. The README's
+  Install section shows the dependency line, how to upgrade (`cargo update -p atelier`) and how
+  to build against a local checkout with `[patch]`.
+- `atelier::prelude`: `use atelier::prelude::*` brings in the theme and its tokens,
+  `ActiveTheme` and `ActiveStrings`, `Assets` and the everyday components (buttons, labels,
+  icons, form controls, layout, popovers, the window frame). Specialised parts stay in their
+  modules.
+- `atelier::gpui` re-exports the gpui Atelier is built against.
+- Cargo features. `gpu` (default) is the wgpu shading of the liquid metal, ambient backdrops and
+  3-D plots; with `default-features = false` wgpu is not built and they draw on the CPU, as they
+  already did without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders` for Macs
+  without full Xcode.
 
 ## Unreleased — screenshots retaken, knob icon redrawn
 
