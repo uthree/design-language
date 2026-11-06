@@ -60,6 +60,8 @@ jobs:
       - run: cargo clippy --all-targets --locked
       - run: cargo test --locked
       - run: cargo build --examples --locked
+      # Applications may turn the wgpu shading off; the CPU paths must build alone.
+      - run: cargo clippy --lib --no-default-features --locked
 
   app-icon:
     name: App icon action

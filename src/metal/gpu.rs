@@ -4,14 +4,20 @@
 //! Only a hardware adapter is used. Without one, or if anything fails, [`render`] returns `None`
 //! and the backdrop falls back to the CPU.
 
+#[cfg(feature = "gpu")]
 use std::sync::{Mutex, OnceLock};
 
+use super::Studio;
+#[cfg(feature = "gpu")]
 use super::sim::WAVES;
-use super::{DROPS, Studio, drop_shadow, relief};
+#[cfg(feature = "gpu")]
+use super::{DROPS, drop_shadow, relief};
 
 /// Turns of the ripples per cycle of the backdrop.
+#[cfg(feature = "gpu")]
 const RIPPLE_TURNS: f32 = 6.;
 
+#[cfg(feature = "gpu")]
 struct Gpu {
     shared: &'static crate::gpu::Gpu,
     pipeline: wgpu::RenderPipeline,
@@ -21,6 +27,7 @@ struct Gpu {
 }
 
 /// The texture a frame is shaded into, and the buffer it is read back through, for one size.
+#[cfg(feature = "gpu")]
 struct Target {
     width: u32,
     height: u32,
@@ -28,12 +35,14 @@ struct Target {
     readback: wgpu::Buffer,
 }
 
+#[cfg(feature = "gpu")]
 fn gpu() -> Option<&'static Gpu> {
     static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
     GPU.get_or_init(Gpu::new).as_ref()
 }
 
 /// Whether frames can be shaded on the GPU.
+#[cfg(feature = "gpu")]
 pub(super) fn available() -> bool {
     gpu().is_some()
 }
@@ -41,6 +50,7 @@ pub(super) fn available() -> bool {
 /// One frame at `phase` of the cycle, `width` × `height` pixels, BGRA, or `None` if the GPU
 /// couldn't shade it. `drops` are each drop's centre and reach, and `waves` each ripple's centre,
 /// spread and strength, in pixels.
+#[cfg(feature = "gpu")]
 pub(super) fn render(
     width: u32,
     height: u32,
@@ -56,6 +66,25 @@ pub(super) fn render(
     )
 }
 
+/// Without the `gpu` feature there is no device, and every frame is drawn on the CPU.
+#[cfg(not(feature = "gpu"))]
+pub(super) fn available() -> bool {
+    false
+}
+
+#[cfg(not(feature = "gpu"))]
+pub(super) fn render(
+    _: u32,
+    _: u32,
+    _: f32,
+    _: &[(f32, f32, f32)],
+    _: &[[f32; 4]],
+    _: &Studio,
+) -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(feature = "gpu")]
 impl Gpu {
     fn new() -> Option<Self> {
         let shared = crate::gpu::gpu()?;
@@ -193,13 +222,16 @@ impl Gpu {
 }
 
 /// The shader's `Params`, in 4-byte words.
+#[cfg(feature = "gpu")]
 const PARAMS_LEN: usize = 12 + 3 * 4 + 9 * 4 + 16 * 4 + WAVES * 4;
 
 /// A ripple's wavelength and the width of its band, in units of the box's shorter side, and its
 /// height relative to the relief.
+#[cfg(feature = "gpu")]
 const WAVE: (f32, f32, f32) = (0.028, 0.05, 0.009);
 
 /// The shader's `Params` for one frame, laid out as WGSL lays out the struct.
+#[cfg(feature = "gpu")]
 fn params(
     width: u32,
     height: u32,

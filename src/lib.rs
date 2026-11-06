@@ -4,11 +4,28 @@
 //! derived from a [`Direction`] — one of the design candidates — and an [`Appearance`]:
 //!
 //! ```ignore
-//! Application::new().with_assets(atelier::Assets::default()).run(|cx| {
-//!     atelier::init(cx, Theme::new(Direction::Studio, Appearance::Dark));
+//! use atelier::prelude::*;
+//!
+//! Application::new().with_assets(Assets::default()).run(|cx| {
+//!     atelier::init(cx, Theme::new(Direction::Glass, Appearance::Dark));
 //!     // open windows; read the theme with `cx.theme()`
 //! });
 //! ```
+//!
+//! [`prelude`] brings in the theme, the extension traits and the components most windows use;
+//! everything else is at the crate root or in its module ([`agent`], [`viz`], [`plot`],
+//! [`ambient`], [`metal`], [`emoji`], [`motion`]). Atelier re-exports the [`gpui`] it is built
+//! against, so `atelier::gpui` always matches it.
+//!
+//! # Features
+//!
+//! - `gpu` (default): shade the liquid metal, the ambient backdrops and the 3-D plots on the
+//!   crate's own wgpu device. Without it they draw on the CPU, as on a machine with no GPU, and
+//!   wgpu is not built.
+//! - `runtime-shaders`: turn on gpui's `runtime_shaders`, so an application builds on a Mac with
+//!   only the Command Line Tools installed.
+
+pub use gpui;
 
 pub mod agent;
 pub mod ambient;
@@ -81,4 +98,22 @@ pub use window::set_window_background;
 pub fn init(cx: &mut gpui::App, theme: Theme) {
     focus::init(cx);
     theme.install(cx);
+}
+
+/// What most windows built with Atelier use: the theme and its tokens, the extension traits that
+/// read the theme and the words (`cx.theme()`, `cx.strings()`), and the everyday components.
+/// Specialised parts stay in their modules: [`agent`], [`viz`], [`plot`], [`ambient`],
+/// [`metal`], [`emoji`] and [`motion`].
+///
+/// ```ignore
+/// use atelier::prelude::*;
+/// ```
+pub mod prelude {
+    pub use crate::{
+        ActiveStrings, ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card,
+        Checkbox, ControlSize, Direction, Divider, EmptyState, FormField, FormGroup, Icon,
+        IconName, Label, ListItem, MenuItem, Popover, SectionHeader, Sidebar, Slider, Spinner,
+        StatusBar, Strings, Switch, Tabs, TextColor, TextField, TextSize, Theme, TitleBar, Tone,
+        Toolbar, Tooltip, WindowFrame,
+    };
 }

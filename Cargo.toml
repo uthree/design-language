@@ -1,10 +1,24 @@
 [package]
 name = "atelier"
 description = "A design language and component kit for gpui creator tools with built-in AI agent surfaces"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.95"
+repository = "https://github.com/uthree/design-language"
+readme = "README.md"
+keywords = ["gpui", "design-system", "ui", "components", "agent"]
+categories = ["gui"]
+
+# Applications depend on a tagged release from git; see "Install" in README.md.
+[features]
+default = ["gpu"]
+# Shades the liquid metal, the ambient backdrops and the 3-D plots on the crate's own wgpu device.
+# Without it they draw on the CPU, as they do on a machine with no GPU, and wgpu is not built.
+gpu = ["dep:wgpu", "dep:pollster"]
+# Compiles gpui's Metal shaders at start-up, so an application builds on a Mac with only the
+# Command Line Tools installed (no full Xcode). It changes nothing on Windows or Linux.
+runtime-shaders = ["gpui/runtime_shaders"]
 
 # Pinned to the release Auris Studio builds against, so both can share one gpui in a workspace.
 [dependencies]
@@ -17,8 +31,8 @@ image = { version = "0.25", default-features = false }
 # and read them back. wgpu 25 shares naga with gpui's renderer.
 # On Windows, Cargo.lock keeps gpu-allocator on windows 0.58 to match wgpu-hal; if a fresh lock
 # moves it to 0.57 (gpui's sysinfo uses that), `cargo update -p gpu-allocator` puts it back.
-wgpu = "25"
-pollster = "0.4"
+wgpu = { version = "25", optional = true }
+pollster = { version = "0.4", optional = true }
 
 # `set_window_background` reaches the window's `NSVisualEffectView` through the handle gpui hands
 # out, to pick a material that still blurs on macOS 26 and later.
