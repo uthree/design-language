@@ -212,7 +212,9 @@ impl Pump {
     }
 }
 
-#[cfg(test)]
+// The stand-in is a shell script, so the test runs where `sh` does; the mock crate's tests
+// cover sessions on every platform.
+#[cfg(all(test, unix))]
 mod tests {
     use std::time::Duration;
 
@@ -235,7 +237,6 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hello"}'
 "#,
         )
         .unwrap();
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -243,7 +244,6 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hello"}'
         script.to_string_lossy().into_owned()
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_session_pumps_a_real_process_through_its_adapter() {
         let directory =
