@@ -14,7 +14,13 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
-## Unreleased — usable as a library
+## v0.3.0
+
+The first tagged release: Atelier as a library, with the shared agent parts (the
+conversation view, approvals, activity, plan and changes, the node canvas, the preferences
+window, questions, the message queue, the conversation list and Markdown).
+
+## Usable as a library
 
 ### Added
 
@@ -32,7 +38,7 @@ its code bumps the minor version while Atelier is below 1.0.
   already did without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders` for Macs
   without full Xcode.
 
-## Unreleased — questions, the queue, the conversation list and Markdown
+## Questions, the queue, the conversation list and Markdown
 
 ### Added
 
@@ -79,7 +85,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | A queued-messages strip with its own Send now, Edit and remove buttons | `agent::MessageQueue` |
 | A conversation browser of hand-built rows with a search and Recent/Archived buttons | `agent::ConversationList` |
 
-## Unreleased — the preferences window
+## The preferences window
 
 ### Added
 
@@ -116,7 +122,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | A hand-built settings window: sidebar of pages, search over a list of settings, page header, actions row | `PreferencesWindow` with `SettingsPage`, `SettingsGroup`, `Setting` |
 | A key-binding table with its own recording state and keystroke formatting | `KeybindingList`, `KeyBinding`, `keystroke_label` |
 
-## Unreleased — the node canvas
+## The node canvas
 
 ### Added
 
@@ -147,7 +153,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | --- | --- |
 | A graph copied from `examples/node_editor.rs`: its `Drag`, `Geometry`, socket and wire painting, `bezier`, `execution_order` | `graph::NodeCanvas` |
 
-## Unreleased — what the agent is doing, its plan and its changes
+## What the agent is doing, its plan and its changes
 
 ### Added
 
@@ -179,7 +185,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | A plan drawn as a bare `StepList` with its own header and count | `PlanView` |
 | Changed files as `ListItem`s with `+n`/`−n` labels in the trailing slot | `ChangedFiles` |
 
-## Unreleased — dialogs, approvals and permission modes
+## Dialogs, approvals and permission modes
 
 ### Added
 
@@ -217,7 +223,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | Allow-once / Deny / Always buttons laid out by hand around a pending tool call | `ApprovalDialog` or `ChatEntry::approval` |
 | An application enum of permission modes with its own menu, and a warning drawn while bypass is chosen | `PermissionMode` and `PermissionPicker` |
 
-## Unreleased — the conversation view
+## The conversation view
 
 ### Added
 
@@ -249,7 +255,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | An application enum of chat rows with its own open/closed sets for tool calls and reasoning | `ChatEntry` and `ChatView::set_open` |
 | Approval buttons wired to a pending-request field and a folded "allowed" line drawn by hand | `ChatEntry::approval(..)` and `ChatEvent::Decided` |
 
-## Unreleased — controls that move when used
+## Controls that move when used
 
 ### Added
 
@@ -286,7 +292,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | An element around a `Slider` or `Knob` that tracks the drag, the arrow keys or a double click and sets the value | `.id(..)` and `.on_change(..)` on the control itself |
 | A readout string formatted from the value at each call site | `.readout_with(|value| ..)` |
 
-## Unreleased — screenshots retaken, knob icon redrawn
+## Screenshots retaken, knob icon redrawn
 
 ### Changed
 
@@ -296,7 +302,7 @@ its code bumps the minor version while Atelier is below 1.0.
 - The screenshots in `doc/` and `web/README.md` show the current kit, taken on Linux under
   Weston, and the node editor has one.
 
-## Unreleased — wrench icon redrawn
+## Wrench icon redrawn
 
 ### Fixed
 
@@ -306,7 +312,7 @@ its code bumps the minor version while Atelier is below 1.0.
   provider mark and the Auris Studio app icon was rendered at 10–28 px (1x and 2x) through
   gpui's resvg path and in Chromium and came out intact, with no difference between the two.
 
-## Unreleased — fewer AI-template tells
+## Fewer AI-template tells
 
 ### Changed
 
@@ -323,7 +329,7 @@ its code bumps the minor version while Atelier is below 1.0.
   showcase's welcome screen matches the native one: the product name and what it is for, Open…
   beside New project, with no gradient sparkle tile and no "Welcome to" headline.
 
-## Unreleased — focus handed in (Auris feedback round 6)
+## Focus handed in (Auris feedback round 6)
 
 ### Added
 
@@ -347,7 +353,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | An outer frame around `EffortPicker` that holds focus and handles the arrows, Home and End | `EffortPicker::autofocus(true)` |
 | `div().debug_selector("transport-primary").child(ReadoutStrip::new()..)` | `ReadoutStrip::new().id("transport-primary")` |
 
-## Unreleased — flat buttons under Glass
+## Flat buttons under Glass
 
 ### Added
 
@@ -371,7 +377,7 @@ its code bumps the minor version while Atelier is below 1.0.
 | --- | --- |
 | `colors.highlight` made transparent so Glass buttons lie flat | Nothing: only Studio bezels its buttons now |
 
-## Unreleased — from Auris Studio 0.15 and 0.16
+## From Auris Studio 0.15 and 0.16
 
 What Auris Studio built for itself between 0.15 and 0.16 that other applications need too.
 
@@ -415,7 +421,7 @@ What Auris Studio built for itself between 0.15 and 0.16 that other applications
 | `assets/icons/menu.svg` of your own | `IconName::Menu` |
 | A reasoning popover of your own, rebuilt on gpui-component's `Slider`, to drop the bolt or show "unavailable" | `EffortPicker::show_fast(false).note(..)`, `EffortButton::disabled(..)` |
 
-## Unreleased — Atelier for the web
+## Atelier for the web
 
 ### Added
 
