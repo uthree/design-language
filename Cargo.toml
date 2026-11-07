@@ -10,6 +10,12 @@ readme = "README.md"
 keywords = ["gpui", "design-system", "ui", "components", "agent"]
 categories = ["gui"]
 
+# The repository is a workspace: the gpui kit is the root package, and the crates beside it hold
+# what is not UI. Plain `cargo test` and `cargo clippy` cover all of them.
+[workspace]
+members = ["crates/*"]
+default-members = [".", "crates/*"]
+
 # Applications depend on a tagged release from git; see "Install" in README.md.
 [features]
 default = ["gpu"]

@@ -14,6 +14,30 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: coding agents without a UI
+
+### Added
+
+- `atelier-agents`, a second crate in this repository: Claude Code (`stream-json`), Codex
+  (`app-server`), OpenCode (Agent Client Protocol) and Antigravity CLI (`stream-json`) behind one
+  `Adapter` trait and one `AgentEvent` stream (text, reasoning, tool start and finish,
+  permission requests, turn completed or failed, exit). Adapters do no I/O, so they work over a
+  local pipe, `ssh` or an async runtime alike; `AgentSession` runs one on two threads for the
+  common case. `CommandSpec::shell_line` gives the quoted line for running an agent on another
+  machine. It needs no gpui. Ported from Maestro's `maestro-agents`.
+- `atelier-agents-mock`: a fake CLI that speaks all four wire formats from a JSON scenario
+  (say, think, tool calls with or without asking, pauses, failures, crashes, noise), an
+  `install DIR` that puts `claude`, `codex`, `agy` and `opencode` on a test's `PATH`, and an
+  OpenAI-compatible server driven by the same scenario. Its tests run every adapter through a
+  real process.
+
+### Workarounds you can delete
+
+- Maestro: `maestro-agents` and `maestro-mock` (`ProviderKind`, `Effort`, `AgentEvent`,
+  `ToolCall`, `PermissionRequest` move with them; `WorkerConfig` is `AgentConfig` with a
+  `client` name, and `HostCommand` stays in `maestro-host`, built from `Adapter::command()` with
+  `AgentSession::spawn_in`).
+
 ## v0.3.0
 
 The first tagged release: Atelier as a library, with the shared agent parts (the
