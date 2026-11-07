@@ -62,6 +62,9 @@ jobs:
       - run: cargo build --examples --locked
       # Applications may turn the wgpu shading off; the CPU paths must build alone.
       - run: cargo clippy --lib --no-default-features --locked
+      # The agent runner and its example build only with `agents`.
+      - run: cargo clippy --all-targets --features agents --locked
+      - run: cargo test --features agents --test agent_runner --locked
 
   app-icon:
     name: App icon action

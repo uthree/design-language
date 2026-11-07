@@ -1,8 +1,9 @@
 //! Agent surfaces: the side panel, the conversation view, the transcript rows and the composer.
 //!
 //! The pieces are presentational and take plain values, so an application maps its own
-//! conversation model onto them; nothing here knows how a model is called. The rules they
-//! follow:
+//! conversation model onto them; nothing here knows how a model is called. The exception is the
+//! `agents` feature: `AgentConnection` runs a coding-agent CLI through `atelier-agents` and
+//! `AgentFeed` maps its events onto a [`ChatView`]. The rules they follow:
 //!
 //! * **The AI has one colour.** [`crate::Colors::agent`] marks what the agent did or is doing —
 //!   its avatar, running work, its edits. Nothing else uses it, so it keeps meaning something.
@@ -26,6 +27,8 @@ mod effort;
 mod label;
 mod panel;
 mod queue;
+#[cfg(feature = "agents")]
+mod runner;
 mod transcript;
 mod usage;
 
@@ -40,6 +43,8 @@ pub use effort::{EffortButton, EffortPicker};
 pub use label::AgentLabel;
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use queue::{MessageQueue, QueuedMessage};
+#[cfg(feature = "agents")]
+pub use runner::{AgentConnection, AgentFeed};
 pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
     ToolCall, ToolGroup, ToolState, UserMessage,

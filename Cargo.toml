@@ -25,6 +25,9 @@ gpu = ["dep:wgpu", "dep:pollster"]
 # Compiles gpui's Metal shaders at start-up, so an application builds on a Mac with only the
 # Command Line Tools installed (no full Xcode). It changes nothing on Windows or Linux.
 runtime-shaders = ["gpui/runtime_shaders"]
+# Runs coding-agent CLIs (Claude Code, Codex, OpenCode, Antigravity) through `atelier-agents` and
+# shows them in a `ChatView`: `agent::AgentConnection` and `agent::AgentFeed`.
+agents = ["dep:atelier-agents", "dep:futures", "dep:serde_json"]
 
 # Pinned to the release Auris Studio builds against, so both can share one gpui in a workspace.
 [dependencies]
@@ -32,6 +35,11 @@ gpui = "=0.2.2"
 unicode-segmentation = "1.10"
 # `Markdown` reads CommonMark with GitHub's tables, task lists and strikethrough. No HTML output.
 pulldown-cmark = { version = "0.13", default-features = false }
+atelier-agents = { path = "crates/atelier-agents", version = "0.3.0", optional = true }
+# Carries an agent's events from its session thread to the UI thread; gpui already builds it.
+futures = { version = "0.3", optional = true, default-features = false, features = ["std"] }
+# Reads a tool call's input for its one-line summary.
+serde_json = { version = "1.0", optional = true }
 # The welcome-screen backdrops and the 3-D plots hand gpui their frames as images, in gpui's own
 # image type.
 image = { version = "0.25", default-features = false }
@@ -65,3 +73,12 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[[test]]
+name = "agent_runner"
+required-features = ["agents"]
+
+
+[[example]]
+name = "agent_cli"
+required-features = ["agents"]

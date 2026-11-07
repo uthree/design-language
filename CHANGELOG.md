@@ -14,6 +14,29 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: an agent CLI in the conversation view
+
+### Added
+
+- The `agents` feature, which brings in `atelier-agents` (re-exported as `atelier::agents`) and
+  adds two parts:
+  - `agent::AgentFeed` turns `AgentEvent`s into a `ChatView`'s entries: messages, streamed
+    answers and reasoning, tool calls with their input and output, approval cards, errors and
+    the thinking indicator's phase word. `AgentFeed::decision` maps an answered card back to
+    its request.
+  - `agent::AgentConnection` runs the whole loop. It starts the CLI, feeds its events to the
+    chat on the UI thread and answers approvals from `ChatEvent::Decided`. Messages sent during
+    a turn are held and go in order as turns end. It also exposes `interrupt`, `session_id`,
+    `models` and `pending`.
+- Example `agent_cli`: a real Claude Code, Codex, OpenCode or Antigravity CLI in the
+  conversation, or with `--mock` the `atelier-agents-mock` stand-in, so it runs without an
+  account.
+
+### Workarounds you can delete
+
+- The code that turns an agent's stream into `ChatEntry`s by hand: Maestro's transcript
+  mapping, and Auris Studio's for the CLI backends once they move to `atelier-agents`.
+
 ## Unreleased: what Auris Studio needs from the agent CLIs
 
 ### Added

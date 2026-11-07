@@ -431,6 +431,8 @@ dependencies = [
 name = "atelier"
 version = "0.3.0"
 dependencies = [
+ "atelier-agents",
+ "futures",
  "gpui",
  "image",
  "naga",
@@ -438,6 +440,7 @@ dependencies = [
  "pollster 0.4.0",
  "pulldown-cmark",
  "raw-window-handle",
+ "serde_json",
  "unicode-segmentation",
  "wgpu",
 ]
