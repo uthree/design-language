@@ -29,7 +29,8 @@ use atelier::agent::Composer; // specialised parts stay in their modules: agent,
   a fix that is not in a release yet.
 - **Same gpui.** Atelier pins gpui `=0.2.2`; depend on the same version, or use
   `atelier::gpui`, which is always the one Atelier was built with.
-- **Features.** `gpu` (on by default) shades the liquid metal, the ambient backdrops and the 3-D
+- **Features.** `agents` adds `AgentConnection` and `AgentFeed`, which run a coding-agent CLI
+  through `atelier-agents` and show it in a `ChatView`. `gpu` (on by default) shades the liquid metal, the ambient backdrops and the 3-D
   plots with wgpu. An application that shows none of them, or wants a smaller build, can turn it
   off with `default-features = false`; those parts then draw on the CPU, exactly as they do on a
   machine without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders`, so the app builds
@@ -66,7 +67,8 @@ Auris Studio's **Au**, are set out in [doc/app-icons.md](doc/app-icons.md); the 
 To run the agents themselves, the `atelier-agents` crate in this repository drives Claude Code,
 Codex, OpenCode and Antigravity CLI as subprocesses behind one event stream, with no UI and no
 gpui; `atelier-agents-mock` plays all four from a script for tests. See
-[crates/atelier-agents](crates/atelier-agents/README.md).
+[crates/atelier-agents](crates/atelier-agents/README.md). With the `agents` feature,
+`atelier::agent::AgentConnection` shows such an agent in a `ChatView` (example `agent_cli`).
 
 For a browser or a Tauri webview, [`web/`](web/README.md) carries the same themes, components and
 ambient backdrops as CSS, a little JavaScript and WebGPU, with the tokens written from the Rust

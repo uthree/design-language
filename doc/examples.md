@@ -38,6 +38,25 @@ open.
 
 ![Agent desktop](images/agent-desktop.png)
 
+## agent_cli — a real coding-agent CLI in the conversation
+
+```bash
+cargo build -p atelier-agents-mock
+cargo run --example agent_cli --features agents -- --mock
+cargo run --example agent_cli --features agents -- --provider codex --cwd ~/src/project
+```
+
+Where `agent_desktop` is drawn from fixed data, this one runs an agent: `atelier-agents` starts
+Claude Code, Codex, OpenCode or Antigravity CLI (`--provider claude|codex|opencode|agy`) and
+`AgentConnection` shows what it does in a `ChatView`. Answers stream in, tool calls open onto
+their input and output, permission requests arrive as approval cards whose answer goes back to
+the CLI, and Stop interrupts the turn. Messages sent during a turn wait above the composer and go
+when it ends. With `--mock` the CLI is `atelier-agents-mock` playing the demo scenario, so
+nothing needs an account: the first chip edits a file after asking, the last one fails.
+`--prompt` sends a first message. Pictured on the mock, waiting for an approval.
+
+![Agent CLI](images/agent-cli.png)
+
 ![Agent desktop, a question with the queue under it](images/agent-desktop-ask.png)
 
 ## instrument_lab — a physical-model instrument

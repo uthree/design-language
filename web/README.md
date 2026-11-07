@@ -182,3 +182,7 @@ preferences, Markdown, choice cards, the message queue, the conversation list, a
 styled, not positioned; the permission picker's menu is the exception), completions, plots and the instrument controls such as
 `PianoKeyboard`, `NoteRoll` and `ReadoutStrip`/`Readout`, and the effort picker's `note` and
 `EffortButton::disabled`. `IconName::Menu` is in the generated icons.
+
+`AgentConnection` and `AgentFeed` (the `agents` feature) stay native: they run the CLI as a
+process and have no look of their own. A Tauri app runs `atelier-agents` in its Rust side and
+sends the events to the page, which draws them with the transcript classes above.

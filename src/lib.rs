@@ -25,6 +25,10 @@
 //! - `runtime-shaders`: turn on gpui's `runtime_shaders`, so an application builds on a Mac with
 //!   only the Command Line Tools installed.
 
+/// The `atelier-agents` crate Atelier was built with, which runs the coding-agent CLIs that
+/// [`agent::AgentConnection`] shows. Needs the `agents` feature.
+#[cfg(feature = "agents")]
+pub use atelier_agents as agents;
 pub use gpui;
 
 pub mod agent;
