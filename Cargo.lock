@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "atelier"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atelier-agents",
  "futures",
@@ -447,7 +447,7 @@ dependencies = [
 
 [[package]]
 name = "atelier-agents"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -455,7 +455,7 @@ dependencies = [
 
 [[package]]
 name = "atelier-agents-mock"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atelier-agents",
  "serde",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "atelier-i18n"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "objc2-foundation",
  "toml 0.8.23",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "atelier-i18n-fixture"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atelier-i18n",
  "serde",

@@ -5,7 +5,7 @@
 ```toml
 [dependencies]
 gpui = "=0.2.2"
-atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }
+atelier = { git = "https://github.com/uthree/design-language", tag = "v0.4.0" }
 ```
 
 Pin a release tag (`vX.Y.Z`, the crate's version; each has a section in `CHANGELOG.md`), or a

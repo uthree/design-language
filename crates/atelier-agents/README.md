@@ -6,10 +6,10 @@ async runtime, so a desktop app, a daemon, a command-line tool and a test can al
 
 ```toml
 [dependencies]
-atelier-agents = { git = "https://github.com/uthree/design-language", tag = "vX.Y.Z" }
+atelier-agents = { git = "https://github.com/uthree/design-language", tag = "v0.4.0" }
 
 [dev-dependencies]
-atelier-agents-mock = { git = "https://github.com/uthree/design-language", tag = "vX.Y.Z" }
+atelier-agents-mock = { git = "https://github.com/uthree/design-language", tag = "v0.4.0" }
 ```
 
 ## How it is built

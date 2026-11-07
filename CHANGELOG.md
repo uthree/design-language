@@ -14,7 +14,15 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
-## Unreleased: interface text in language files
+## v0.4.0
+
+A workspace: alongside `atelier`, the `atelier-agents` crate drives the coding-agent CLIs
+(Claude Code, Codex, OpenCode, Antigravity) without a UI, `atelier-agents-mock` stands in for
+them in tests, and `atelier-i18n` keeps an application's words in one file per language.
+`ChatView` shows a CLI's session behind the `agents` feature, and the CLIs report how much of
+the plan is left. Each crate's version is 0.4.0 and they are pinned with the same tag.
+
+## Interface text in language files
 
 ### Added
 
@@ -29,7 +37,7 @@ its code bumps the minor version while Atelier is below 1.0.
   to the build's languages. See [crates/atelier-i18n](crates/atelier-i18n/README.md).
   `Strings`, the words the components draw, is unchanged.
 
-## Unreleased: what is left of the plan
+## What is left of the plan
 
 ### Added
 
@@ -53,7 +61,7 @@ its code bumps the minor version while Atelier is below 1.0.
 - Reading the plan's usage some other way, such as calling a provider's usage endpoint or
   scraping the CLI's `/usage` output, to feed a `UsageMeter`.
 
-## Unreleased: an agent CLI in the conversation view
+## An agent CLI in the conversation view
 
 ### Added
 
@@ -76,7 +84,7 @@ its code bumps the minor version while Atelier is below 1.0.
 - The code that turns an agent's stream into `ChatEntry`s by hand: Maestro's transcript
   mapping, and Auris Studio's for the CLI backends once they move to `atelier-agents`.
 
-## Unreleased: what Auris Studio needs from the agent CLIs
+## What Auris Studio needs from the agent CLIs
 
 ### Added
 
@@ -111,7 +119,7 @@ its code bumps the minor version while Atelier is below 1.0.
   the memory hand-off, the live tools, the ChatGPT-account check for Codex, and turning off
   Codex's inherited MCP servers (which needs a `config/read` and a restart).
 
-## Unreleased: coding agents without a UI
+## Coding agents without a UI
 
 ### Added
 
