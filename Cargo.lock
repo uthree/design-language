@@ -443,6 +443,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "atelier-agents"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "atelier-agents-mock"
+version = "0.3.0"
+dependencies = [
+ "atelier-agents",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "atomic"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

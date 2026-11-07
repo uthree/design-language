@@ -1,0 +1,15 @@
+[package]
+name = "atelier-agents"
+description = "Drives Claude Code, Codex, OpenCode and Antigravity CLI as subprocesses, behind one event stream"
+version = "0.3.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/uthree/design-language"
+keywords = ["agent", "claude-code", "codex", "opencode"]
+
+# No UI and no async runtime: adapters are plain state machines, and `AgentSession` runs on two
+# threads per agent. Applications on tokio drive the adapters from their own tasks.
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
