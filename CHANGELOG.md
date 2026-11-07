@@ -14,6 +14,21 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: interface text in language files
+
+### Added
+
+- `atelier-i18n`, a crate of its own with no gpui, for an application's words. They live in
+  `locales/<tag>.toml`, one file per language, and the `build` feature's
+  `build::Catalog::generate`, called from a build script, writes a `Language` enum, a `Key`
+  enum of the fixed strings and a `messages` function for each string that takes values.
+  A key one language lacks, or a placeholder one translation names and another does not,
+  fails the build with the file and the key. The runtime half picks the language:
+  `preferred_locales` reads the locale variables and then the operating system (Windows and
+  an application macOS starts from Finder set no variables), and `negotiate` matches a locale
+  to the build's languages. See [crates/atelier-i18n](crates/atelier-i18n/README.md).
+  `Strings`, the words the components draw, is unchanged.
+
 ## Unreleased: an agent CLI in the conversation view
 
 ### Added
