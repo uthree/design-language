@@ -557,35 +557,25 @@ impl Painter<'_> {
                                     .child(marker),
                             )
                             .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(theme.spacing.xs)
-                                    .flex_1()
-                                    .min_w_0()
-                                    .children(self.blocks(&item.blocks, color, depth + 1)),
+                                stack(
+                                    self.blocks(&item.blocks, color, depth + 1),
+                                    theme.spacing.xs,
+                                )
+                                .flex_1(),
                             )
                             .into_any_element()
                     })
                     .collect();
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(theme.spacing.xs)
-                    .min_w_0()
-                    .children(rows)
-                    .into_any_element()
+                stack(rows, theme.spacing.xs).into_any_element()
             }
-            Block::Quote(blocks) => div()
-                .flex()
-                .flex_col()
-                .gap(theme.spacing.sm)
-                .min_w_0()
-                .pl(theme.spacing.md)
-                .border_l_2()
-                .border_color(colors.border_strong)
-                .children(self.blocks(blocks, TextColor::Muted, depth))
-                .into_any_element(),
+            Block::Quote(blocks) => stack(
+                self.blocks(blocks, TextColor::Muted, depth),
+                theme.spacing.sm,
+            )
+            .pl(theme.spacing.md)
+            .border_l_2()
+            .border_color(colors.border_strong)
+            .into_any_element(),
             Block::Code { language, code } => self.code(language.as_deref(), code),
             Block::Rule => div()
                 .h(px(1.))
@@ -718,6 +708,26 @@ fn task_box(done: bool, theme: &Theme) -> impl IntoElement + use<> {
         .when(!done, |mark| mark.border_color(colors.border_strong))
 }
 
+/// Blocks one under another, `gap` apart, as a block container rather than a flex column.
+///
+/// As a flex column a stack of wrapping text took its height from a measurement made before its
+/// width was known, when text wraps at every break opportunity. Japanese breaks between any two
+/// characters, so a three-line answer measured one character per line and kept that height,
+/// thousands of pixels, at its real width, and everything after it in a transcript fell past the
+/// end of the scroll range. Block layout gives the width first and sums the blocks as drawn.
+fn stack(children: Vec<AnyElement>, gap: gpui::Pixels) -> gpui::Div {
+    div()
+        .w_full()
+        .min_w_0()
+        .children(children.into_iter().enumerate().map(|(index, child)| {
+            if index == 0 {
+                child
+            } else {
+                div().mt(gap).child(child).into_any_element()
+            }
+        }))
+}
+
 impl RenderOnce for Markdown {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
@@ -730,14 +740,9 @@ impl RenderOnce for Markdown {
             theme,
         };
         let children = painter.blocks(&blocks, TextColor::Default, 0);
-        div()
-            .flex()
-            .flex_col()
-            .gap(theme.spacing.sm)
-            .min_w_0()
+        stack(children, theme.spacing.sm)
             .text_size(theme.typography.size_md)
             .text_color(theme.colors.text)
-            .children(children)
     }
 }
 
