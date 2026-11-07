@@ -63,6 +63,13 @@ impl Cli {
     }
 }
 
+/// The models every stand-in offers.
+pub const MODELS: [&str; 2] = ["mock-small", "mock-large"];
+
+/// A session or thread whose id starts with this was never kept: resuming it fails, as it does
+/// when a real CLI no longer has the session.
+pub const MISSING_SESSION: &str = "missing";
+
 /// How the process was started.
 #[derive(Clone, Debug, Default)]
 pub struct Invocation {
@@ -119,6 +126,14 @@ pub fn run(
             }
         }
     });
+    if cli == Cli::Claude
+        && invocation
+            .flag("--resume")
+            .is_some_and(|id| id.starts_with(MISSING_SESSION))
+    {
+        eprintln!("No conversation found with session ID");
+        return 1;
+    }
     let dialect: Box<dyn Dialect> = match cli {
         Cli::Claude => Box::new(Claude::new(invocation)),
         Cli::Codex => Box::new(Codex::default()),
@@ -387,6 +402,7 @@ fn edits(tool: &Tool) -> bool {
 struct Claude {
     read_only: bool,
     model: Option<String>,
+    session: String,
     started: bool,
     asked: u64,
 }
@@ -398,6 +414,9 @@ impl Claude {
                 .flag("--disallowedTools")
                 .is_some_and(|tools| tools.split(',').any(|tool| tool == "Write")),
             model: invocation.flag("--model"),
+            session: invocation
+                .flag("--resume")
+                .unwrap_or_else(|| "ses_claude_mock".into()),
             started: false,
             asked: 0,
         }
@@ -419,9 +438,17 @@ impl Dialect for Claude {
             Some("user") => Incoming::Prompt(text_of(&message["message"]["content"])),
             Some("control_request") => {
                 let id = &message["request_id"];
-                let ok = message["request"]["subtype"] == "interrupt";
+                let subtype = &message["request"]["subtype"];
+                let ok = subtype == "interrupt";
                 let response = if ok {
                     json!({"subtype": "success", "request_id": id})
+                } else if subtype == "initialize" {
+                    let models: Vec<Value> = MODELS
+                        .iter()
+                        .map(|model| json!({"value": model, "displayName": model}))
+                        .collect();
+                    json!({"subtype": "success", "request_id": id,
+                        "response": {"models": models}})
                 } else {
                     json!({"subtype": "error", "request_id": id, "error": "not supported"})
                 };
@@ -452,7 +479,10 @@ impl Dialect for Claude {
 
     fn begin(&mut self, wire: &mut Wire) {
         if !std::mem::replace(&mut self.started, true) {
-            wire.send(json!({"type": "system", "subtype": "init", "model": self.model}));
+            wire.send(
+                json!({"type": "system", "subtype": "init", "model": self.model,
+                "session_id": self.session}),
+            );
         }
     }
 
@@ -514,6 +544,7 @@ impl Dialect for Claude {
 /// Codex's `app-server` JSON-RPC (no `jsonrpc` member).
 #[derive(Default)]
 struct Codex {
+    thread: String,
     read_only: bool,
     model: Option<String>,
     turns: u64,
@@ -526,7 +557,7 @@ struct Codex {
 
 impl Codex {
     fn notify(&self, wire: &mut Wire, method: &str, mut params: Value) {
-        params["threadId"] = json!("thr_mock");
+        params["threadId"] = json!(self.thread);
         params["turnId"] = json!(self.turn);
         wire.send(json!({"method": method, "params": params}));
     }
@@ -566,10 +597,28 @@ impl Dialect for Codex {
                 };
             }
             Some("initialize") => json!({"userAgent": "atelier-agents-mock"}),
-            Some("thread/start") => {
+            Some(method @ ("thread/start" | "thread/resume")) => {
+                let thread = params["threadId"].as_str().unwrap_or("thr_mock");
+                if method == "thread/resume" && thread.starts_with(MISSING_SESSION) {
+                    wire.send(json!({"id": id, "error": {"code": -32600,
+                        "message": format!("no rollout found for thread id {thread}")}}));
+                    return Incoming::Nothing;
+                }
+                self.thread = thread.to_owned();
                 self.read_only = params["sandbox"] == "read-only";
                 self.model = params["model"].as_str().map(str::to_owned);
-                json!({"thread": {"id": "thr_mock"}, "model": params["model"]})
+                json!({"thread": {"id": self.thread}, "model": params["model"]})
+            }
+            Some("model/list") => {
+                let efforts = json!([{"reasoningEffort": "low"}, {"reasoningEffort": "high"}]);
+                let data: Vec<Value> = MODELS
+                    .iter()
+                    .map(|model| {
+                        json!({"model": model, "displayName": model,
+                        "supportedReasoningEfforts": efforts})
+                    })
+                    .collect();
+                json!({"data": data, "nextCursor": null})
             }
             Some("turn/start") => {
                 self.turns += 1;
@@ -662,7 +711,7 @@ impl Dialect for Codex {
             ),
             None => ("item/fileChange/requestApproval", json!({})),
         };
-        params["threadId"] = json!("thr_mock");
+        params["threadId"] = json!(self.thread);
         params["turnId"] = json!(self.turn);
         params["itemId"] = json!(id);
         wire.send(json!({"id": request, "method": method, "params": params}));
@@ -783,6 +832,7 @@ impl Dialect for Antigravity {
 
 /// OpenCode's Agent Client Protocol: JSON-RPC 2.0.
 struct OpenCode {
+    session: String,
     read_only: bool,
     model: Option<String>,
     /// The ids of `session/prompt` requests not yet answered, oldest first.
@@ -799,6 +849,7 @@ impl OpenCode {
             .as_deref()
             .unwrap_or_default();
         Self {
+            session: "ses_mock".into(),
             read_only: permission.contains("deny"),
             model: None,
             prompts: VecDeque::new(),
@@ -807,9 +858,9 @@ impl OpenCode {
         }
     }
 
-    fn update(wire: &mut Wire, update: Value) {
+    fn update(&self, wire: &mut Wire, update: Value) {
         wire.send(json!({"jsonrpc": "2.0", "method": "session/update",
-            "params": {"sessionId": "ses_mock", "update": update}}));
+            "params": {"sessionId": self.session, "update": update}}));
     }
 
     fn kind(tool: &Tool) -> &'static str {
@@ -841,8 +892,36 @@ impl Dialect for OpenCode {
                 };
             }
             Some("initialize") => json!({"protocolVersion": 1,
-                "agentCapabilities": {"loadSession": false}, "authMethods": []}),
-            Some("session/new") => json!({"sessionId": "ses_mock"}),
+                "agentCapabilities": {"loadSession": true}, "authMethods": []}),
+            Some("session/new") => {
+                let models: Vec<Value> = MODELS
+                    .iter()
+                    .map(|model| json!({"modelId": model, "name": model}))
+                    .collect();
+                json!({"sessionId": self.session,
+                    "models": {"availableModels": models, "currentModelId": MODELS[0]}})
+            }
+            Some("session/load") => {
+                let session = params["sessionId"].as_str().unwrap_or_default();
+                if session.starts_with(MISSING_SESSION) {
+                    wire.send(json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32002,
+                        "message": format!("Session not found: {session}")}}));
+                    return Incoming::Nothing;
+                }
+                self.session = session.to_owned();
+                // A loaded session replays its history before it answers.
+                self.update(
+                    wire,
+                    json!({"sessionUpdate": "user_message_chunk",
+                    "content": {"type": "text", "text": "(earlier prompt)"}}),
+                );
+                self.update(
+                    wire,
+                    json!({"sessionUpdate": "agent_message_chunk",
+                    "content": {"type": "text", "text": "(earlier answer)"}}),
+                );
+                json!({})
+            }
             Some("session/set_model") => {
                 self.model = params["modelId"].as_str().map(str::to_owned);
                 json!({})
@@ -876,7 +955,7 @@ impl Dialect for OpenCode {
     }
 
     fn text(&mut self, wire: &mut Wire, chunk: &str, _first: bool) {
-        Self::update(
+        self.update(
             wire,
             json!({"sessionUpdate": "agent_message_chunk",
             "content": {"type": "text", "text": chunk}}),
@@ -884,7 +963,7 @@ impl Dialect for OpenCode {
     }
 
     fn think(&mut self, wire: &mut Wire, chunk: &str) {
-        Self::update(
+        self.update(
             wire,
             json!({"sessionUpdate": "agent_thought_chunk",
             "content": {"type": "text", "text": chunk}}),
@@ -892,7 +971,7 @@ impl Dialect for OpenCode {
     }
 
     fn tool(&mut self, wire: &mut Wire, id: &str, tool: &Tool) {
-        Self::update(
+        self.update(
             wire,
             json!({"sessionUpdate": "tool_call", "toolCallId": id,
             "title": tool.name, "kind": Self::kind(tool), "status": "pending",
@@ -905,7 +984,7 @@ impl Dialect for OpenCode {
         let request = json!(format!("perm_{}", self.next_request));
         wire.send(
             json!({"jsonrpc": "2.0", "id": request, "method": "session/request_permission",
-            "params": {"sessionId": "ses_mock",
+            "params": {"sessionId": self.session,
                 "toolCall": {"toolCallId": id, "title": tool.name, "kind": Self::kind(tool)},
                 "options": [
                     {"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
@@ -916,7 +995,7 @@ impl Dialect for OpenCode {
     }
 
     fn done(&mut self, wire: &mut Wire, id: &str, _tool: &Tool, ok: bool, output: &str) {
-        Self::update(
+        self.update(
             wire,
             json!({"sessionUpdate": "tool_call_update", "toolCallId": id,
             "status": if ok { "completed" } else { "failed" },

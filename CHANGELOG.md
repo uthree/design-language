@@ -14,6 +14,41 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: what Auris Studio needs from the agent CLIs
+
+### Added
+
+- `AgentConfig` grows the settings Auris Studio's backends use:
+  - `mcp_servers`: HTTP MCP servers with a bearer token and `auto_approve`. They reach Claude
+    Code, Codex and OpenCode, and the token never appears in the process's arguments.
+  - `session`: `New`, `Ephemeral` or `Resume(id)`, with `AgentEvent::SessionStarted { id }` to
+    keep. A session the CLI no longer has ends in `AgentEvent::ResumeFailed` (or, for Claude
+    Code, an exit before `SessionStarted`) with no prompt sent.
+  - `system_prompt` replaces the CLI's own (Claude Code, Codex).
+  - `native_tools: false` leaves the agent no shell or file tools.
+  - `fast` picks the fast or standard service tier (Claude Code, Codex).
+  - `isolated` leaves the user's hooks, plugins, skills, slash commands, memories and project
+    instruction files out of the run, and on Claude Code their MCP servers too.
+  - `scratch` is a private directory for the files that keep tokens out of the process list.
+- `Adapter::files()` names those files, and `AgentSession::spawn` writes them before starting
+  the CLI: owner-only on Unix.
+- `AgentEvent::Models` from each CLI's handshake (Claude Code's `initialize`, Codex's
+  `model/list`, OpenCode's `session/new`), and `list_models(config, timeout)` to ask without
+  starting a conversation. An empty first prompt now runs the handshake alone.
+- `ProviderKind::locate()` finds a CLI on `PATH` or in `~/.local/bin`, only as a native `.exe`
+  on Windows. `ProviderStatus::check()` adds the CLI's `--version`.
+- `Effort::Minimal` and `Effort::XHigh`.
+- The mock lists models (`atelier_agents_mock::cli::MODELS`), keeps and resumes sessions, and
+  fails a resume of any id starting with `missing`, so applications can test their fallback.
+
+### Workarounds you can delete
+
+- Auris Studio: the process and protocol halves of `auris-agent`'s Claude Code, Codex and
+  OpenCode backends: command lines, MCP configuration files, session start and resume, model
+  listing and executable lookup. Its own policy stays where it is: the tool-failure budget,
+  the memory hand-off, the live tools, the ChatGPT-account check for Codex, and turning off
+  Codex's inherited MCP servers (which needs a `config/read` and a restart).
+
 ## Unreleased: coding agents without a UI
 
 ### Added
