@@ -14,6 +14,30 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: what is left of the plan
+
+### Added
+
+- `atelier_agents::AgentEvent::RateLimits` reports how much of the plan a CLI's sign-in has
+  spent, as `RateLimit`s (five-hour window, week, a model's weekly share; whole percent used,
+  reset time, whether it is reached). Claude Code reports it from `rate_limit_event`, Codex
+  from `account/rateLimits/read` at the handshake and `account/rateLimits/updated` after.
+  OpenCode, Antigravity and API-key sign-ins report none.
+- `agent::AgentFeed::rate_limits` and `agent::AgentConnection::rate_limits` keep the limits as
+  last reported. `AgentConnection::usage` builds the composer's `UsageMeter` from them, and
+  `agent::usage_meter` and `agent::usage_limit` do the same for an application with its own
+  loop.
+- `Strings::usage_windows`, `usage_window_hours`, `usage_window_days` and `usage_in` name a
+  limit's window and say when it resets ("Weekly", "in 2 h 10 min"; "週間枠", "2時間10分後"),
+  with `Strings::usage_window` and `Strings::usage_in` putting the numbers in.
+- The mock's scenarios take `"limits"` so that its Claude Code and Codex stand-ins report a
+  plan that drains turn by turn. The `agent_cli` example shows it in the composer.
+
+### Workarounds you can delete
+
+- Reading the plan's usage some other way, such as calling a provider's usage endpoint or
+  scraping the CLI's `/usage` output, to feed a `UsageMeter`.
+
 ## Unreleased: an agent CLI in the conversation view
 
 ### Added

@@ -1,6 +1,7 @@
 //! A real coding-agent CLI in an Atelier conversation: `atelier-agents` runs Claude Code, Codex,
 //! OpenCode or Antigravity CLI, and `AgentConnection` shows what it does in a `ChatView`.
 //! Type in the composer and press Enter; approvals arrive as cards; Stop interrupts the turn.
+//! The ring beside the model shows what is left of the plan, once the CLI reports it.
 //!
 //! With `--mock`, the agent is `atelier-agents-mock` playing the CLI from the demo scenario, so
 //! nothing needs an account. Build the mock first:
@@ -102,6 +103,10 @@ impl Render for AgentCli {
             .map(AgentConnection::pending)
             .unwrap_or_default();
         let session = self.agent.as_ref().and_then(AgentConnection::session_id);
+        let usage = self
+            .agent
+            .as_ref()
+            .and_then(|agent| agent.usage("usage", cx));
         let focused = self.input.is_focused(window);
         let input = div()
             .id("draft")
@@ -172,6 +177,7 @@ impl Render for AgentCli {
                                             .busy(busy)
                                             .queue(busy)
                                             .model(self.provider.label())
+                                            .when_some(usage, Composer::usage)
                                             .on_send(cx.listener(|this, _, _, cx| {
                                                 let text = std::mem::take(&mut this.draft);
                                                 this.send(text, cx);

@@ -64,6 +64,15 @@ pub struct Strings {
     pub usage_resets: SharedString,
     /// A spent limit whose reset time is not known.
     pub usage_reached: SharedString,
+    /// The usual limits' names: the five-hour window, the week.
+    pub usage_windows: [SharedString; 2],
+    /// Another window's name; `{}` is its length in hours.
+    pub usage_window_hours: SharedString,
+    /// Another window's name; `{}` is its length in days.
+    pub usage_window_days: SharedString,
+    /// How soon a limit resets: in minutes, in hours and minutes, in days and hours. Each `{}`
+    /// takes one number, in that order.
+    pub usage_in: [SharedString; 3],
     /// The effort button's tooltip, and the effort picker's name.
     pub effort: SharedString,
     /// The bolt's tooltip while fast mode is on.
@@ -200,6 +209,14 @@ impl Strings {
             usage_used: "{} % used".into(),
             usage_resets: "Resets {}".into(),
             usage_reached: "Limit reached".into(),
+            usage_windows: ["5-hour window".into(), "Weekly".into()],
+            usage_window_hours: "{}-hour window".into(),
+            usage_window_days: "{}-day window".into(),
+            usage_in: [
+                "in {} min".into(),
+                "in {} h {} min".into(),
+                "in {} d {} h".into(),
+            ],
             effort: "Effort and fast mode".into(),
             fast_mode_on: "Fast mode: on".into(),
             fast_mode_off: "Fast mode: off".into(),
@@ -306,6 +323,14 @@ impl Strings {
             usage_used: "{}%使用".into(),
             usage_resets: "{}にリセット".into(),
             usage_reached: "上限に達しました".into(),
+            usage_windows: ["5時間枠".into(), "週間枠".into()],
+            usage_window_hours: "{}時間枠".into(),
+            usage_window_days: "{}日間枠".into(),
+            usage_in: [
+                "{}分後".into(),
+                "{}時間{}分後".into(),
+                "{}日{}時間後".into(),
+            ],
             effort: "推論の深さと高速モード".into(),
             fast_mode_on: "高速モード: オン".into(),
             fast_mode_off: "高速モード: オフ".into(),
@@ -426,6 +451,44 @@ impl Strings {
     pub fn usage_resets(&self, time: &str) -> SharedString {
         self.usage_resets.replace("{}", time).into()
     }
+
+    /// The name of a limit whose window is `minutes` long: one of [`Strings::usage_windows`]
+    /// for five hours and a week, else its length in hours or days.
+    pub fn usage_window(&self, minutes: u32) -> SharedString {
+        match minutes {
+            300 => self.usage_windows[0].clone(),
+            10_080 => self.usage_windows[1].clone(),
+            minutes if minutes % 1440 == 0 => {
+                fill(&self.usage_window_days, &[minutes / 1440]).into()
+            }
+            minutes => fill(&self.usage_window_hours, &[minutes.div_ceil(60)]).into(),
+        }
+    }
+
+    /// How soon something `seconds` away happens, from [`Strings::usage_in`]: "in 42 min",
+    /// "in 2 h 10 min", "in 3 d 4 h". Rounds up, so a time still ahead never reads as 0.
+    pub fn usage_in(&self, seconds: u64) -> SharedString {
+        let minutes = u32::try_from(seconds.div_ceil(60))
+            .unwrap_or(u32::MAX)
+            .max(1);
+        let text = if minutes < 60 {
+            fill(&self.usage_in[0], &[minutes])
+        } else if minutes < 1440 {
+            fill(&self.usage_in[1], &[minutes / 60, minutes % 60])
+        } else {
+            fill(&self.usage_in[2], &[minutes / 1440, minutes % 1440 / 60])
+        };
+        text.into()
+    }
+}
+
+/// `words` with each `{}` replaced by the next of `numbers`.
+fn fill(words: &str, numbers: &[u32]) -> String {
+    let mut text = words.to_owned();
+    for number in numbers {
+        text = text.replacen("{}", &number.to_string(), 1);
+    }
+    text
 }
 
 /// Read access to the installed [`Strings`].
@@ -457,5 +520,16 @@ mod tests {
         assert_eq!(Strings::english().usage_left("28"), "28 % left");
         assert_eq!(Strings::japanese().usage_left("28"), "残り28%");
         assert_eq!(Strings::japanese().usage_resets("14:30"), "14:30にリセット");
+        let english = Strings::english();
+        assert_eq!(english.usage_window(300), "5-hour window");
+        assert_eq!(english.usage_window(10_080), "Weekly");
+        assert_eq!(english.usage_window(43_200), "30-day window");
+        assert_eq!(english.usage_window(120), "2-hour window");
+        assert_eq!(english.usage_in(59), "in 1 min");
+        assert_eq!(english.usage_in(2 * 3600 + 600), "in 2 h 10 min");
+        assert_eq!(english.usage_in(3 * 86_400 + 4 * 3600), "in 3 d 4 h");
+        let japanese = Strings::japanese();
+        assert_eq!(japanese.usage_window(10_080), "週間枠");
+        assert_eq!(japanese.usage_in(2 * 3600 + 600), "2時間10分後");
     }
 }

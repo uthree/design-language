@@ -49,6 +49,44 @@ pub struct Scenario {
     /// The reply when no rule matches. `None` echoes the prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub otherwise: Option<Vec<Step>>,
+    /// The plan limits Claude Code and Codex report, as a subscription sign-in has them. `None`
+    /// reports none, as with an API key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Limits>,
+}
+
+/// How much of the plan is spent, in whole percent, and how fast it goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Limits {
+    /// The five-hour window, spent before the first turn.
+    #[serde(default)]
+    pub five_hour: u32,
+    /// The week, spent before the first turn.
+    #[serde(default)]
+    pub weekly: u32,
+    /// What each turn spends of both.
+    #[serde(default)]
+    pub per_turn: u32,
+}
+
+impl Limits {
+    /// When the five-hour window fills again, in seconds since the Unix epoch: two hours from
+    /// now, so a client has a time to show.
+    pub fn five_hour_resets(self) -> u64 {
+        now() + 2 * 3600
+    }
+
+    /// When the week fills again: three days from now.
+    pub fn weekly_resets(self) -> u64 {
+        now() + 3 * 86_400
+    }
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// How [`Step::Say`] and [`Step::Think`] text is streamed.
@@ -227,6 +265,19 @@ impl Player {
     /// How text streams.
     pub fn stream(&self) -> Stream {
         self.scenario.stream
+    }
+
+    /// The plan limits as they stand, before any turn spends them.
+    pub fn limits(&self) -> Option<Limits> {
+        self.scenario.limits
+    }
+
+    /// Spends one turn's share of the plan and returns the limits after it.
+    pub fn spend(&mut self) -> Option<Limits> {
+        let limits = self.scenario.limits.as_mut()?;
+        limits.five_hour = (limits.five_hour + limits.per_turn).min(100);
+        limits.weekly = (limits.weekly + limits.per_turn).min(100);
+        Some(*limits)
     }
 
     /// The reply to `prompt`, with `{prompt}` and `{turn}` filled in. Counts towards the
