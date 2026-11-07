@@ -57,14 +57,21 @@ impl AgentSession {
         prompt: &str,
         on_event: impl Fn(AgentEvent) + Send + 'static,
     ) -> Result<Self, SpawnError> {
-        let process = adapter.command().process();
-        Self::spawn_in(process, adapter, prompt, on_event)
+        let command = adapter.command();
+        for file in adapter.files() {
+            write_private(&file.path, &file.contents).map_err(|source| SpawnError {
+                program: command.program.clone(),
+                source,
+            })?;
+        }
+        Self::spawn_in(command.process(), adapter, prompt, on_event)
     }
 
     /// As [`AgentSession::spawn`], but runs `process` in place of the adapter's own command:
     /// for an agent on another machine, `process` is the `ssh` (or `wsl.exe`, or `docker exec`)
     /// that runs [`crate::CommandSpec::shell_line`] of [`Adapter::command`] there. Its standard
-    /// streams are replaced.
+    /// streams are replaced. [`Adapter::files`] are not written: put them where that machine's
+    /// CLI will read them.
     pub fn spawn_in(
         mut process: Command,
         mut adapter: Box<dyn Adapter>,
@@ -180,6 +187,22 @@ impl AgentSession {
     }
 }
 
+/// Writes `contents` to `path` where only this user can read it, making its directory if need be.
+fn write_private(path: &std::path::Path, contents: &str) -> io::Result<()> {
+    if let Some(directory) = path.parent() {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(directory)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)?.write_all(contents.as_bytes())
+}
+
 impl Drop for AgentSession {
     fn drop(&mut self) {
         self.stop();
@@ -221,7 +244,7 @@ mod tests {
     use crate::ProviderKind;
 
     use super::*;
-    use crate::{AgentConfig, ClientInfo, adapter};
+    use crate::{AgentConfig, adapter};
 
     /// A stand-in for `claude` that answers one turn in its stream-json and then exits.
     fn fake_claude(directory: &std::path::Path) -> String {
@@ -250,15 +273,8 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hello"}'
             std::env::temp_dir().join(format!("atelier-agents-session-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let config = AgentConfig {
-            provider: ProviderKind::ClaudeCode,
-            model: None,
-            effort: None,
-            cwd: directory.clone(),
-            instructions: String::new(),
             program: Some(fake_claude(&directory)),
-            read_only: false,
-            subagents: true,
-            client: ClientInfo::default(),
+            ..AgentConfig::new(ProviderKind::ClaudeCode, &directory)
         };
         let (events, received) = mpsc::channel();
         let _session = AgentSession::spawn(adapter(config), "hi", move |event| {

@@ -12,7 +12,7 @@ use crate::CommandSpec;
 use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, ToolCall};
 use serde_json::{Value, json};
 
-use crate::{Adapter, AgentConfig, Output, PARAGRAPH, with_instructions};
+use crate::{Adapter, AgentConfig, Output, PARAGRAPH, preamble, with_instructions};
 
 /// What a refused step reports, and what `agy` is told.
 const REFUSED: &str = "The user refused this action.";
@@ -98,9 +98,9 @@ impl Adapter for Antigravity {
         }
         if let Some(effort) = config.effort {
             let effort = match effort {
-                Effort::Low => "low",
+                Effort::Minimal | Effort::Low => "low",
                 Effort::Medium => "medium",
-                Effort::High | Effort::Max => "high",
+                Effort::High | Effort::XHigh | Effort::Max => "high",
             };
             command = command.args(["--effort", effort]);
         }
@@ -108,12 +108,15 @@ impl Adapter for Antigravity {
     }
 
     fn start(&mut self, prompt: &str) -> Vec<Value> {
+        if prompt.is_empty() {
+            return Vec::new();
+        }
         self.send(prompt)
     }
 
     fn send(&mut self, text: &str) -> Vec<Value> {
         let text = if std::mem::take(&mut self.first) {
-            with_instructions(&self.config.instructions, text)
+            with_instructions(&preamble(&self.config), text)
         } else {
             text.to_owned()
         };

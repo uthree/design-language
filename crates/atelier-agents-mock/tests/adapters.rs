@@ -5,7 +5,10 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use atelier_agents::{AgentConfig, AgentSession, adapter};
-use atelier_agents::{AgentEvent, ClientInfo, Effort, PermissionKind, ProviderKind};
+use atelier_agents::{
+    AgentEvent, Effort, ListModelsError, PermissionKind, ProviderKind, SessionMode, list_models,
+};
+use atelier_agents_mock::cli::MODELS;
 use atelier_agents_mock::{SCENARIO_FILE, Scenario};
 
 const ALL: [ProviderKind; 4] = ProviderKind::ALL;
@@ -21,15 +24,9 @@ fn worker(provider: ProviderKind, scenario: &str) -> Worker {
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join(SCENARIO_FILE), scenario.to_json()).unwrap();
     let config = AgentConfig {
-        provider,
-        model: None,
         effort: Some(Effort::Medium),
-        cwd: directory.path().into(),
-        instructions: String::new(),
         program: Some(env!("CARGO_BIN_EXE_atelier-agents-mock").into()),
-        read_only: false,
-        subagents: true,
-        client: ClientInfo::default(),
+        ..AgentConfig::new(provider, directory.path())
     };
     Worker {
         config,
@@ -108,7 +105,11 @@ fn a_turn_streams_reasons_calls_tools_and_asks_permission_on_every_cli() {
         let worker = worker(provider, FULL_TURN);
         let events = turn(&worker, "Please build it", &[true, false], |_, _| {});
         let label = provider.label();
-        assert_eq!(events[0], AgentEvent::Started, "{label}: {events:#?}");
+        // Only the models the CLI listed in its handshake may come before it starts.
+        let first = events
+            .iter()
+            .find(|event| !matches!(event, AgentEvent::Models { .. }));
+        assert_eq!(first, Some(&AgentEvent::Started), "{label}: {events:#?}");
         let Some(AgentEvent::TurnCompleted { answer }) = events.last() else {
             panic!("{label} did not complete: {events:#?}")
         };
@@ -275,5 +276,162 @@ fn later_turns_follow_the_conversation() {
             "{}",
             provider.label()
         );
+    }
+}
+
+/// Every event of a session until `until` matches or it exits, with no permissions asked.
+fn events_until(
+    config: &atelier_agents::AgentConfig,
+    prompt: &str,
+    until: impl Fn(&AgentEvent) -> bool,
+) -> Vec<AgentEvent> {
+    let (sender, events) = mpsc::channel();
+    let _session = AgentSession::spawn(adapter(config.clone()), prompt, move |event| {
+        sender.send(event).ok();
+    })
+    .unwrap();
+    let mut seen = Vec::new();
+    loop {
+        let event = events
+            .recv_timeout(Duration::from_secs(10))
+            .expect("an event in time");
+        let end = until(&event) || matches!(event, AgentEvent::Exited { .. });
+        seen.push(event);
+        if end {
+            return seen;
+        }
+    }
+}
+
+fn session_id(events: &[AgentEvent]) -> Option<String> {
+    events.iter().find_map(|event| match event {
+        AgentEvent::SessionStarted { id } => Some(id.clone()),
+        _ => None,
+    })
+}
+
+const ECHO: &str = r#"{"otherwise": [{"say": "turn {turn}: {prompt}"}]}"#;
+
+fn turn_ended(event: &AgentEvent) -> bool {
+    matches!(
+        event,
+        AgentEvent::TurnCompleted { .. } | AgentEvent::TurnFailed { .. }
+    )
+}
+
+#[test]
+fn a_kept_session_is_reported_and_carried_on() {
+    for provider in [
+        ProviderKind::ClaudeCode,
+        ProviderKind::Codex,
+        ProviderKind::OpenCode,
+    ] {
+        let label = provider.label();
+        let mut worker = worker(provider, ECHO);
+        let first = events_until(&worker.config, "hello", turn_ended);
+        let id = session_id(&first).unwrap_or_else(|| panic!("{label}: {first:#?}"));
+
+        worker.config.session = SessionMode::Resume(id.clone());
+        let resumed = events_until(&worker.config, "again", turn_ended);
+        assert_eq!(
+            session_id(&resumed).as_deref(),
+            Some(id.as_str()),
+            "{label}"
+        );
+        let Some(AgentEvent::TurnCompleted { answer }) = resumed.last() else {
+            panic!("{label}: {resumed:#?}")
+        };
+        // A loaded session's replayed history is not reported as new text.
+        assert_eq!(&text(&resumed), answer, "{label}");
+        assert!(answer.ends_with("again"), "{label}: {answer}");
+    }
+}
+
+#[test]
+fn an_ephemeral_session_reports_no_id() {
+    for provider in [ProviderKind::ClaudeCode, ProviderKind::Codex] {
+        let mut worker = worker(provider, ECHO);
+        worker.config.session = SessionMode::Ephemeral;
+        let events = events_until(&worker.config, "hello", turn_ended);
+        assert!(events.last().is_some_and(turn_ended), "{events:#?}");
+        assert_eq!(session_id(&events), None, "{}", provider.label());
+    }
+}
+
+#[test]
+fn a_lost_session_fails_before_any_prompt_is_sent() {
+    for provider in [
+        ProviderKind::ClaudeCode,
+        ProviderKind::Codex,
+        ProviderKind::OpenCode,
+    ] {
+        let label = provider.label();
+        let mut worker = worker(provider, ECHO);
+        worker.config.session = SessionMode::Resume("missing-1".into());
+        let events = events_until(&worker.config, "hello", |event| {
+            matches!(event, AgentEvent::ResumeFailed { .. })
+        });
+        assert!(
+            matches!(
+                events.last(),
+                Some(AgentEvent::ResumeFailed { .. } | AgentEvent::Exited { .. })
+            ),
+            "{label}: {events:#?}"
+        );
+        assert_eq!(session_id(&events), None, "{label}");
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, AgentEvent::Text { .. })),
+            "{label}: no turn ran: {events:#?}"
+        );
+    }
+}
+
+#[test]
+fn models_are_listed_without_a_conversation() {
+    for provider in [
+        ProviderKind::ClaudeCode,
+        ProviderKind::Codex,
+        ProviderKind::OpenCode,
+    ] {
+        let worker = worker(provider, ECHO);
+        let models = list_models(worker.config.clone(), Duration::from_secs(10))
+            .unwrap_or_else(|error| panic!("{}: {error}", provider.label()));
+        let ids: Vec<_> = models.iter().map(|model| model.id.as_str()).collect();
+        assert_eq!(ids, MODELS, "{}", provider.label());
+    }
+    let worker = worker(ProviderKind::Antigravity, ECHO);
+    assert!(matches!(
+        list_models(worker.config.clone(), Duration::from_secs(10)),
+        Err(ListModelsError::Unsupported)
+    ));
+}
+
+#[test]
+fn prepared_files_are_written_privately_before_the_cli_starts() {
+    let mut worker = worker(ProviderKind::ClaudeCode, ECHO);
+    let scratch = worker._directory.path().join("private");
+    worker.config.scratch = Some(scratch.clone());
+    worker.config.system_prompt = Some("You are a test.".into());
+    worker.config.mcp_servers = vec![atelier_agents::McpServer {
+        bearer_token: Some("secret".into()),
+        ..atelier_agents::McpServer::new("live", "http://127.0.0.1:9/mcp")
+    }];
+    let events = events_until(&worker.config, "hello", turn_ended);
+    assert!(
+        matches!(events.last(), Some(AgentEvent::TurnCompleted { .. })),
+        "{events:#?}"
+    );
+    let mcp = std::fs::read_to_string(scratch.join("mcp.json")).unwrap();
+    assert!(mcp.contains("Bearer secret"));
+    let prompt = std::fs::read_to_string(scratch.join("system-prompt.md")).unwrap();
+    assert_eq!(prompt, "You are a test.");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode();
+        assert_eq!(mode(&scratch.join("mcp.json")) & 0o777, 0o600);
+        assert_eq!(mode(&scratch) & 0o777, 0o700);
     }
 }

@@ -3,6 +3,10 @@
 //! One process serves the whole conversation: each user message is a line on stdin, and the turn
 //! ends with a `result` line. Tool permissions arrive as `control_request`s (because of
 //! `--permission-prompt-tool stdio`) and are answered with `control_response`s.
+//!
+//! The adapter opens with an `initialize` control request, whose response lists the models the
+//! CLI offers, and sends the first prompt once it is answered. A `--resume` of a session the CLI
+//! no longer has fails there, before any prompt is sent.
 
 use std::collections::HashMap;
 
@@ -10,7 +14,12 @@ use crate::CommandSpec;
 use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, ToolCall};
 use serde_json::{Value, json};
 
-use crate::{Adapter, AgentConfig, Output, PARAGRAPH, content_text};
+use crate::{
+    Adapter, AgentConfig, ModelInfo, Output, PARAGRAPH, PreparedFile, SessionMode, content_text,
+};
+
+/// The id of the opening `initialize` control request.
+const INITIALIZE: &str = "atelier-initialize";
 
 /// The tools that start a sub-agent: `Task`, called `Agent` in later versions.
 pub(crate) const SUBAGENT_TOOLS: [&str; 2] = ["Task", "Agent"];
@@ -22,6 +31,10 @@ pub(crate) struct Claude {
     streamed: bool,
     /// Inputs of permission requests awaiting an answer; Claude Code wants them echoed back.
     asked: HashMap<String, Value>,
+    /// The first prompt, held until `initialize` is answered.
+    queued: Option<String>,
+    /// Whether [`AgentEvent::SessionStarted`] was reported.
+    reported: bool,
 }
 
 impl Claude {
@@ -31,7 +44,87 @@ impl Claude {
             answer: String::new(),
             streamed: false,
             asked: HashMap::new(),
+            queued: None,
+            reported: false,
         }
+    }
+
+    /// The MCP configuration Claude Code reads with `--mcp-config`, or `None` when it needs
+    /// none.
+    fn mcp_config(&self) -> Option<String> {
+        let config = &self.config;
+        if config.mcp_servers.is_empty() && !config.isolated {
+            return None;
+        }
+        let servers: serde_json::Map<String, Value> = config
+            .mcp_servers
+            .iter()
+            .map(|server| {
+                let mut entry = json!({"type": "http", "url": server.url});
+                if let Some(token) = &server.bearer_token {
+                    entry["headers"] = json!({"Authorization": format!("Bearer {token}")});
+                }
+                (server.name.clone(), entry)
+            })
+            .collect();
+        Some(json!({"mcpServers": servers}).to_string())
+    }
+
+    /// The `--settings` Claude Code is started with, or `None` when it needs none.
+    fn settings(&self) -> Option<String> {
+        let config = &self.config;
+        let mut settings = serde_json::Map::new();
+        if config.isolated {
+            settings.insert("disableAllHooks".into(), json!(true));
+            settings.insert("autoMemoryEnabled".into(), json!(false));
+            settings.insert("enabledPlugins".into(), json!({}));
+        }
+        if let Some(fast) = config.fast {
+            settings.insert("fastMode".into(), json!(fast));
+        }
+        let allow: Vec<String> = config
+            .mcp_servers
+            .iter()
+            .filter(|server| server.auto_approve)
+            .map(|server| format!("mcp__{}__*", server.name))
+            .collect();
+        if !allow.is_empty() {
+            settings.insert("permissions".into(), json!({"allow": allow}));
+        }
+        (!settings.is_empty()).then(|| Value::Object(settings).to_string())
+    }
+
+    fn initialized(&mut self, response: &Value) -> Output {
+        let mut output = Output::default();
+        if response["subtype"] != "success"
+            && let SessionMode::Resume(_) = self.config.session
+        {
+            self.queued = None;
+            let message = response["error"]
+                .as_str()
+                .unwrap_or("Claude Code could not resume the session")
+                .to_owned();
+            return Output::event(AgentEvent::ResumeFailed { message });
+        }
+        let models: Vec<ModelInfo> = response["response"]["models"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|model| {
+                Some(ModelInfo {
+                    id: model["value"].as_str()?.to_owned(),
+                    name: model["displayName"].as_str().map(str::to_owned),
+                    efforts: Vec::new(),
+                })
+            })
+            .collect();
+        if !models.is_empty() {
+            output.events.push(AgentEvent::Models { models });
+        }
+        if let Some(prompt) = self.queued.take().filter(|prompt| !prompt.is_empty()) {
+            output.replies.extend(self.send(&prompt));
+        }
+        output
     }
 
     fn user(text: &str) -> Value {
@@ -108,14 +201,50 @@ impl Adapter for Claude {
         if !config.instructions.is_empty() {
             command = command.args(["--append-system-prompt", &config.instructions]);
         }
+        if let Some(prompt) = &config.system_prompt {
+            command = match &config.scratch {
+                Some(scratch) => command
+                    .arg("--system-prompt-file")
+                    .arg(scratch.join("system-prompt.md").to_string_lossy()),
+                None => command.args(["--system-prompt", prompt]),
+            };
+        }
+        if config.isolated {
+            command = command.args([
+                "--setting-sources=",
+                "--strict-mcp-config",
+                "--disable-slash-commands",
+                "--no-chrome",
+            ]);
+        }
+        if let Some(mcp) = self.mcp_config() {
+            command = match &config.scratch {
+                Some(scratch) => command
+                    .arg("--mcp-config")
+                    .arg(scratch.join("mcp.json").to_string_lossy()),
+                None => command.args(["--mcp-config", &mcp]),
+            };
+        }
+        if let Some(settings) = self.settings() {
+            command = command.args(["--settings", &settings]);
+        }
+        if !config.native_tools {
+            command = command.args(["--tools", ""]);
+        }
+        command = match &config.session {
+            SessionMode::New => command,
+            SessionMode::Ephemeral => command.arg("--no-session-persistence"),
+            SessionMode::Resume(id) => command.args(["--resume", id]),
+        };
         if let Some(model) = &config.model {
             command = command.arg(format!("--model={model}"));
         }
         if let Some(effort) = config.effort {
             let effort = match effort {
-                Effort::Low => "low",
+                Effort::Minimal | Effort::Low => "low",
                 Effort::Medium => "medium",
                 Effort::High => "high",
+                Effort::XHigh => "xhigh",
                 Effort::Max => "max",
             };
             command = command.args(["--effort", effort]);
@@ -123,8 +252,30 @@ impl Adapter for Claude {
         command
     }
 
+    fn files(&self) -> Vec<PreparedFile> {
+        let Some(scratch) = &self.config.scratch else {
+            return Vec::new();
+        };
+        let mut files = Vec::new();
+        if let Some(mcp) = self.mcp_config() {
+            files.push(PreparedFile {
+                path: scratch.join("mcp.json"),
+                contents: mcp,
+            });
+        }
+        if let Some(prompt) = &self.config.system_prompt {
+            files.push(PreparedFile {
+                path: scratch.join("system-prompt.md"),
+                contents: prompt.clone(),
+            });
+        }
+        files
+    }
+
     fn start(&mut self, prompt: &str) -> Vec<Value> {
-        self.send(prompt)
+        self.queued = Some(prompt.to_owned());
+        vec![json!({"type": "control_request", "request_id": INITIALIZE,
+            "request": {"subtype": "initialize", "hooks": {}, "agents": {}, "skills": []}})]
     }
 
     fn send(&mut self, text: &str) -> Vec<Value> {
@@ -137,13 +288,28 @@ impl Adapter for Claude {
         if message["type"] == "control_request" {
             return self.control(&message);
         }
+        if message["type"] == "control_response" && message["response"]["request_id"] == INITIALIZE
+        {
+            return self.initialized(&message["response"]);
+        }
         // Messages from Claude Code's own subagents belong to their parent tool call.
         if !message["parent_tool_use_id"].is_null() {
             return Output::default();
         }
         let mut output = Output::default();
         match message["type"].as_str().unwrap_or_default() {
-            "system" if message["subtype"] == "init" => output.events.push(AgentEvent::Started),
+            "system" if message["subtype"] == "init" => {
+                output.events.push(AgentEvent::Started);
+                let id = message["session_id"].as_str().filter(|id| !id.is_empty());
+                if let Some(id) = id
+                    && self.config.session != SessionMode::Ephemeral
+                    && !std::mem::replace(&mut self.reported, true)
+                {
+                    output
+                        .events
+                        .push(AgentEvent::SessionStarted { id: id.to_owned() });
+                }
+            }
             "stream_event" => {
                 let delta = &message["event"]["delta"];
                 match delta["type"].as_str().unwrap_or_default() {
@@ -313,7 +479,22 @@ mod tests {
     #[test]
     fn a_turn_streams_text_once_and_reports_tools() {
         let mut claude = Claude::new(config(ProviderKind::ClaudeCode));
-        assert_eq!(claude.start("Fix it")[0]["message"]["content"], "Fix it");
+        let opening = claude.start("Fix it");
+        assert_eq!(opening[0]["request"]["subtype"], "initialize");
+        let ready = claude.receive(json!({"type":"control_response","response":{
+            "subtype":"success","request_id":INITIALIZE,
+            "response":{"models":[{"value":"opus","displayName":"Opus"}]}}}));
+        assert_eq!(ready.replies[0]["message"]["content"], "Fix it");
+        assert_eq!(
+            ready.events,
+            [AgentEvent::Models {
+                models: vec![ModelInfo {
+                    id: "opus".into(),
+                    name: Some("Opus".into()),
+                    efforts: Vec::new()
+                }]
+            }]
+        );
         let lines = [
             json!({"type":"system","subtype":"init"}),
             json!({"type":"stream_event","event":{"delta":{"type":"thinking_delta","thinking":"Hmm"}}}),
@@ -400,6 +581,139 @@ mod tests {
             output.events,
             [AgentEvent::TurnFailed {
                 message: "error_max_turns".into()
+            }]
+        );
+    }
+
+    fn server(auto_approve: bool) -> crate::McpServer {
+        crate::McpServer {
+            bearer_token: Some("secret".into()),
+            auto_approve,
+            ..crate::McpServer::new("live", "http://127.0.0.1:9/mcp")
+        }
+    }
+
+    #[test]
+    fn mcp_servers_and_the_system_prompt_go_into_private_files() {
+        let claude = Claude::new(AgentConfig {
+            mcp_servers: vec![server(true)],
+            system_prompt: Some("You are a test.".into()),
+            scratch: Some("/private/run".into()),
+            ..config(ProviderKind::ClaudeCode)
+        });
+        let args = claude.command().args;
+        assert!(!args.iter().any(|arg| arg.contains("secret")), "{args:?}");
+        assert!(args.windows(2).any(|pair| pair[0] == "--mcp-config"
+            && std::path::Path::new(&pair[1]) == std::path::Path::new("/private/run/mcp.json")));
+        assert!(args.iter().any(|arg| arg == "--system-prompt-file"));
+        let settings = args
+            .windows(2)
+            .find(|pair| pair[0] == "--settings")
+            .unwrap();
+        let settings: Value = serde_json::from_str(&settings[1]).unwrap();
+        assert_eq!(settings["permissions"]["allow"], json!(["mcp__live__*"]));
+        let files = claude.files();
+        assert_eq!(files.len(), 2);
+        let mcp: Value = serde_json::from_str(&files[0].contents).unwrap();
+        assert_eq!(
+            mcp["mcpServers"]["live"]["headers"]["Authorization"],
+            "Bearer secret"
+        );
+        assert_eq!(files[1].contents, "You are a test.");
+    }
+
+    #[test]
+    fn without_scratch_the_configuration_rides_in_the_arguments() {
+        let claude = Claude::new(AgentConfig {
+            mcp_servers: vec![server(false)],
+            system_prompt: Some("You are a test.".into()),
+            ..config(ProviderKind::ClaudeCode)
+        });
+        let args = claude.command().args;
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--system-prompt", "You are a test."])
+        );
+        let mcp = args
+            .windows(2)
+            .find(|pair| pair[0] == "--mcp-config")
+            .unwrap();
+        assert!(mcp[1].contains("http://127.0.0.1:9/mcp"));
+        assert!(!args.iter().any(|arg| arg == "--settings"));
+        assert!(claude.files().is_empty());
+    }
+
+    #[test]
+    fn isolation_tools_speed_and_sessions_become_flags() {
+        let args = |config: AgentConfig| Claude::new(config).command().args;
+        let isolated = args(AgentConfig {
+            isolated: true,
+            native_tools: false,
+            fast: Some(true),
+            session: SessionMode::Ephemeral,
+            ..config(ProviderKind::ClaudeCode)
+        });
+        for flag in [
+            "--setting-sources=",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--no-session-persistence",
+        ] {
+            assert!(isolated.iter().any(|arg| arg == flag), "{flag}");
+        }
+        assert!(isolated.windows(2).any(|pair| pair == ["--tools", ""]));
+        let settings = isolated
+            .windows(2)
+            .find(|pair| pair[0] == "--settings")
+            .unwrap();
+        let settings: Value = serde_json::from_str(&settings[1]).unwrap();
+        assert_eq!(settings["fastMode"], true);
+        assert_eq!(settings["disableAllHooks"], true);
+        // An isolated run reads no MCP servers but the ones it is given: none.
+        let mcp = isolated
+            .windows(2)
+            .find(|pair| pair[0] == "--mcp-config")
+            .unwrap();
+        assert_eq!(mcp[1], r#"{"mcpServers":{}}"#);
+
+        let resumed = args(AgentConfig {
+            session: SessionMode::Resume("abc".into()),
+            ..config(ProviderKind::ClaudeCode)
+        });
+        assert!(resumed.windows(2).any(|pair| pair == ["--resume", "abc"]));
+        let plain = args(config(ProviderKind::ClaudeCode));
+        for flag in ["--settings", "--mcp-config", "--tools", "--resume"] {
+            assert!(!plain.iter().any(|arg| arg == flag), "{flag}");
+        }
+    }
+
+    #[test]
+    fn a_session_is_reported_once_and_a_failed_resume_sends_no_prompt() {
+        let mut claude = Claude::new(config(ProviderKind::ClaudeCode));
+        claude.start("hi");
+        claude.receive(json!({"type":"control_response","response":{"subtype":"success","request_id":INITIALIZE}}));
+        let init = json!({"type":"system","subtype":"init","session_id":"s1"});
+        assert_eq!(
+            claude.receive(init.clone()).events,
+            [
+                AgentEvent::Started,
+                AgentEvent::SessionStarted { id: "s1".into() }
+            ]
+        );
+        assert_eq!(claude.receive(init).events, [AgentEvent::Started]);
+
+        let mut claude = Claude::new(AgentConfig {
+            session: SessionMode::Resume("gone".into()),
+            ..config(ProviderKind::ClaudeCode)
+        });
+        claude.start("hi");
+        let output = claude.receive(json!({"type":"control_response","response":{
+            "subtype":"error","request_id":INITIALIZE,"error":"No conversation found"}}));
+        assert!(output.replies.is_empty());
+        assert_eq!(
+            output.events,
+            [AgentEvent::ResumeFailed {
+                message: "No conversation found".into()
             }]
         );
     }

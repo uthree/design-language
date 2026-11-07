@@ -34,6 +34,7 @@ mod claude;
 mod codex;
 mod command;
 mod event;
+mod models;
 mod opencode;
 mod provider;
 mod rpc;
@@ -44,9 +45,68 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 pub use command::{CommandSpec, quote};
-pub use event::{AgentEvent, PermissionKind, PermissionRequest, ToolCall};
+pub use event::{AgentEvent, ModelInfo, PermissionKind, PermissionRequest, ToolCall};
+pub use models::{ListModelsError, list_models};
 pub use provider::{Effort, ProviderKind, ProviderStatus, SetupAction};
 pub use session::{AgentSession, SpawnError};
+
+/// An MCP server the agent may call, reached over streamable HTTP.
+///
+/// Claude Code, Codex and OpenCode are told about it when they start. Antigravity CLI takes no
+/// per-run servers, so its adapter ignores them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct McpServer {
+    /// The name the CLI knows it by. Claude Code names its tools `mcp__<name>__<tool>`.
+    pub name: String,
+    /// Its URL.
+    pub url: String,
+    /// Sent as `Authorization: Bearer <token>`. It is kept out of the process's arguments: it
+    /// goes into a private file under [`AgentConfig::scratch`] for Claude Code, an environment
+    /// variable for Codex, and the session request for OpenCode.
+    pub bearer_token: Option<String>,
+    /// Call its tools without asking, for a server the application owns and gates itself.
+    pub auto_approve: bool,
+}
+
+impl McpServer {
+    /// A server at `url` with no token, whose tools ask before each call.
+    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            url: url.into(),
+            bearer_token: None,
+            auto_approve: false,
+        }
+    }
+}
+
+/// Whether the CLI keeps the conversation, so a later process can carry it on.
+///
+/// Antigravity CLI keeps no session it can be asked to carry on, so it never reports an
+/// [`AgentEvent::SessionStarted`] whose id could come back as [`SessionMode::Resume`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum SessionMode {
+    /// The CLI's default: it keeps a session and reports its id in
+    /// [`AgentEvent::SessionStarted`].
+    #[default]
+    New,
+    /// Nothing is kept, where the CLI can be told so (Claude Code, Codex).
+    Ephemeral,
+    /// Carry on the session with this id, as an earlier [`AgentEvent::SessionStarted`] reported
+    /// it. When the CLI no longer has it, the adapter reports [`AgentEvent::ResumeFailed`] (or the
+    /// process exits before [`AgentEvent::SessionStarted`]) and sends no prompt, so the
+    /// application can start a new session with the conversation handed over as text.
+    Resume(String),
+}
+
+/// A file an adapter needs on disk before its CLI starts; [`AgentSession`] writes it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreparedFile {
+    /// Where, under [`AgentConfig::scratch`].
+    pub path: PathBuf,
+    /// What it holds.
+    pub contents: String,
+}
 
 /// How the application names itself to CLIs that ask (Codex's and OpenCode's handshakes).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +153,28 @@ pub struct AgentConfig {
     pub subagents: bool,
     /// How the application names itself to the CLI.
     pub client: ClientInfo,
+    /// Replaces the CLI's own system prompt (Claude Code, Codex). Elsewhere it is put in front of
+    /// the first prompt, as [`AgentConfig::instructions`] are.
+    pub system_prompt: Option<String>,
+    /// MCP servers the agent may call.
+    pub mcp_servers: Vec<McpServer>,
+    /// Whether the conversation is kept, or which one to carry on.
+    pub session: SessionMode,
+    /// Whether the agent gets the CLI's own shell and file tools. Without them it can only talk
+    /// and call [`AgentConfig::mcp_servers`].
+    pub native_tools: bool,
+    /// Ask for the provider's fast service tier (`Some(true)`) or its standard one
+    /// (`Some(false)`), overriding the user's setting; `None` leaves the CLI's own. Claude Code
+    /// and Codex.
+    pub fast: Option<bool>,
+    /// Ignore the user's own CLI setup for this run where the CLI allows it: hooks, plugins,
+    /// skills, slash commands, memories, project instruction files and configured MCP servers
+    /// (Claude Code, and Codex but for MCP servers). For an application that defines the
+    /// agent's whole environment itself.
+    pub isolated: bool,
+    /// A private directory for [`PreparedFile`]s, which keep secrets out of the process list.
+    /// Without one, Claude Code is handed its MCP configuration and system prompt as arguments.
+    pub scratch: Option<PathBuf>,
 }
 
 impl AgentConfig {
@@ -109,6 +191,13 @@ impl AgentConfig {
             read_only: false,
             subagents: true,
             client: ClientInfo::default(),
+            system_prompt: None,
+            mcp_servers: Vec::new(),
+            session: SessionMode::New,
+            native_tools: true,
+            fast: None,
+            isolated: false,
+            scratch: None,
         }
     }
 }
@@ -146,8 +235,14 @@ impl Output {
 pub trait Adapter: Send {
     /// The process to start.
     fn command(&self) -> CommandSpec;
+    /// Files to write before [`Adapter::command`] runs.
+    fn files(&self) -> Vec<PreparedFile> {
+        Vec::new()
+    }
     /// The first messages, carrying the first prompt. An adapter whose CLI needs a handshake
-    /// sends the handshake here and the prompt once the CLI is ready.
+    /// sends the handshake here and the prompt once the CLI is ready. An empty prompt starts no
+    /// turn: the handshake alone, for [`list_models`] or a session that waits for its first
+    /// message.
     fn start(&mut self, prompt: &str) -> Vec<Value>;
     /// The next user message.
     fn send(&mut self, text: &str) -> Vec<Value>;
@@ -187,6 +282,17 @@ pub fn starts_subagent(provider: ProviderKind, tool: &str) -> bool {
 /// What separates two messages of one turn, in the answer and in the streamed text.
 const PARAGRAPH: &str = "\n\n";
 
+/// The system prompt and the standing instructions, for CLIs that take neither separately.
+fn preamble(config: &AgentConfig) -> String {
+    match &config.system_prompt {
+        Some(prompt) if !config.instructions.is_empty() => {
+            format!("{prompt}\n\n{}", config.instructions)
+        }
+        Some(prompt) => prompt.clone(),
+        None => config.instructions.clone(),
+    }
+}
+
 /// Puts the standing instructions in front of the first prompt, for CLIs that have no
 /// separate channel for them that leaves their own system prompt intact.
 fn with_instructions(instructions: &str, prompt: &str) -> String {
@@ -221,8 +327,7 @@ fn config(provider: ProviderKind) -> AgentConfig {
         instructions: "Only touch src/.".into(),
         program: None,
         read_only: false,
-        subagents: true,
-        client: ClientInfo::default(),
+        ..AgentConfig::new(provider, "/work/n1")
     }
 }
 

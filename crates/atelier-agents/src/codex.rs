@@ -11,7 +11,10 @@ use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, ToolCall};
 use serde_json::{Value, json};
 
 use crate::rpc::{self, Calls};
-use crate::{Adapter, AgentConfig, Output, PARAGRAPH, content_text, with_instructions};
+use crate::{
+    Adapter, AgentConfig, ModelInfo, Output, PARAGRAPH, SessionMode, content_text,
+    with_instructions,
+};
 
 /// What a call that starts or drives another agent is reported as. Codex has no switch for them
 /// in `thread/start`, so an agent that may not use them is noticed when it does.
@@ -19,9 +22,30 @@ pub(crate) const SUBAGENT_TOOLS: [&str; 1] = ["collabAgentToolCall"];
 
 enum Purpose {
     Initialize,
+    ListModels,
     StartThread,
     StartTurn,
     Other,
+}
+
+/// The settings that leave the user's own Codex setup out of an isolated run.
+const ISOLATED: [&str; 11] = [
+    "features.shell_snapshot=false",
+    "features.hooks=false",
+    "features.plugins=false",
+    "features.apps=false",
+    "features.multi_agent=false",
+    "features.remote_plugin=false",
+    "features.memories=false",
+    "features.skip_host_skill_discovery=true",
+    "features.skill_mcp_dependency_install=false",
+    "approvals_reviewer=\"user\"",
+    "project_doc_max_bytes=0",
+];
+
+/// The environment variable that carries the bearer token of the `index`th MCP server.
+fn token_variable(index: usize) -> String {
+    format!("ATELIER_MCP_TOKEN_{index}")
 }
 
 pub(crate) struct Codex {
@@ -59,10 +83,11 @@ impl Codex {
             text.to_owned()
         };
         let effort = self.config.effort.map(|effort| match effort {
+            Effort::Minimal => "minimal",
             Effort::Low => "low",
             Effort::Medium => "medium",
             Effort::High => "high",
-            Effort::Max => "xhigh",
+            Effort::XHigh | Effort::Max => "xhigh",
         });
         self.calls.request(
             "turn/start",
@@ -73,24 +98,72 @@ impl Codex {
 
     fn response(&mut self, purpose: Purpose, message: &Value) -> Output {
         if let Some(error) = rpc::error(message) {
-            return Output::event(AgentEvent::TurnFailed {
-                message: format!("Codex: {error}"),
-            });
+            return match purpose {
+                // A CLI too old to list its models still runs.
+                Purpose::ListModels => Output::default(),
+                Purpose::StartThread if matches!(self.config.session, SessionMode::Resume(_)) => {
+                    self.queued = None;
+                    Output::event(AgentEvent::ResumeFailed {
+                        message: format!("Codex: {error}"),
+                    })
+                }
+                _ => Output::event(AgentEvent::TurnFailed {
+                    message: format!("Codex: {error}"),
+                }),
+            };
         }
         let result = &message["result"];
         match purpose {
             Purpose::Initialize => {
-                let thread = self.calls.request(
-                    "thread/start",
-                    json!({"model": self.config.model, "cwd": self.config.cwd,
-                        "approvalPolicy": "on-request",
-                        "sandbox": if self.config.read_only { "read-only" } else { "workspace-write" }}),
-                    Purpose::StartThread,
+                let config = &self.config;
+                let mut params = json!({"model": config.model, "cwd": config.cwd,
+                    "approvalPolicy": "on-request",
+                    "sandbox": if config.read_only { "read-only" } else { "workspace-write" }});
+                if let Some(prompt) = &config.system_prompt {
+                    params["baseInstructions"] = json!(prompt);
+                }
+                let method = match &config.session {
+                    SessionMode::Resume(thread) => {
+                        params["threadId"] = json!(thread);
+                        "thread/resume"
+                    }
+                    SessionMode::Ephemeral => {
+                        params["ephemeral"] = json!(true);
+                        "thread/start"
+                    }
+                    SessionMode::New => "thread/start",
+                };
+                let models = self.calls.request(
+                    "model/list",
+                    json!({"cursor": null, "limit": 100}),
+                    Purpose::ListModels,
                 );
+                let thread = self.calls.request(method, params, Purpose::StartThread);
                 Output {
                     events: Vec::new(),
-                    replies: vec![self.calls.notify("initialized", json!({})), thread],
+                    replies: vec![self.calls.notify("initialized", json!({})), models, thread],
                 }
+            }
+            Purpose::ListModels => {
+                let models = result["data"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|model| {
+                        Some(ModelInfo {
+                            id: model["model"].as_str()?.to_owned(),
+                            name: model["displayName"].as_str().map(str::to_owned),
+                            efforts: model["supportedReasoningEfforts"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|effort| effort["reasoningEffort"].as_str())
+                                .map(str::to_owned)
+                                .collect(),
+                        })
+                    })
+                    .collect();
+                Output::event(AgentEvent::Models { models })
             }
             Purpose::StartThread => {
                 let thread = result["thread"]["id"]
@@ -99,7 +172,12 @@ impl Codex {
                     .to_owned();
                 self.thread = Some(thread.clone());
                 let mut output = Output::event(AgentEvent::Started);
-                if let Some(prompt) = self.queued.take() {
+                if self.config.session != SessionMode::Ephemeral && !thread.is_empty() {
+                    output
+                        .events
+                        .push(AgentEvent::SessionStarted { id: thread.clone() });
+                }
+                if let Some(prompt) = self.queued.take().filter(|prompt| !prompt.is_empty()) {
                     output.replies.push(self.turn_start(&thread, &prompt));
                 }
                 output
@@ -230,11 +308,44 @@ fn tool_name(item: &Value) -> String {
 
 impl Adapter for Codex {
     fn command(&self) -> CommandSpec {
-        CommandSpec::new(self.config.program.as_deref().unwrap_or("codex"))
-            .cwd(&self.config.cwd)
+        let config = &self.config;
+        let mut command = CommandSpec::new(config.program.as_deref().unwrap_or("codex"))
+            .cwd(&config.cwd)
             .args(["app-server", "--listen", "stdio://"])
             .env_remove("CODEX_THREAD_ID")
-            .env_remove("CODEX_SANDBOX")
+            .env_remove("CODEX_SANDBOX");
+        let mut settings: Vec<String> = Vec::new();
+        if config.isolated {
+            settings.extend(ISOLATED.map(str::to_owned));
+        }
+        if !config.native_tools {
+            for feature in ["shell_tool", "unified_exec", "apply_patch_freeform"] {
+                settings.push(format!("features.{feature}=false"));
+            }
+        }
+        if let Some(fast) = config.fast {
+            settings.push("features.fast_mode=true".into());
+            let tier = if fast { "fast" } else { "default" };
+            settings.push(format!("service_tier=\"{tier}\""));
+        }
+        for (index, server) in config.mcp_servers.iter().enumerate() {
+            let key = format!("mcp_servers.{}", server.name);
+            settings.push(format!("{key}.url={}", json!(server.url)));
+            settings.push(format!("{key}.enabled=true"));
+            if server.auto_approve {
+                settings.push(format!("{key}.default_tools_approval_mode=\"approve\""));
+            }
+            if let Some(token) = &server.bearer_token {
+                // The token travels in the environment, never in the arguments.
+                let variable = token_variable(index);
+                settings.push(format!("{key}.bearer_token_env_var=\"{variable}\""));
+                command = command.env(variable, token);
+            }
+        }
+        for setting in settings {
+            command = command.args(["-c", &setting]);
+        }
+        command
     }
 
     fn start(&mut self, prompt: &str) -> Vec<Value> {
@@ -303,12 +414,20 @@ mod tests {
 
         let output = codex.receive(json!({"id": init["id"], "result": {}}));
         assert_eq!(output.replies[0]["method"], "initialized");
-        let thread = &output.replies[1];
+        assert_eq!(output.replies[1]["method"], "model/list");
+        let thread = &output.replies[2];
+        assert_eq!(thread["method"], "thread/start");
         assert_eq!(thread["params"]["sandbox"], "workspace-write");
         assert_eq!(thread["params"]["model"], "model-x");
 
         let output = codex.receive(json!({"id": thread["id"], "result": {"thread": {"id": "th"}}}));
-        assert_eq!(output.events, [AgentEvent::Started]);
+        assert_eq!(
+            output.events,
+            [
+                AgentEvent::Started,
+                AgentEvent::SessionStarted { id: "th".into() }
+            ]
+        );
         let turn = &output.replies[0];
         assert_eq!(turn["params"]["threadId"], "th");
         assert_eq!(turn["params"]["effort"], "high");
@@ -375,5 +494,63 @@ mod tests {
         let other =
             codex.receive(json!({"id": 901, "method": "account/chatgptAuthTokens/refresh"}));
         assert_eq!(other.replies[0]["error"]["code"], -32601);
+    }
+
+    #[test]
+    fn mcp_tokens_travel_in_the_environment() {
+        let command = Codex::new(AgentConfig {
+            mcp_servers: vec![crate::McpServer {
+                bearer_token: Some("secret".into()),
+                auto_approve: true,
+                ..crate::McpServer::new("live", "http://127.0.0.1:9/mcp")
+            }],
+            fast: Some(false),
+            native_tools: false,
+            isolated: true,
+            ..config(ProviderKind::Codex)
+        })
+        .command();
+        assert!(!command.args.iter().any(|arg| arg.contains("secret")));
+        assert_eq!(
+            command.env.get("ATELIER_MCP_TOKEN_0").map(String::as_str),
+            Some("secret")
+        );
+        for setting in [
+            r#"mcp_servers.live.url="http://127.0.0.1:9/mcp""#,
+            r#"mcp_servers.live.bearer_token_env_var="ATELIER_MCP_TOKEN_0""#,
+            r#"mcp_servers.live.default_tools_approval_mode="approve""#,
+            r#"service_tier="default""#,
+            "features.shell_tool=false",
+            "features.hooks=false",
+        ] {
+            assert!(
+                command.args.windows(2).any(|pair| pair == ["-c", setting]),
+                "{setting}: {:?}",
+                command.args
+            );
+        }
+        let plain = Codex::new(config(ProviderKind::Codex)).command();
+        assert!(!plain.args.iter().any(|arg| arg == "-c"));
+    }
+
+    #[test]
+    fn a_thread_is_resumed_or_reported_lost() {
+        let mut codex = Codex::new(AgentConfig {
+            session: SessionMode::Resume("th".into()),
+            system_prompt: Some("Be brief.".into()),
+            ..config(ProviderKind::Codex)
+        });
+        let init = codex.start("Again").remove(0);
+        let output = codex.receive(json!({"id": init["id"], "result": {}}));
+        let resume = &output.replies[2];
+        assert_eq!(resume["method"], "thread/resume");
+        assert_eq!(resume["params"]["threadId"], "th");
+        assert_eq!(resume["params"]["baseInstructions"], "Be brief.");
+        let lost = codex.receive(json!({"id": resume["id"], "error": {"message": "no rollout"}}));
+        assert!(lost.replies.is_empty());
+        assert!(matches!(
+            &lost.events[..],
+            [AgentEvent::ResumeFailed { .. }]
+        ));
     }
 }

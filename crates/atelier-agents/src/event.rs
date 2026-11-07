@@ -42,12 +42,41 @@ pub struct PermissionRequest {
     pub detail: String,
 }
 
+/// A model the CLI offers, as it reported it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// What to put in [`crate::AgentConfig::model`].
+    pub id: String,
+    /// The name a person reads, when the CLI gives one.
+    pub name: Option<String>,
+    /// The reasoning efforts it accepts, in the CLI's own words, when the CLI says.
+    pub efforts: Vec<String>,
+}
+
 /// One thing a running agent did.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum AgentEvent {
     /// The process is up and has accepted its first instructions.
     Started,
+    /// The CLI keeps this conversation under `id`: pass it as
+    /// [`crate::SessionMode::Resume`] to carry it on in a later process.
+    SessionStarted {
+        /// The provider's session or thread id.
+        id: String,
+    },
+    /// The session asked for by [`crate::SessionMode::Resume`] could not be resumed. No prompt
+    /// was sent; stop this agent and start a new one.
+    ResumeFailed {
+        /// What the CLI said.
+        message: String,
+    },
+    /// The models the CLI offers, as it reported them during its handshake (Claude Code, Codex,
+    /// OpenCode).
+    Models {
+        /// The models.
+        models: Vec<ModelInfo>,
+    },
     /// A message was sent to the agent: its first prompt or a later one. The application
     /// reports this, not the CLI, so that its transcript holds both sides of the conversation.
     Prompted {

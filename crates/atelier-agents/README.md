@@ -26,9 +26,34 @@ atelier-agents-mock = { git = "https://github.com/uthree/design-language", tag =
   callback. `AgentSession::spawn_in` takes the process to run instead, for an agent on another
   machine: wrap `CommandSpec::shell_line()` in `ssh`, `wsl.exe` or `docker exec`. An application
   on tokio can skip the session and drive the adapter from its own child process.
-- **`AgentConfig`** holds the provider, model, effort, working directory, standing
-  instructions, read-only mode, whether sub-agents are allowed, and how the application names
-  itself to the CLI.
+- **`AgentConfig`** holds the provider, model and effort, the working directory, standing
+  instructions or a replacement system prompt, and read-only mode. It also says whether the
+  agent may start sub-agents and use the CLI's own shell and file tools. Further settings
+  cover MCP servers, a new, ephemeral or resumed session, the fast service tier, isolation from
+  the user's own CLI setup, and how the application names itself.
+
+### What each CLI supports
+
+| Setting | Claude Code | Codex | OpenCode | Antigravity |
+| --- | --- | --- | --- | --- |
+| `mcp_servers` | `--mcp-config` file | `-c mcp_servers.*`, token in env | `session/new` | ignored |
+| `session` | `--resume`, `--no-session-persistence` | `thread/resume`, `ephemeral` | `session/load` | none kept |
+| `system_prompt` | `--system-prompt-file` | `baseInstructions` | before the first prompt | before the first prompt |
+| `native_tools: false` | `--tools ""` | shell features off | `bash`/`edit` denied | not enforced |
+| `fast` | `fastMode` setting | `service_tier` | ignored | ignored |
+| `isolated` | setting sources, hooks, plugins, MCP | hooks, plugins, skills, memories, project docs | ignored | ignored |
+| `AgentEvent::Models` | `initialize` | `model/list` | `session/new` | none |
+
+Set `scratch` to a private directory so that Claude Code's MCP tokens and system prompt are
+written to owner-only files there by `AgentSession::spawn`, instead of passed as arguments.
+
+### Resuming a conversation
+
+Keep the id from `AgentEvent::SessionStarted` with the conversation, and start the next process
+with `SessionMode::Resume(id)`. When the CLI no longer has that session, the agent reports
+`AgentEvent::ResumeFailed` (Claude Code exits before `SessionStarted` instead) and sends no
+prompt. Stop it and start a `SessionMode::New` agent with the earlier conversation handed over
+as text.
 
 ```rust,no_run
 use atelier_agents::{AgentConfig, AgentEvent, AgentSession, ProviderKind, adapter};
@@ -67,6 +92,10 @@ from within this workspace, or an installed copy) and write the scenario to
 providers, `atelier-agents-mock install DIR` puts `claude`, `codex`, `agy` and `opencode` in
 `DIR`; put it first on `PATH` and name the scenario in `ATELIER_AGENTS_MOCK_SCENARIO`.
 `atelier-agents-mock serve` is an OpenAI-compatible server driven by the same scenario.
+
+Every stand-in offers the models in `atelier_agents_mock::cli::MODELS` and keeps its sessions;
+resuming an id that starts with `missing` fails the way a real CLI does when it no longer has
+the session, so a test can reach the application's fallback.
 
 The adapters were ported from Maestro's `maestro-agents`, whose wire formats follow what Auris
 Studio's backends speak to the same CLIs.

@@ -13,7 +13,10 @@ use crate::{AgentEvent, PermissionKind, PermissionRequest, ToolCall};
 use serde_json::{Value, json};
 
 use crate::rpc::{self, Calls};
-use crate::{Adapter, AgentConfig, Output, PARAGRAPH, content_text, with_instructions};
+use crate::{
+    Adapter, AgentConfig, ModelInfo, Output, PARAGRAPH, SessionMode, content_text, preamble,
+    with_instructions,
+};
 
 /// The tool that starts a sub-agent, which the `task` permission governs.
 pub(crate) const SUBAGENT_TOOLS: [&str; 1] = ["task"];
@@ -21,6 +24,7 @@ pub(crate) const SUBAGENT_TOOLS: [&str; 1] = ["task"];
 enum Purpose {
     Initialize,
     NewSession,
+    LoadSession,
     SetModel,
     Prompt,
 }
@@ -37,6 +41,8 @@ pub(crate) struct OpenCode {
     /// A tool call came after this turn's text, so the next text starts a new message.
     parted: bool,
     first: bool,
+    /// A `session/load` is replaying the old conversation, which is not reported again.
+    loading: bool,
 }
 
 impl OpenCode {
@@ -51,6 +57,36 @@ impl OpenCode {
             started: Vec::new(),
             parted: false,
             first: true,
+            loading: false,
+        }
+    }
+
+    /// The configured MCP servers, as ACP's `session/new` and `session/load` take them.
+    fn mcp_servers(&self) -> Value {
+        self.config
+            .mcp_servers
+            .iter()
+            .map(|server| {
+                let headers: Vec<Value> = server
+                    .bearer_token
+                    .iter()
+                    .map(|token| json!({"name": "Authorization", "value": format!("Bearer {token}")}))
+                    .collect();
+                json!({"type": "http", "name": server.name, "url": server.url, "headers": headers})
+            })
+            .collect()
+    }
+
+    /// The session exists: choose the model, or start.
+    fn opened(&mut self, session: String) -> Output {
+        self.session = Some(session.clone());
+        match self.config.model.clone() {
+            Some(model) => Output::reply(self.calls.request(
+                "session/set_model",
+                json!({"sessionId": session, "modelId": model}),
+                Purpose::SetModel,
+            )),
+            None => self.ready(),
         }
     }
 
@@ -58,7 +94,7 @@ impl OpenCode {
         self.answer.clear();
         self.parted = false;
         let text = if std::mem::take(&mut self.first) {
-            with_instructions(&self.config.instructions, text)
+            with_instructions(&preamble(&self.config), text)
         } else {
             text.to_owned()
         };
@@ -72,7 +108,11 @@ impl OpenCode {
     /// The session is ready: report it and send whatever prompt was waiting.
     fn ready(&mut self) -> Output {
         let mut output = Output::event(AgentEvent::Started);
-        if let (Some(session), Some(prompt)) = (self.session.clone(), self.queued.take()) {
+        if let Some(id) = self.session.clone().filter(|id| !id.is_empty()) {
+            output.events.push(AgentEvent::SessionStarted { id });
+        }
+        let prompt = self.queued.take().filter(|prompt| !prompt.is_empty());
+        if let (Some(session), Some(prompt)) = (self.session.clone(), prompt) {
             output.replies.push(self.prompt(&session, &prompt));
         }
         output
@@ -80,28 +120,70 @@ impl OpenCode {
 
     fn response(&mut self, purpose: Purpose, message: &Value) -> Output {
         if let Some(error) = rpc::error(message) {
+            if let Purpose::LoadSession = purpose {
+                self.loading = false;
+                self.queued = None;
+                return Output::event(AgentEvent::ResumeFailed {
+                    message: format!("OpenCode: {error}"),
+                });
+            }
             return Output::event(AgentEvent::TurnFailed {
                 message: format!("OpenCode: {error}"),
             });
         }
         let result = &message["result"];
         match purpose {
-            Purpose::Initialize => Output::reply(self.calls.request(
-                "session/new",
-                json!({"cwd": self.config.cwd, "mcpServers": []}),
-                Purpose::NewSession,
-            )),
+            Purpose::Initialize => {
+                let servers = self.mcp_servers();
+                let cwd = &self.config.cwd;
+                if let SessionMode::Resume(session) = self.config.session.clone() {
+                    if result["agentCapabilities"]["loadSession"] != true {
+                        self.queued = None;
+                        return Output::event(AgentEvent::ResumeFailed {
+                            message: "OpenCode cannot load an earlier session".into(),
+                        });
+                    }
+                    self.loading = true;
+                    self.session = Some(session.clone());
+                    return Output::reply(self.calls.request(
+                        "session/load",
+                        json!({"sessionId": session, "cwd": cwd, "mcpServers": servers}),
+                        Purpose::LoadSession,
+                    ));
+                }
+                Output::reply(self.calls.request(
+                    "session/new",
+                    json!({"cwd": cwd, "mcpServers": servers}),
+                    Purpose::NewSession,
+                ))
+            }
             Purpose::NewSession => {
                 let session = result["sessionId"].as_str().unwrap_or_default().to_owned();
-                self.session = Some(session.clone());
-                match self.config.model.clone() {
-                    Some(model) => Output::reply(self.calls.request(
-                        "session/set_model",
-                        json!({"sessionId": session, "modelId": model}),
-                        Purpose::SetModel,
-                    )),
-                    None => self.ready(),
+                let models: Vec<ModelInfo> = result["models"]["availableModels"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|model| {
+                        Some(ModelInfo {
+                            id: model["modelId"]
+                                .as_str()
+                                .filter(|id| !id.is_empty())?
+                                .to_owned(),
+                            name: model["name"].as_str().map(str::to_owned),
+                            efforts: Vec::new(),
+                        })
+                    })
+                    .collect();
+                let mut output = self.opened(session);
+                if !models.is_empty() {
+                    output.events.insert(0, AgentEvent::Models { models });
                 }
+                output
+            }
+            Purpose::LoadSession => {
+                self.loading = false;
+                let session = self.session.clone().unwrap_or_default();
+                self.opened(session)
             }
             Purpose::SetModel => self.ready(),
             Purpose::Prompt => {
@@ -218,7 +300,10 @@ impl Adapter for OpenCode {
             .env("OPENCODE_DISABLE_AUTOUPDATE", "true")
             .env("OPENCODE_AUTO_SHARE", "false");
         let mut permission = serde_json::Map::new();
-        if self.config.read_only {
+        if !self.config.native_tools {
+            permission.insert("edit".into(), "deny".into());
+            permission.insert("bash".into(), "deny".into());
+        } else if self.config.read_only {
             // Edits are refused outright, and commands must ask so the application can refuse them.
             permission.insert("edit".into(), "deny".into());
             permission.insert("bash".into(), "ask".into());
@@ -262,6 +347,7 @@ impl Adapter for OpenCode {
             return self.response(purpose, &message);
         }
         if message["method"] == "session/update"
+            && !self.loading
             && message["params"]["sessionId"].as_str() == self.session.as_deref()
         {
             return self.update(&message["params"]["update"]);
@@ -345,7 +431,13 @@ mod tests {
             .replies[0];
         assert_eq!(set["params"]["modelId"], "model-x");
         let output = opencode.receive(json!({"jsonrpc":"2.0","id":set["id"],"result":{}}));
-        assert_eq!(output.events, [AgentEvent::Started]);
+        assert_eq!(
+            output.events,
+            [
+                AgentEvent::Started,
+                AgentEvent::SessionStarted { id: "s".into() }
+            ]
+        );
         let prompt = &output.replies[0];
         assert_eq!(prompt["method"], "session/prompt");
 
@@ -404,5 +496,77 @@ mod tests {
             json!({"outcome":"selected","optionId":"once"})
         );
         assert_eq!(reply["id"], 7);
+    }
+
+    #[test]
+    fn mcp_servers_ride_in_the_session_request_and_a_load_replays_silently() {
+        let mut opencode = OpenCode::new(AgentConfig {
+            mcp_servers: vec![crate::McpServer {
+                bearer_token: Some("secret".into()),
+                ..crate::McpServer::new("live", "http://127.0.0.1:9/mcp")
+            }],
+            session: SessionMode::Resume("old".into()),
+            model: None,
+            ..config(ProviderKind::OpenCode)
+        });
+        assert!(
+            !opencode
+                .command()
+                .env
+                .values()
+                .any(|value| value.contains("secret"))
+        );
+        let init = opencode.start("Again").remove(0);
+        let load = opencode
+            .receive(json!({"jsonrpc":"2.0","id":init["id"],
+                "result":{"agentCapabilities":{"loadSession":true}}}))
+            .replies
+            .remove(0);
+        assert_eq!(load["method"], "session/load");
+        assert_eq!(load["params"]["sessionId"], "old");
+        assert_eq!(
+            load["params"]["mcpServers"][0]["headers"][0]["value"],
+            "Bearer secret"
+        );
+        let replayed = opencode.receive(json!({"jsonrpc":"2.0","method":"session/update",
+            "params":{"sessionId":"old","update":{"sessionUpdate":"agent_message_chunk",
+            "content":{"type":"text","text":"earlier"}}}}));
+        assert!(replayed.events.is_empty());
+        let ready = opencode.receive(json!({"jsonrpc":"2.0","id":load["id"],"result":{}}));
+        assert_eq!(
+            ready.events,
+            [
+                AgentEvent::Started,
+                AgentEvent::SessionStarted { id: "old".into() }
+            ]
+        );
+        assert_eq!(ready.replies[0]["method"], "session/prompt");
+    }
+
+    #[test]
+    fn a_cli_that_cannot_load_sessions_reports_the_resume_lost() {
+        let mut opencode = OpenCode::new(AgentConfig {
+            session: SessionMode::Resume("old".into()),
+            ..config(ProviderKind::OpenCode)
+        });
+        let init = opencode.start("Again").remove(0);
+        let output = opencode.receive(json!({"jsonrpc":"2.0","id":init["id"],"result":{}}));
+        assert!(output.replies.is_empty());
+        assert!(matches!(
+            &output.events[..],
+            [AgentEvent::ResumeFailed { .. }]
+        ));
+    }
+
+    #[test]
+    fn without_native_tools_shell_and_edits_are_refused() {
+        let command = OpenCode::new(AgentConfig {
+            native_tools: false,
+            ..config(ProviderKind::OpenCode)
+        })
+        .command();
+        let permission: Value = serde_json::from_str(&command.env["OPENCODE_PERMISSION"]).unwrap();
+        assert_eq!(permission["bash"], "deny");
+        assert_eq!(permission["edit"], "deny");
     }
 }
