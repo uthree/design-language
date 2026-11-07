@@ -36,5 +36,5 @@ pub mod scenario;
 pub mod server;
 
 pub use cli::Cli;
-pub use scenario::{Rule, SCENARIO_FILE, SCENARIO_VAR, Scenario, Step, Stream, Tool, When};
+pub use scenario::{Limits, Rule, SCENARIO_FILE, SCENARIO_VAR, Scenario, Step, Stream, Tool, When};
 pub use server::Server;

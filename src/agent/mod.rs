@@ -44,7 +44,7 @@ pub use label::AgentLabel;
 pub use panel::{AgentPanel, AgentToggle, ConversationRow};
 pub use queue::{MessageQueue, QueuedMessage};
 #[cfg(feature = "agents")]
-pub use runner::{AgentConnection, AgentFeed};
+pub use runner::{AgentConnection, AgentFeed, usage_limit, usage_meter};
 pub use transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
     ToolCall, ToolGroup, ToolState, UserMessage,

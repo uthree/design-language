@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use crate::CommandSpec;
-use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, ToolCall};
+use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, RateLimit, ToolCall};
 use serde_json::{Value, json};
 
 use crate::{
@@ -375,6 +375,12 @@ impl Adapter for Claude {
                     }
                 }
             }
+            "rate_limit_event" => {
+                let limits = rate_limits(&message["rate_limit_info"]);
+                if !limits.is_empty() {
+                    output.events.push(AgentEvent::RateLimits { limits });
+                }
+            }
             "result" => {
                 self.asked.clear();
                 if message["is_error"] == true || message["subtype"] != "success" {
@@ -416,6 +422,55 @@ impl Adapter for Claude {
             "request": {"subtype": "interrupt"}}),
         ]
     }
+}
+
+/// The plan limits in a `rate_limit_event`'s `rate_limit_info`: every window it tracks, and the
+/// limiting one it names at the top when that is a model's own week. Overage is spending past
+/// the plan, not a limit of it, so it is left out.
+fn rate_limits(info: &Value) -> Vec<RateLimit> {
+    fn limit(id: &str, used: &Value, resets: &Value, status: &Value) -> Option<RateLimit> {
+        let (window_minutes, scope) = match id {
+            "five_hour" => (300, None),
+            "seven_day" => (10_080, None),
+            "seven_day_opus" => (10_080, Some("Opus")),
+            "seven_day_sonnet" => (10_080, Some("Sonnet")),
+            _ => return None,
+        };
+        let reached = status == "rejected";
+        let used_percent = match used.as_f64() {
+            Some(used) => (used * 100.).round().max(0.) as u32,
+            None if reached => 100,
+            None => return None,
+        };
+        Some(RateLimit {
+            id: id.into(),
+            window_minutes: Some(window_minutes),
+            scope: scope.map(str::to_owned),
+            used_percent,
+            resets_at: resets.as_u64(),
+            reached,
+        })
+    }
+    let mut limits: Vec<RateLimit> = info["unifiedWindows"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(id, window)| {
+            limit(
+                id,
+                &window["utilization"],
+                &window["resetsAt"],
+                &window["status"],
+            )
+        })
+        .collect();
+    if let Some(id) = info["rateLimitType"].as_str()
+        && !limits.iter().any(|known| known.id == id)
+        && let Some(top) = limit(id, &info["utilization"], &info["resetsAt"], &info["status"])
+    {
+        limits.push(top);
+    }
+    limits
 }
 
 #[cfg(test)]
@@ -716,5 +771,46 @@ mod tests {
                 message: "No conversation found".into()
             }]
         );
+    }
+
+    #[test]
+    fn rate_limit_events_report_every_window_of_the_plan() {
+        let mut claude = Claude::new(config(ProviderKind::ClaudeCode));
+        let output = claude.receive(json!({"type":"rate_limit_event","rate_limit_info":{
+            "status":"allowed_warning","rateLimitType":"seven_day_opus","utilization":0.91,
+            "resetsAt":1_800_000_000u64,
+            "unifiedWindows":{
+                "five_hour":{"utilization":0.424,"resetsAt":1_790_000_000u64,"status":"allowed"},
+                "seven_day":{"utilization":1.0,"resetsAt":1_800_000_000u64,"status":"rejected"},
+                "seven_day_overage_included":{"utilization":0.1,"resetsAt":1_800_000_000u64}}}}));
+        let limits = |id: &str, minutes, scope: Option<&str>, used, resets, reached| RateLimit {
+            id: id.into(),
+            window_minutes: Some(minutes),
+            scope: scope.map(Into::into),
+            used_percent: used,
+            resets_at: Some(resets),
+            reached,
+        };
+        assert_eq!(
+            output.events,
+            [AgentEvent::RateLimits {
+                limits: vec![
+                    limits("five_hour", 300, None, 42, 1_790_000_000, false),
+                    limits("seven_day", 10_080, None, 100, 1_800_000_000, true),
+                    limits(
+                        "seven_day_opus",
+                        10_080,
+                        Some("Opus"),
+                        91,
+                        1_800_000_000,
+                        false
+                    ),
+                ]
+            }]
+        );
+        // An API key reports a status and nothing to measure.
+        let none = claude
+            .receive(json!({"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}));
+        assert!(none.events.is_empty());
     }
 }

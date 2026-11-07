@@ -1,8 +1,11 @@
 //! An agent's events become the conversation's entries, and the person's answers go back.
 
 use atelier::Theme;
-use atelier::agent::{AgentFeed, ChatEntry, ChatView, Decision};
-use atelier::agents::{AgentEvent, PermissionKind, PermissionRequest, ToolCall};
+use std::time::{Duration, UNIX_EPOCH};
+
+use atelier::Strings;
+use atelier::agent::{AgentFeed, ChatEntry, ChatView, Decision, UsageLimit, usage_limit};
+use atelier::agents::{AgentEvent, PermissionKind, PermissionRequest, RateLimit, ToolCall};
 use gpui::{AppContext, Entity, TestAppContext};
 
 fn chat(cx: &mut TestAppContext) -> Entity<ChatView> {
@@ -243,4 +246,63 @@ fn a_connection_runs_the_cli_and_holds_messages_sent_mid_turn(cx: &mut TestAppCo
     assert_eq!(agent.models()[0].id, "opus");
     drop(agent);
     std::fs::remove_dir_all(&directory).ok();
+}
+
+fn limit(id: &str, minutes: u32, scope: Option<&str>, used: u32, reached: bool) -> RateLimit {
+    RateLimit {
+        id: id.into(),
+        window_minutes: Some(minutes),
+        scope: scope.map(Into::into),
+        used_percent: used,
+        resets_at: Some(1_000_000 + 2 * 3600 + 600),
+        reached,
+    }
+}
+
+#[gpui::test]
+fn plan_limits_are_kept_as_last_reported_and_read_as_the_meter_shows_them(cx: &mut TestAppContext) {
+    let chat = chat(cx);
+    let mut agent = AgentFeed::new();
+    feed(
+        &mut agent,
+        &chat,
+        &[
+            AgentEvent::RateLimits {
+                limits: vec![
+                    limit("five_hour", 300, None, 40, false),
+                    limit("seven_day", 10_080, None, 70, false),
+                ],
+            },
+            AgentEvent::RateLimits {
+                limits: vec![limit("five_hour", 300, None, 45, false)],
+            },
+        ],
+        cx,
+    );
+    let used: Vec<_> = agent
+        .rate_limits()
+        .iter()
+        .map(|limit| (limit.id.as_str(), limit.used_percent))
+        .collect();
+    assert_eq!(used, [("five_hour", 45), ("seven_day", 70)]);
+    // Nothing in the conversation changes.
+    assert!(kinds(&chat, cx).is_empty());
+
+    let now = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let english = Strings::english();
+    assert_eq!(
+        usage_limit(&agent.rate_limits()[0], &english, now),
+        UsageLimit::new("5-hour window", 0.45).resets("in 2 h 10 min")
+    );
+    let opus = limit("seven_day_opus", 10_080, Some("Opus"), 97, true);
+    assert_eq!(
+        usage_limit(&opus, &Strings::japanese(), now),
+        UsageLimit::new("週間枠 · Opus", 1.).resets("2時間10分後")
+    );
+    // A reset already past says nothing about when.
+    let later = now + Duration::from_secs(86_400);
+    assert_eq!(
+        usage_limit(&agent.rate_limits()[1], &english, later),
+        UsageLimit::new("Weekly", 0.7)
+    );
 }

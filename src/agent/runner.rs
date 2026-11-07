@@ -5,7 +5,8 @@
 //! process, so a test or an application with its own runtime can feed it events directly.
 //! [`AgentConnection`] is the whole loop for the common case: it starts the agent, feeds its
 //! events to the chat on the UI thread, sends the person's answers to approvals back, and holds
-//! messages sent mid-turn until the turn ends.
+//! messages sent mid-turn until the turn ends. Both keep the plan limits the CLI reports, for
+//! a [`UsageMeter`] in the composer ([`AgentConnection::usage`]).
 //!
 //! Needs the `agents` feature.
 //!
@@ -20,9 +21,10 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use atelier_agents::{
-    AgentConfig, AgentEvent, AgentSession, ModelInfo, SpawnError, ToolCall, adapter,
+    AgentConfig, AgentEvent, AgentSession, ModelInfo, RateLimit, SpawnError, ToolCall, adapter,
 };
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -30,7 +32,8 @@ use gpui::{App, Context, Entity, SharedString, Subscription, Task};
 
 use super::chat::{ChatEntry, ChatEvent, ChatView, Decision, EntryId};
 use super::transcript::ToolState;
-use crate::strings::ActiveStrings;
+use super::usage::{UsageLimit, UsageMeter};
+use crate::strings::{ActiveStrings, Strings};
 
 /// The index of each phase word in [`crate::Strings::agent_phases`].
 mod phase {
@@ -54,6 +57,8 @@ pub struct AgentFeed {
     approvals: HashMap<EntryId, String>,
     session: Option<String>,
     models: Vec<ModelInfo>,
+    /// The plan limits last reported, in the order the CLI first named them.
+    limits: Vec<RateLimit>,
     busy: bool,
 }
 
@@ -78,12 +83,28 @@ impl AgentFeed {
         self.busy
     }
 
+    /// The plan limits the CLI reported, each as last reported. Empty for a CLI that reports
+    /// none (OpenCode, Antigravity) and for a sign-in without a plan, such as an API key.
+    pub fn rate_limits(&self) -> &[RateLimit] {
+        &self.limits
+    }
+
     /// Show `event` in `chat`.
     pub fn apply(&mut self, event: &AgentEvent, chat: &mut ChatView, cx: &mut Context<ChatView>) {
         match event {
             AgentEvent::Started | AgentEvent::Queued { .. } => {}
             AgentEvent::SessionStarted { id } => self.session = Some(id.clone()),
             AgentEvent::Models { models } => self.models = models.clone(),
+            AgentEvent::RateLimits { limits } => {
+                for limit in limits {
+                    match self.limits.iter_mut().find(|known| known.id == limit.id) {
+                        Some(known) => *known = limit.clone(),
+                        None => self.limits.push(limit.clone()),
+                    }
+                }
+                // Nothing in the chat changes, but a composer showing the meter must redraw.
+                cx.notify();
+            }
             AgentEvent::Prompted { text } => {
                 self.close(chat, cx);
                 chat.push(ChatEntry::user(text.clone()), cx);
@@ -208,6 +229,47 @@ impl AgentFeed {
             chat.set_thinking(Some(label), cx);
         }
     }
+}
+
+/// A reported plan limit as a [`UsageMeter`] shows it, named and with its reset time put in
+/// words for `now`: "Weekly · Opus", 91 % used, "in 2 d 4 h".
+pub fn usage_limit(limit: &RateLimit, strings: &Strings, now: SystemTime) -> UsageLimit {
+    let name = limit.window_minutes.map_or_else(
+        || strings.usage.clone(),
+        |minutes| strings.usage_window(minutes),
+    );
+    let name: SharedString = match &limit.scope {
+        Some(scope) => format!("{name} · {scope}").into(),
+        None => name,
+    };
+    let used = if limit.reached {
+        1.
+    } else {
+        limit.used_percent as f32 / 100.
+    };
+    let usage = UsageLimit::new(name, used);
+    let now = now
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    match limit.resets_at {
+        Some(resets) if resets > now => usage.resets(strings.usage_in(resets - now)),
+        _ => usage,
+    }
+}
+
+/// A [`UsageMeter`] with every limit in `limits`, or `None` when there are none to show.
+pub fn usage_meter(
+    id: impl Into<gpui::ElementId>,
+    limits: &[RateLimit],
+    strings: &Strings,
+) -> Option<UsageMeter> {
+    if limits.is_empty() {
+        return None;
+    }
+    let now = SystemTime::now();
+    Some(limits.iter().fold(UsageMeter::new(id), |meter, limit| {
+        meter.limit(usage_limit(limit, strings, now))
+    }))
 }
 
 /// What a tool call did, in a line: the command it ran or the file it touched, else its name.
@@ -352,6 +414,17 @@ impl AgentConnection {
     /// The models the CLI listed in its handshake.
     pub fn models(&self) -> Vec<ModelInfo> {
         self.shared.borrow().feed.models().to_vec()
+    }
+
+    /// The plan limits the CLI reported, each as last reported.
+    pub fn rate_limits(&self) -> Vec<RateLimit> {
+        self.shared.borrow().feed.rate_limits().to_vec()
+    }
+
+    /// A meter of what is left of the plan, for [`super::Composer::usage`], or `None` until the
+    /// CLI reports a limit. Build it in `render`, so the reset times stay current.
+    pub fn usage(&self, id: impl Into<gpui::ElementId>, cx: &App) -> Option<UsageMeter> {
+        usage_meter(id, self.shared.borrow().feed.rate_limits(), cx.strings())
     }
 
     /// Sends the oldest waiting message, now that a turn has ended.

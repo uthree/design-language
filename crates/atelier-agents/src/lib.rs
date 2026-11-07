@@ -45,7 +45,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 pub use command::{CommandSpec, quote};
-pub use event::{AgentEvent, ModelInfo, PermissionKind, PermissionRequest, ToolCall};
+pub use event::{AgentEvent, ModelInfo, PermissionKind, PermissionRequest, RateLimit, ToolCall};
 pub use models::{ListModelsError, list_models};
 pub use provider::{Effort, ProviderKind, ProviderStatus, SetupAction};
 pub use session::{AgentSession, SpawnError};
@@ -224,6 +224,14 @@ impl Output {
             events: Vec::new(),
             replies: vec![reply],
         }
+    }
+
+    /// A [`AgentEvent::RateLimits`] report, or nothing when there are no limits to report.
+    fn rate_limits(limits: Vec<RateLimit>) -> Self {
+        if limits.is_empty() {
+            return Self::default();
+        }
+        Self::event(AgentEvent::RateLimits { limits })
     }
 }
 

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use crate::CommandSpec;
-use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, ToolCall};
+use crate::{AgentEvent, Effort, PermissionKind, PermissionRequest, RateLimit, ToolCall};
 use serde_json::{Value, json};
 
 use crate::rpc::{self, Calls};
@@ -23,6 +23,7 @@ pub(crate) const SUBAGENT_TOOLS: [&str; 1] = ["collabAgentToolCall"];
 enum Purpose {
     Initialize,
     ListModels,
+    ReadRateLimits,
     StartThread,
     StartTurn,
     Other,
@@ -99,8 +100,8 @@ impl Codex {
     fn response(&mut self, purpose: Purpose, message: &Value) -> Output {
         if let Some(error) = rpc::error(message) {
             return match purpose {
-                // A CLI too old to list its models still runs.
-                Purpose::ListModels => Output::default(),
+                // A CLI too old to list its models still runs, and an API key has no plan limits.
+                Purpose::ListModels | Purpose::ReadRateLimits => Output::default(),
                 Purpose::StartThread if matches!(self.config.session, SessionMode::Resume(_)) => {
                     self.queued = None;
                     Output::event(AgentEvent::ResumeFailed {
@@ -138,10 +139,20 @@ impl Codex {
                     json!({"cursor": null, "limit": 100}),
                     Purpose::ListModels,
                 );
+                let limits = self.calls.request(
+                    "account/rateLimits/read",
+                    json!({"excludeResetCreditDetails": true}),
+                    Purpose::ReadRateLimits,
+                );
                 let thread = self.calls.request(method, params, Purpose::StartThread);
                 Output {
                     events: Vec::new(),
-                    replies: vec![self.calls.notify("initialized", json!({})), models, thread],
+                    replies: vec![
+                        self.calls.notify("initialized", json!({})),
+                        models,
+                        limits,
+                        thread,
+                    ],
                 }
             }
             Purpose::ListModels => {
@@ -164,6 +175,18 @@ impl Codex {
                     })
                     .collect();
                 Output::event(AgentEvent::Models { models })
+            }
+            Purpose::ReadRateLimits => {
+                let mut limits = Vec::new();
+                match result["rateLimitsByLimitId"].as_object() {
+                    Some(buckets) if !buckets.is_empty() => {
+                        for snapshot in buckets.values() {
+                            limits.extend(rate_limits(snapshot));
+                        }
+                    }
+                    _ => limits.extend(rate_limits(&result["rateLimits"])),
+                }
+                Output::rate_limits(limits)
             }
             Purpose::StartThread => {
                 let thread = result["thread"]["id"]
@@ -267,6 +290,9 @@ impl Codex {
                     .as_str()
                     .map_or_else(|| content_text(&item["result"]["content"]), str::to_owned),
             },
+            "account/rateLimits/updated" => {
+                return Output::rate_limits(rate_limits(&params["rateLimits"]));
+            }
             "turn/completed" => {
                 self.turn = None;
                 self.asked.clear();
@@ -290,6 +316,32 @@ impl Codex {
         };
         Output::event(event)
     }
+}
+
+/// The windows of one Codex `RateLimitSnapshot`. Its primary window is the short one (five
+/// hours) and its secondary the long one (a week); a bucket other than Codex's own, such as a
+/// smaller model's, is told apart by its id and named by its `limitName`.
+fn rate_limits(snapshot: &Value) -> Vec<RateLimit> {
+    let bucket = snapshot["limitId"].as_str().unwrap_or("codex");
+    let scope =
+        (bucket != "codex").then(|| snapshot["limitName"].as_str().unwrap_or(bucket).to_owned());
+    ["primary", "secondary"]
+        .into_iter()
+        .filter_map(|slot| {
+            let window = &snapshot[slot];
+            let used_percent = window["usedPercent"].as_f64()?.round().max(0.) as u32;
+            Some(RateLimit {
+                id: format!("{bucket}/{slot}"),
+                window_minutes: window["windowDurationMins"]
+                    .as_u64()
+                    .and_then(|minutes| u32::try_from(minutes).ok()),
+                scope: scope.clone(),
+                used_percent,
+                resets_at: window["resetsAt"].as_u64(),
+                reached: used_percent >= 100,
+            })
+        })
+        .collect()
 }
 
 fn is_tool(item: &Value) -> bool {
@@ -415,7 +467,8 @@ mod tests {
         let output = codex.receive(json!({"id": init["id"], "result": {}}));
         assert_eq!(output.replies[0]["method"], "initialized");
         assert_eq!(output.replies[1]["method"], "model/list");
-        let thread = &output.replies[2];
+        assert_eq!(output.replies[2]["method"], "account/rateLimits/read");
+        let thread = &output.replies[3];
         assert_eq!(thread["method"], "thread/start");
         assert_eq!(thread["params"]["sandbox"], "workspace-write");
         assert_eq!(thread["params"]["model"], "model-x");
@@ -542,7 +595,7 @@ mod tests {
         });
         let init = codex.start("Again").remove(0);
         let output = codex.receive(json!({"id": init["id"], "result": {}}));
-        let resume = &output.replies[2];
+        let resume = &output.replies[3];
         assert_eq!(resume["method"], "thread/resume");
         assert_eq!(resume["params"]["threadId"], "th");
         assert_eq!(resume["params"]["baseInstructions"], "Be brief.");
@@ -552,5 +605,60 @@ mod tests {
             &lost.events[..],
             [AgentEvent::ResumeFailed { .. }]
         ));
+    }
+
+    #[test]
+    fn plan_limits_are_read_at_the_handshake_and_follow_updates() {
+        let mut codex = Codex::new(config(ProviderKind::Codex));
+        let init = &codex.start("")[0];
+        let output = codex.receive(json!({"id": init["id"], "result": {}}));
+        let read = &output.replies[2];
+        let window = |used: u32, minutes: u32, resets: Value| {
+            json!({"usedPercent": used,
+            "windowDurationMins": minutes, "resetsAt": resets})
+        };
+        let output = codex.receive(json!({"id": read["id"], "result": {
+            "rateLimits": {"limitId": "codex", "primary": window(30, 300, json!(1_790_000_000u64))},
+            "rateLimitsByLimitId": {
+                "codex": {"limitId": "codex", "primary": window(30, 300, json!(1_790_000_000u64)),
+                    "secondary": window(100, 10_080, json!(1_800_000_000u64))},
+                "codex_mini": {"limitId": "codex_mini", "limitName": "GPT-Mini",
+                    "primary": window(5, 300, Value::Null)}}}}));
+        let limit = |id: &str, minutes, scope: Option<&str>, used, resets: Option<u64>| RateLimit {
+            id: id.into(),
+            window_minutes: Some(minutes),
+            scope: scope.map(Into::into),
+            used_percent: used,
+            resets_at: resets,
+            reached: used >= 100,
+        };
+        assert_eq!(
+            output.events,
+            [AgentEvent::RateLimits {
+                limits: vec![
+                    limit("codex/primary", 300, None, 30, Some(1_790_000_000)),
+                    limit("codex/secondary", 10_080, None, 100, Some(1_800_000_000)),
+                    limit("codex_mini/primary", 300, Some("GPT-Mini"), 5, None),
+                ]
+            }]
+        );
+
+        let update = codex.receive(json!({"method": "account/rateLimits/updated", "params": {
+            "rateLimits": {"limitId": "codex", "primary": window(31, 300, json!(1_790_000_000u64))}}}));
+        assert_eq!(
+            update.events,
+            [AgentEvent::RateLimits {
+                limits: vec![limit("codex/primary", 300, None, 31, Some(1_790_000_000))]
+            }]
+        );
+        // Signed in with an API key, there is nothing to read, and the session carries on.
+        let mut codex = Codex::new(config(ProviderKind::Codex));
+        let init = &codex.start("")[0];
+        let read = &codex
+            .receive(json!({"id": init["id"], "result": {}}))
+            .replies[2];
+        let failed = codex
+            .receive(json!({"id": read["id"], "error": {"code": -32600, "message": "no plan"}}));
+        assert!(failed.events.is_empty());
     }
 }

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::scenario::{Player, Prompt, Step, Tool};
+use crate::scenario::{Limits, Player, Prompt, Step, Tool};
 
 /// Which CLI to be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,7 +136,10 @@ pub fn run(
     }
     let dialect: Box<dyn Dialect> = match cli {
         Cli::Claude => Box::new(Claude::new(invocation)),
-        Cli::Codex => Box::new(Codex::default()),
+        Cli::Codex => Box::new(Codex {
+            limits: player.limits(),
+            ..Codex::default()
+        }),
         Cli::Antigravity => Box::new(Antigravity::default()),
         Cli::OpenCode => Box::new(OpenCode::new(invocation)),
     };
@@ -207,6 +210,8 @@ trait Dialect {
     fn fail(&mut self, wire: &mut Wire, message: &str);
     /// The turn was interrupted.
     fn interrupted(&mut self, wire: &mut Wire);
+    /// How much of the plan is spent now. Only the CLIs that report it override this.
+    fn limits(&mut self, _wire: &mut Wire, _limits: Limits) {}
 }
 
 /// Why a turn stopped early.
@@ -261,6 +266,9 @@ impl Driver<'_> {
         });
         let stream = self.player.stream();
         self.dialect.begin(&mut self.wire);
+        if let Some(limits) = self.player.spend() {
+            self.dialect.limits(&mut self.wire, limits);
+        }
         let mut answer = String::new();
         let mut tools = 0;
         for step in steps {
@@ -539,6 +547,31 @@ impl Dialect for Claude {
     fn interrupted(&mut self, wire: &mut Wire) {
         Self::result(wire, false, "Interrupted by the user");
     }
+
+    fn limits(&mut self, wire: &mut Wire, limits: Limits) {
+        let window = |used: u32, resets: u64| {
+            let status = match used {
+                100.. => "rejected",
+                80.. => "allowed_warning",
+                _ => "allowed",
+            };
+            json!({"utilization": f64::from(used) / 100., "resetsAt": resets, "status": status})
+        };
+        let (five_hour, weekly) = (limits.five_hour, limits.weekly);
+        let tightest = if five_hour >= weekly {
+            ("five_hour", window(five_hour, limits.five_hour_resets()))
+        } else {
+            ("seven_day", window(weekly, limits.weekly_resets()))
+        };
+        wire.send(
+            json!({"type": "rate_limit_event", "session_id": self.session,
+            "rate_limit_info": {"status": tightest.1["status"], "rateLimitType": tightest.0,
+                "utilization": tightest.1["utilization"], "resetsAt": tightest.1["resetsAt"],
+                "unifiedWindows": {
+                    "five_hour": window(five_hour, limits.five_hour_resets()),
+                    "seven_day": window(weekly, limits.weekly_resets())}}}),
+        );
+    }
 }
 
 /// Codex's `app-server` JSON-RPC (no `jsonrpc` member).
@@ -553,9 +586,20 @@ struct Codex {
     message: Option<String>,
     items: u64,
     next_request: u64,
+    /// What `account/rateLimits/read` answers.
+    limits: Option<Limits>,
 }
 
 impl Codex {
+    fn rate_limits(limits: Limits) -> Value {
+        json!({"limitId": "codex", "limitName": null,
+            "primary": {"usedPercent": limits.five_hour, "windowDurationMins": 300,
+                "resetsAt": limits.five_hour_resets()},
+            "secondary": {"usedPercent": limits.weekly, "windowDurationMins": 10_080,
+                "resetsAt": limits.weekly_resets()},
+            "planType": "plus"})
+    }
+
     fn notify(&self, wire: &mut Wire, method: &str, mut params: Value) {
         params["threadId"] = json!(self.thread);
         params["turnId"] = json!(self.turn);
@@ -620,6 +664,17 @@ impl Dialect for Codex {
                     .collect();
                 json!({"data": data, "nextCursor": null})
             }
+            Some("account/rateLimits/read") => match self.limits {
+                Some(limits) => {
+                    let snapshot = Self::rate_limits(limits);
+                    json!({"rateLimits": snapshot, "rateLimitsByLimitId": {"codex": snapshot}})
+                }
+                None => {
+                    wire.send(json!({"id": id, "error": {"code": -32600,
+                        "message": "codex account authentication required to read rate limits"}}));
+                    return Incoming::Nothing;
+                }
+            },
             Some("turn/start") => {
                 self.turns += 1;
                 self.turn = format!("turn_{}", self.turns);
@@ -747,6 +802,14 @@ impl Dialect for Codex {
 
     fn interrupted(&mut self, wire: &mut Wire) {
         self.completed(wire, "interrupted", None);
+    }
+
+    fn limits(&mut self, wire: &mut Wire, limits: Limits) {
+        // Sparse, like the real one: only the windows that moved, and no turn.
+        let mut snapshot = Self::rate_limits(limits);
+        snapshot["planType"] = Value::Null;
+        wire.send(json!({"method": "account/rateLimits/updated",
+            "params": {"rateLimits": snapshot}}));
     }
 }
 

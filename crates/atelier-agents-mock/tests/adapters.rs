@@ -435,3 +435,60 @@ fn prepared_files_are_written_privately_before_the_cli_starts() {
         assert_eq!(mode(&scratch) & 0o777, 0o700);
     }
 }
+
+#[test]
+fn plan_limits_are_reported_where_the_cli_has_them() {
+    let scenario = r#"{"limits": {"five_hour": 40, "weekly": 70, "per_turn": 5},
+        "otherwise": [{"say": "ok"}]}"#;
+    for provider in ALL {
+        let worker = worker(provider, scenario);
+        let events = events_until(&worker.config, "go", turn_ended);
+        let mut reports = events.iter().filter_map(|event| match event {
+            AgentEvent::RateLimits { limits } => Some(limits),
+            _ => None,
+        });
+        let used = |limits: &Vec<atelier_agents::RateLimit>, minutes| {
+            limits
+                .iter()
+                .find(|limit| limit.window_minutes == Some(minutes))
+                .map(|limit| limit.used_percent)
+        };
+        match provider {
+            // The handshake reads what is spent; the turn spends more.
+            ProviderKind::Codex => {
+                let read = reports.next().expect("the handshake's limits");
+                assert_eq!((used(read, 300), used(read, 10_080)), (Some(40), Some(70)));
+                let after = reports.next().expect("the turn's limits");
+                assert_eq!(
+                    (used(after, 300), used(after, 10_080)),
+                    (Some(45), Some(75))
+                );
+            }
+            ProviderKind::ClaudeCode => {
+                let after = reports.next().expect("the turn's limits");
+                assert_eq!(
+                    (used(after, 300), used(after, 10_080)),
+                    (Some(45), Some(75))
+                );
+                assert!(after.iter().all(|limit| limit.resets_at.is_some()));
+            }
+            // Neither says how much of a plan is spent.
+            ProviderKind::OpenCode | ProviderKind::Antigravity => {}
+        }
+        assert!(reports.next().is_none(), "{}", provider.label());
+    }
+    // Without a plan, as with an API key, nothing is reported and nothing fails.
+    let worker = worker(ProviderKind::Codex, ECHO);
+    let events = events_until(&worker.config, "go", turn_ended);
+    assert!(matches!(
+        events.last(),
+        Some(AgentEvent::TurnCompleted { .. })
+    ));
+    assert_eq!(
+        count(&events, |event| matches!(
+            event,
+            AgentEvent::RateLimits { .. }
+        )),
+        0
+    );
+}

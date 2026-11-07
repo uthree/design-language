@@ -1,5 +1,6 @@
 {
   "stream": {"chunk": 6, "delay_ms": 30},
+  "limits": {"five_hour": 62, "weekly": 35, "per_turn": 4},
   "rules": [
     {
       "when": {"read_only": true, "prompt_contains": "slow"},

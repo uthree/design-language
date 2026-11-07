@@ -53,6 +53,35 @@ pub struct ModelInfo {
     pub efforts: Vec<String>,
 }
 
+/// One limit of the plan the CLI is signed in with: a rolling window, a week, a model's own
+/// weekly share. Only subscription sign-ins report these; an API key has none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RateLimit {
+    /// Names this limit across reports, so a later one replaces it: `five_hour`, `seven_day`,
+    /// `seven_day_opus`, `codex/primary`.
+    pub id: String,
+    /// How long the window is, in minutes, when the CLI says: 300 for five hours, 10080 for a
+    /// week.
+    pub window_minutes: Option<u32>,
+    /// What the limit covers beyond the plan as a whole, such as one model ("Opus"), in the
+    /// CLI's words.
+    pub scope: Option<String>,
+    /// How much of it is spent, in whole percent. It can pass 100 when the CLI lets usage run
+    /// over.
+    pub used_percent: u32,
+    /// When it fills again, in seconds since the Unix epoch.
+    pub resets_at: Option<u64>,
+    /// Whether the CLI refuses work until it resets.
+    pub reached: bool,
+}
+
+impl RateLimit {
+    /// The share still left, in whole percent.
+    pub fn remaining_percent(&self) -> u32 {
+        100u32.saturating_sub(self.used_percent)
+    }
+}
+
 /// One thing a running agent did.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -76,6 +105,13 @@ pub enum AgentEvent {
     Models {
         /// The models.
         models: Vec<ModelInfo>,
+    },
+    /// How much of the plan's limits is spent (Claude Code, Codex). A report may name only some
+    /// limits; each replaces the earlier report with the same [`RateLimit::id`]. Claude Code
+    /// reports after each model response, Codex at the handshake and as usage moves.
+    RateLimits {
+        /// The limits this report names.
+        limits: Vec<RateLimit>,
     },
     /// A message was sent to the agent: its first prompt or a later one. The application
     /// reports this, not the CLI, so that its transcript holds both sides of the conversation.
