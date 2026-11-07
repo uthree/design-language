@@ -70,6 +70,11 @@ gpui; `atelier-agents-mock` plays all four from a script for tests. See
 [crates/atelier-agents](crates/atelier-agents/README.md). With the `agents` feature,
 `atelier::agent::AgentConnection` shows such an agent in a `ChatView` (example `agent_cli`).
 
+For an application's own words, `atelier-i18n` keeps them in one TOML file per language and
+compiles them into the binary, with a missing translation failing the build; it has no gpui
+either, so a command-line tool can share the table. See
+[crates/atelier-i18n](crates/atelier-i18n/README.md).
+
 For a browser or a Tauri webview, [`web/`](web/README.md) carries the same themes, components and
 ambient backdrops as CSS, a little JavaScript and WebGPU, with the tokens written from the Rust
 theme.

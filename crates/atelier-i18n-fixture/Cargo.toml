@@ -1,0 +1,21 @@
+[package]
+name = "atelier-i18n-fixture"
+description = "A small set of language files run through atelier-i18n's generator, so its output is compiled and tested"
+version = "0.3.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/uthree/design-language"
+publish = false
+
+# Set up the way an application sets it up: the generator as a build dependency, the runtime as
+# an ordinary one.
+[dependencies]
+atelier-i18n = { path = "../atelier-i18n" }
+serde = { version = "1.0", features = ["derive"] }
+
+[build-dependencies]
+atelier-i18n = { path = "../atelier-i18n", features = ["build"] }
+
+[dev-dependencies]
+serde_json = "1.0"
