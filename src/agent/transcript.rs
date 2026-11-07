@@ -12,11 +12,12 @@ use crate::button::{Button, ButtonVariant, ControlSize};
 use crate::display::{Avatar, Spinner};
 use crate::focus::focusable;
 use crate::icon::{Icon, IconName, IconSource};
+use crate::markdown::Markdown;
 use crate::motion::{appear, chevron, looping, reveal, transition};
 use crate::selectable::SelectableText;
 use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
-use crate::theme::{ActiveTheme, Theme};
+use crate::theme::ActiveTheme;
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -161,9 +162,9 @@ impl RenderOnce for UserMessage {
 
 /// What the agent answered: full-width prose under a small identity line.
 ///
-/// The body understands the little Markdown a chat answer needs — paragraphs, `-` bullets,
-/// `#` headings and fenced code. An application with a real Markdown view passes it with
-/// [`AssistantMessage::body`] instead.
+/// The body is drawn as [`crate::Markdown`]: paragraphs, headings, lists, quotes, code, tables
+/// and links. An application with a view of its own passes it with [`AssistantMessage::body`]
+/// instead.
 #[derive(IntoElement)]
 pub struct AssistantMessage {
     id: Option<ElementId>,
@@ -257,103 +258,18 @@ impl AssistantMessage {
     }
 }
 
-fn prose(text: &str, id: Option<&ElementId>, theme: &Theme) -> Vec<AnyElement> {
-    let colors = &theme.colors;
-    let mut blocks = Vec::new();
-    // With an id, each block is its own selectable text, keyed by its place in the message.
-    let mut count = 0;
-    let mut text_block = |text: String, mono: bool| -> AnyElement {
-        count += 1;
-        match id {
-            Some(id) => {
-                let id =
-                    ElementId::NamedChild(Box::new(id.clone()), format!("block-{count}").into());
-                SelectableText::new(id, text)
-                    .when(mono, |text| text.mono().size(TextSize::Small))
-                    .into_any_element()
-            }
-            None => text.into_any_element(),
-        }
-    };
-    let mut lines = text.lines().peekable();
-    let mut paragraph = String::new();
-    let flush = |paragraph: &mut String,
-                 blocks: &mut Vec<AnyElement>,
-                 text_block: &mut dyn FnMut(String, bool) -> AnyElement| {
-        if !paragraph.is_empty() {
-            blocks.push(
-                div()
-                    .child(text_block(std::mem::take(paragraph), false))
-                    .into_any_element(),
-            );
-        }
-    };
-    while let Some(line) = lines.next() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
-            flush(&mut paragraph, &mut blocks, &mut text_block);
-            let mut code = Vec::new();
-            for line in lines.by_ref() {
-                if line.trim_start().starts_with("```") {
-                    break;
-                }
-                code.push(line);
-            }
-            blocks.push(
-                div()
-                    .px(theme.spacing.md)
-                    .py(theme.spacing.sm)
-                    .rounded(theme.shape.radius_md)
-                    .bg(colors.sunken)
-                    .border_1()
-                    .border_color(colors.border)
-                    .font(theme.typography.mono.clone())
-                    .text_size(theme.typography.size_sm)
-                    .child(text_block(code.join("\n"), true))
-                    .into_any_element(),
-            );
-        } else if let Some(item) = trimmed.strip_prefix("- ") {
-            flush(&mut paragraph, &mut blocks, &mut text_block);
-            blocks.push(
-                div()
-                    .flex()
-                    .gap(theme.spacing.sm)
-                    .child(div().text_color(colors.text_faint).child("•"))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(text_block(item.to_owned(), false)),
-                    )
-                    .into_any_element(),
-            );
-        } else if let Some(heading) = trimmed.strip_prefix("# ") {
-            flush(&mut paragraph, &mut blocks, &mut text_block);
-            blocks.push(
-                Label::new(heading.to_owned())
-                    .heading_weight()
-                    .into_any_element(),
-            );
-        } else if trimmed.is_empty() {
-            flush(&mut paragraph, &mut blocks, &mut text_block);
-        } else {
-            if !paragraph.is_empty() {
-                paragraph.push(' ');
-            }
-            paragraph.push_str(trimmed);
-        }
-    }
-    flush(&mut paragraph, &mut blocks, &mut text_block);
-    blocks
-}
-
 impl RenderOnce for AssistantMessage {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let body = match self.body {
             Some(body) => vec![body],
-            None => prose(&self.text, self.id.as_ref(), theme),
+            None => vec![match &self.id {
+                Some(id) => Markdown::new(id.clone(), self.text.clone()).into_any_element(),
+                None => Markdown::new("assistant-message", self.text.clone())
+                    .plain()
+                    .into_any_element(),
+            }],
         };
         let caret = self.streaming.then(|| {
             looping(

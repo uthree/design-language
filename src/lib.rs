@@ -43,6 +43,7 @@ pub mod graph;
 mod icon;
 mod keyboard;
 mod layout;
+mod markdown;
 mod media;
 pub mod metal;
 pub mod motion;
@@ -76,6 +77,7 @@ pub use keyboard::{PianoKeyboard, note_name};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
+pub use markdown::Markdown;
 pub use media::AudioPlayer;
 pub use metal::MetalBackdrop;
 pub use motion::{Measure, Morph, Motion};
@@ -88,7 +90,7 @@ pub use progress::{
     ProgressBar, ProgressRing, Skeleton, StepList, StepState, TaskProgress, TaskState,
     skeleton_paragraph,
 };
-pub use selectable::{CopySelection, SELECTABLE_CONTEXT, SelectAll, SelectableText};
+pub use selectable::{CopySelection, LinkHandler, SELECTABLE_CONTEXT, SelectAll, SelectableText};
 pub use strings::{ActiveStrings, Strings};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{

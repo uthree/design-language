@@ -24,6 +24,8 @@ runtime-shaders = ["gpui/runtime_shaders"]
 [dependencies]
 gpui = "=0.2.2"
 unicode-segmentation = "1.10"
+# `Markdown` reads CommonMark with GitHub's tables, task lists and strikethrough. No HTML output.
+pulldown-cmark = { version = "0.13", default-features = false }
 # The welcome-screen backdrops and the 3-D plots hand gpui their frames as images, in gpui's own
 # image type.
 image = { version = "0.25", default-features = false }

@@ -87,7 +87,11 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `ChangedFiles`, `FileChange`, `ChangeKind` | `changedFiles(element, { title, files, actions })`, firing `atelier:open-file` with `{ index, path }`; `.at-changes`, `.at-change[data-kind]` |
 | `graph::NodeCanvas`, `GraphNode`, `NodeField`, `Wire`, `NodeState` | `nodeCanvas(element, { portTypes, nodes, wires, legend, labels })`, returning `add`, `remove`, `update`, `setState`, `connect`, `disconnect`, `select`, `undoAgentNode`, `resetView`, `nodes`, `wires`, `downstream`, `executionOrder`; `atelier:node-select`, `node-move`, `node-connect`, `node-disconnect`, `node-remove`, `node-keep`, `node-undo`; `.at-node-canvas`, `.at-node` |
 | `MenuItem::description`, `.danger()` | `.at-menu-item--described` with `.at-menu-item__text` and `.at-menu-item__description`, `.at-menu-item--danger` |
-| `ChatView` (`push`, `append`, `finish`, `set_tool_state`, `answer`, `jump_to_latest`, `ChatEvent::Decided`) | `chat(element, { panel, logo, strings })` from `atelier.js`, returning `push`, `append`, `finish`, `setToolState`, `answer`, `jumpToLatest`; `atelier:decided` events with `{ id, decision }` |
+| `ChatView` (`push`, `append`, `finish`, `set_tool_state`, `answer`, `jump_to_latest`, `ChatEvent::Decided`, `ChatEvent::Chose`) | `chat(element, { panel, logo, strings })` from `atelier.js`, returning `push`, `append`, `finish`, `setToolState`, `answer`, `jumpToLatest`; `atelier:decided` events with `{ id, decision }`, `atelier:chose` with `{ id, picked }` for a `choices` entry |
+| `Markdown` | `markdown(element, text, { labels })`, `.at-markdown` (answers in `chat()` use it) |
+| `agent::ChoiceCard`, `Choice` | `choiceCard(element, { question, options, multiple, picked, answered, labels })`, returning `answer`, `picked`; `atelier:choose` with `{ picked }`; `.at-choice-card` |
+| `agent::MessageQueue`, `QueuedMessage` | `messageQueue(element, { messages, paused, editable, labels })`, returning `update`; `atelier:queue-send-now`, `queue-edit`, `queue-remove` with `{ index }`, `queue-pause` with `{ paused }`; `.at-queue` |
+| `agent::ConversationList`, `Conversation`, `ConversationRow` | `conversationList(element, { conversations, selected, archived, labels })`, returning `update`, `search`; `atelier:conversation-open`, `conversation-more` with `{ index }`, `conversation-new`, `conversation-archived`; `.at-conversations`, `.at-conversation` |
 | `Tooltip` | `data-tooltip="…"` on any element |
 
 Icons are `<span data-icon="sparkles"></span>`; `hydrate()` from `atelier.js` draws them, and
@@ -173,7 +177,8 @@ to WebAssembly would bring them over. The liquid-metal backdrop is not ported ye
 ## Not yet
 
 The prototype covers the tokens, the core controls, the window frame, the agent transcript and
-composer, dialogs and approvals, the activity line, plan and changed files, the node canvas, and the backdrops. Still to come: menus that open (the menu is
+composer, dialogs and approvals, the activity line, plan and changed files, the node canvas,
+preferences, Markdown, choice cards, the message queue, the conversation list, and the backdrops. Still to come: menus that open (the menu is
 styled, not positioned; the permission picker's menu is the exception), completions, plots and the instrument controls such as
 `PianoKeyboard`, `NoteRoll` and `ReadoutStrip`/`Readout`, and the effort picker's `note` and
 `EffortButton::disabled`. `IconName::Menu` is in the generated icons.

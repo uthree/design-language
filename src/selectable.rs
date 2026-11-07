@@ -1,6 +1,7 @@
 //! Read-only text the person can select and copy: a message, an attached file, a log.
 
 use std::ops::Range;
+use std::rc::Rc;
 
 use gpui::{
     App, ClipboardItem, ElementId, FocusHandle, HighlightStyle, Hsla, InteractiveElement,
@@ -48,6 +49,9 @@ struct Selection {
     dragging: bool,
     /// The text's layout in the last frame, to turn the pointer into an offset.
     layout: Option<TextLayout>,
+    /// The link under the pointer when the button went down, followed if it comes up there
+    /// without a drag.
+    pressed_link: Option<SharedString>,
 }
 
 impl Selection {
@@ -82,6 +86,30 @@ impl Selection {
     }
 }
 
+/// Flatten overlapping runs into the sorted, disjoint ones a [`StyledText`] takes, each the
+/// later runs laid over the earlier.
+pub(crate) fn merge(
+    runs: Vec<(Range<usize>, HighlightStyle)>,
+    len: usize,
+) -> Vec<(Range<usize>, HighlightStyle)> {
+    let mut cuts: Vec<usize> = runs
+        .iter()
+        .flat_map(|(range, _)| [range.start.min(len), range.end.min(len)])
+        .collect();
+    cuts.sort_unstable();
+    cuts.dedup();
+    cuts.windows(2)
+        .filter_map(|pair| {
+            let (start, end) = (pair[0], pair[1]);
+            runs.iter()
+                .filter(|(range, _)| range.start <= start && end <= range.end)
+                .map(|(_, style)| *style)
+                .reduce(|under, over| under.highlight(over))
+                .map(|style| (start..end, style))
+        })
+        .collect()
+}
+
 fn floor_boundary(text: &str, mut index: usize) -> usize {
     index = index.min(text.len());
     while !text.is_char_boundary(index) {
@@ -99,6 +127,10 @@ fn floor_boundary(text: &str, mut index: usize) -> usize {
 /// text holds focus, and goes when focus moves on.
 ///
 /// The id keeps the selection from frame to frame, so give each piece of text its own.
+///
+/// [`SelectableText::styles`] sets runs in bold, italic or another colour, and
+/// [`SelectableText::link`] makes a run a link that a click (not a drag) follows; that is how
+/// [`crate::Markdown`] draws its paragraphs.
 #[derive(IntoElement)]
 pub struct SelectableText {
     id: ElementId,
@@ -107,7 +139,13 @@ pub struct SelectableText {
     color: TextColor,
     mono: bool,
     selection: Option<Hsla>,
+    styles: Vec<(Range<usize>, HighlightStyle)>,
+    links: Vec<(Range<usize>, SharedString)>,
+    on_link: Option<LinkHandler>,
 }
+
+/// What follows a link: given its address.
+pub type LinkHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
 impl SelectableText {
     /// Body text in the default colour.
@@ -119,7 +157,42 @@ impl SelectableText {
             color: TextColor::Default,
             mono: false,
             selection: None,
+            styles: Vec::new(),
+            links: Vec::new(),
+            on_link: None,
         }
+    }
+
+    /// Draw byte ranges of the text in other styles: bold, italic, a colour, a fill. Ranges may
+    /// overlap; where they do, the later one wins for what both set.
+    pub fn styles(
+        mut self,
+        styles: impl IntoIterator<Item = (Range<usize>, HighlightStyle)>,
+    ) -> Self {
+        self.styles.extend(styles);
+        self
+    }
+
+    /// Make a byte range of the text a link to `url`. A click on it, without a drag, opens it
+    /// with the system's handler, or calls [`SelectableText::on_link`]. Style it with
+    /// [`SelectableText::styles`].
+    pub fn link(mut self, range: Range<usize>, url: impl Into<SharedString>) -> Self {
+        self.links.push((range, url.into()));
+        self
+    }
+
+    /// Follow links yourself instead of opening them with the system's handler.
+    pub fn on_link(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_link = Some(Rc::new(handler));
+        self
+    }
+
+    pub(crate) fn on_link_shared(mut self, handler: Option<LinkHandler>) -> Self {
+        self.on_link = handler.or(self.on_link);
+        self
     }
 
     /// Step on the type scale.
@@ -164,8 +237,12 @@ impl RenderOnce for SelectableText {
             head: 0,
             dragging: false,
             layout: None,
+            pressed_link: None,
         });
         let text = self.text;
+        let styles = self.styles;
+        let links = Rc::new(self.links);
+        let on_link = self.on_link;
         let styled = state.update(cx, |selection, _| {
             if selection.text != text {
                 selection.anchor = floor_boundary(&text, selection.anchor);
@@ -174,15 +251,17 @@ impl RenderOnce for SelectableText {
             }
             let range = selection.range();
             let shown = selection.focus.is_focused(window) && !range.is_empty();
-            let styled = StyledText::new(text.clone()).with_highlights(shown.then(|| {
-                (
+            let mut runs = styles;
+            if shown {
+                runs.push((
                     range,
                     HighlightStyle {
                         background_color: Some(highlight),
                         ..Default::default()
                     },
-                )
-            }));
+                ));
+            }
+            let styled = StyledText::new(text.clone()).with_highlights(merge(runs, text.len()));
             selection.layout = Some(styled.layout().clone());
             styled
         });
@@ -204,6 +283,7 @@ impl RenderOnce for SelectableText {
         element
             .on_mouse_down(MouseButton::Left, {
                 let state = state.clone();
+                let links = links.clone();
                 move |event: &MouseDownEvent, window, cx| {
                     let focus = state.read(cx).focus.clone();
                     window.focus(&focus);
@@ -211,6 +291,14 @@ impl RenderOnce for SelectableText {
                         let Some(index) = selection.index_at(event.position) else {
                             return;
                         };
+                        selection.pressed_link = (event.click_count == 1 && !event.modifiers.shift)
+                            .then(|| {
+                                links
+                                    .iter()
+                                    .find(|(range, _)| range.start <= index && index < range.end)
+                                    .map(|(_, url)| url.clone())
+                            })
+                            .flatten();
                         let range = match event.click_count {
                             2 => selection.word_at(index),
                             3.. => selection.line_at(index),
@@ -269,12 +357,21 @@ impl RenderOnce for SelectableText {
                                     });
                                 }
                             });
-                            window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
-                                if phase.bubble() {
-                                    state.update(cx, |selection, cx| {
-                                        selection.dragging = false;
-                                        cx.notify();
-                                    });
+                            window.on_mouse_event(move |_: &MouseUpEvent, phase, window, cx| {
+                                if !phase.bubble() {
+                                    return;
+                                }
+                                let follow = state.update(cx, |selection, cx| {
+                                    selection.dragging = false;
+                                    cx.notify();
+                                    let link = selection.pressed_link.take();
+                                    link.filter(|_| selection.anchor == selection.head)
+                                });
+                                if let Some(url) = follow {
+                                    match &on_link {
+                                        Some(handler) => handler(&url, window, cx),
+                                        None => cx.open_url(&url),
+                                    }
                                 }
                             });
                         },

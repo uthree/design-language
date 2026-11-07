@@ -7,7 +7,9 @@
     <link rel="stylesheet" href="atelier/atelier.css" />
     <style>
       /* Layout of this page only; the components come from atelier.css. */
-      .sidebar { width: 240px; }
+      .sidebar { width: 264px; }
+      .sessions { flex: 1; min-height: 0; }
+      .sidebar .sessions .at-field { margin: 0; }
       .sidebar .at-field { margin: 0 var(--at-space-sm); }
       .sidebar__top { display: flex; flex-direction: column; gap: var(--at-space-sm); padding: var(--at-space-sm) 0; }
       .sidebar__top > .at-button { margin: 0 var(--at-space-sm); width: calc(100% - 2 * var(--at-space-sm)); }
@@ -64,23 +66,8 @@
 
       <div class="at-window__body">
         <nav class="at-sidebar at-chrome sidebar">
-          <div class="sidebar__top">
-            <button class="at-button"><span data-icon="plus"></span>New session</button>
-            <label class="at-field"><span data-icon="search"></span><input placeholder="Search sessions" /></label>
-          </div>
+          <div id="sessions" class="sessions"></div>
           <div class="at-list">
-            <div class="at-caption">Running</div>
-            <button class="at-list-item" aria-current="page">
-              <span class="at-list-item__label">Fix flaky playback test</span>
-              <span class="at-status-dot at-status-dot--warning"></span>
-            </button>
-            <button class="at-list-item">
-              <span class="at-list-item__label">Add stems export to CLI</span>
-              <span class="at-spinner at-spinner--agent"></span>
-            </button>
-            <div class="at-caption">Today</div>
-            <button class="at-list-item"><span class="at-list-item__label">Port mixer graph to Atelier</span><span class="at-list-item__trailing">11:20</span></button>
-            <button class="at-list-item"><span class="at-list-item__label">Profile physical piano</span><span class="at-list-item__trailing">09:05</span></button>
             <div class="at-caption">Library</div>
             <button class="at-list-item"><span data-icon="music"></span><span class="at-list-item__label">Instruments</span></button>
             <button class="at-list-item"><span data-icon="loop"></span><span class="at-list-item__label">Loops</span></button>
@@ -249,6 +236,7 @@
             <div id="chat"></div>
             <div class="composer-wrap">
               <div id="activity"></div>
+              <div id="queue"></div>
               <div class="at-composer at-agent-glow">
                 <span class="at-context-chip"><span data-icon="paperclip"></span>Selection: 2 clips</span>
                 <textarea id="draft" rows="2" placeholder="Reply, or describe a change…"></textarea>
@@ -302,7 +290,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, hydrate, keybindings, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, keybindings, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -357,8 +345,23 @@
       conversation.push({ kind: "tool", name: "edit", summary: "Edited engine/src/transport.rs", state: "succeeded", icon: "file" });
       const output = Object.assign(document.createElement("pre"), { className: "at-code", textContent: "test playback::starts_from_zero ... FAILED\n\nassertion `left == right` failed\n  left: 0\n right: 512" });
       conversation.push({ kind: "custom", element: output });
-      conversation.push({ kind: "assistant", meta: "Claude Opus 5.5 · 41 s", text: "Found it. play() returns before the audio thread has taken its first block, so a position read right after it can still be zero." });
-      conversation.push({ kind: "approval", title: "Run the workspace tests?", body: "Runs cargo test --workspace. Nothing is pushed.", allowLabel: "Run", offerAlways: true });
+      conversation.push({
+        kind: "assistant",
+        meta: "Claude Opus 5.5 · 41 s",
+        text: "Found it. `play()` returns **before** the audio thread has taken its first block, so a position read right after it can still be zero.\n\n| Platform | Runs | Failures |\n|---|---|---|\n| Windows | 50 | 6 |\n| macOS | 50 | 0 |\n\nThe fix makes `play()` wait for the first block to be acknowledged, with a timeout so a stalled device cannot hang the UI:\n\n1. Send `Command::Play`\n2. Wait up to *250 ms* for the acknowledgement\n3. Report `DeviceStalled` otherwise ([why a timeout](https://docs.rs/crossbeam-channel))\n\n```rust\nself.started.recv_timeout(START_TIMEOUT)?;\n```",
+      });
+      // `?ask=single` or `?ask=multiple` ends the turn on a question instead of an approval.
+      if (params.get("ask") === "multiple") {
+        conversation.push({ kind: "choices", question: "Which platforms should the test suite run on?", options: ["Windows", "macOS", "Linux"], multiple: true });
+      } else if (params.get("ask")) {
+        conversation.push({
+          kind: "choices",
+          question: "The same race is in the recorder. Fix it there too?",
+          options: [{ label: "Fix both", detail: "One change, two files" }, { label: "Only playback", detail: "Leave the recorder for a separate change" }, "Show me the recorder first"],
+        });
+      } else {
+        conversation.push({ kind: "approval", title: "Run the workspace tests?", body: "Runs cargo test --workspace. Nothing is pushed.", allowLabel: "Run", offerAlways: true });
+      }
       const reply = async (text) => {
         const answer = conversation.push({ kind: "assistant", streaming: true, meta: "Claude Opus 5.5", text: "" });
         for (const word of text.split(" ")) {
@@ -367,7 +370,41 @@
         }
         conversation.finish(answer);
       };
+      document.getElementById("chat").addEventListener("atelier:chose", (event) => reply(`Going with option ${event.detail.picked.map((index) => index + 1).join(" and ")}.`));
       const permission = permissionPicker(document.getElementById("permission"));
+
+      // Messages sent while the turn runs wait above the composer.
+      const queued = ["Also check the recorder for the same race", "Then update the CHANGELOG\nunder Fixed"];
+      let queuePaused = false;
+      const queueRoot = document.getElementById("queue");
+      const queue = messageQueue(queueRoot, { messages: queued });
+      const redrawQueue = () => queue.update({ messages: queued, paused: queuePaused, editable: !draft.value });
+      queueRoot.addEventListener("atelier:queue-pause", (event) => ((queuePaused = event.detail.paused), redrawQueue()));
+      queueRoot.addEventListener("atelier:queue-remove", (event) => (queued.splice(event.detail.index, 1), redrawQueue()));
+      queueRoot.addEventListener("atelier:queue-edit", (event) => {
+        draft.value = queued.splice(event.detail.index, 1)[0];
+        redrawQueue();
+        draft.focus();
+      });
+      queueRoot.addEventListener("atelier:queue-send-now", (event) => {
+        const [text] = queued.splice(event.detail.index, 1);
+        redrawQueue();
+        conversation.jumpToLatest();
+        conversation.push({ kind: "user", text });
+      });
+
+      // The sessions in the sidebar.
+      const sessionsRoot = document.getElementById("sessions");
+      const sessions = [
+        { title: "Fix flaky playback test", status: "awaitingApproval", preview: "Run `cargo test --workspace`?" },
+        { title: "Add stems export to CLI", status: "running", preview: "Writing the --stems flag and its help text" },
+        { title: "Port mixer graph to Atelier", when: "11:20", preview: "The canvas now draws wires with NodeCanvas." },
+        { title: "Profile physical piano", when: "09:05", preview: "Most of the time goes to the soundboard filter." },
+        { title: "", when: "Yesterday", preview: "How do I add a word to the VOICEVOX dictionary?" },
+      ];
+      const sessionList = conversationList(sessionsRoot, { conversations: sessions, selected: 0, archived: false });
+      sessionsRoot.addEventListener("atelier:conversation-open", (event) => sessionList.update({ selected: event.detail.index }));
+      sessionsRoot.addEventListener("atelier:conversation-archived", (event) => sessionList.update({ archived: event.detail.archived }));
       // What the running turn is doing, its plan and what it changed.
       const strip = document.getElementById("activity");
       const planSteps = (running) => [

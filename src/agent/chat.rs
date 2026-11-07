@@ -9,6 +9,7 @@ use gpui::{
     Window, div, prelude::FluentBuilder, px,
 };
 
+use super::choice::{Choice, ChoiceCard};
 use super::composer::ContextChip;
 use super::transcript::{
     ApprovalCard, AssistantMessage, ChatNotice, NoticeKind, ReasoningBlock, ThinkingIndicator,
@@ -94,6 +95,21 @@ pub enum ChatEntry {
         offer_always: bool,
         /// The answer, once given.
         answer: Option<Decision>,
+    },
+    /// A question the agent asked with fixed answers, drawn as a [`ChoiceCard`]. Picking emits
+    /// [`ChatEvent::Chose`]; the card then shows the pick and takes no more. Once the person
+    /// sends a message after it instead, it stops taking picks too.
+    Choices {
+        /// The question.
+        question: SharedString,
+        /// The answers.
+        options: Vec<Choice>,
+        /// Several answers may be ticked, then sent together.
+        multiple: bool,
+        /// The ticked answers.
+        picked: Vec<usize>,
+        /// The pick was sent.
+        answered: bool,
     },
     /// A line from the runtime rather than either speaker.
     Notice {
@@ -238,6 +254,28 @@ impl ChatEntry {
         self
     }
 
+    /// A question with fixed answers. Make it take several with [`ChatEntry::multiple`].
+    pub fn choices<C: Into<Choice>>(
+        question: impl Into<SharedString>,
+        options: impl IntoIterator<Item = C>,
+    ) -> Self {
+        Self::Choices {
+            question: question.into(),
+            options: options.into_iter().map(Into::into).collect(),
+            multiple: false,
+            picked: Vec::new(),
+            answered: false,
+        }
+    }
+
+    /// Let a question with fixed answers take several; other entries are left as they are.
+    pub fn multiple(mut self) -> Self {
+        if let Self::Choices { multiple, .. } = &mut self {
+            *multiple = true;
+        }
+        self
+    }
+
     /// Draw an approval's allowing button as danger; other entries are left as they are.
     pub fn destructive(mut self) -> Self {
         if let Self::Approval { destructive, .. } = &mut self {
@@ -261,6 +299,7 @@ impl ChatEntry {
             Self::Assistant { text, .. } | Self::Reasoning { text, .. } => Some(text),
             Self::Tool { summary, .. } => Some(summary),
             Self::Approval { title, .. } => Some(title),
+            Self::Choices { question, .. } => Some(question),
             Self::Custom(_) => None,
         }
     }
@@ -275,6 +314,13 @@ pub enum ChatEvent {
         entry: EntryId,
         /// Their answer.
         decision: Decision,
+    },
+    /// The person answered a question with fixed answers.
+    Chose {
+        /// The question's entry.
+        entry: EntryId,
+        /// The indices of the picked answers, in order.
+        picked: Vec<usize>,
     },
 }
 
@@ -520,6 +566,39 @@ impl ChatView {
         );
     }
 
+    /// Whether a question with fixed answers still takes a pick: not answered, and not passed
+    /// over by a message the person sent after it.
+    pub fn choices_open(&self, id: EntryId) -> bool {
+        let Some(at) = self.entries.iter().position(|(entry, _)| *entry == id) else {
+            return false;
+        };
+        matches!(
+            self.entries[at].1,
+            ChatEntry::Choices {
+                answered: false,
+                ..
+            }
+        ) && !self.entries[at + 1..]
+            .iter()
+            .any(|(_, entry)| matches!(entry, ChatEntry::User { .. }))
+    }
+
+    /// Record the answer to a question with fixed answers, as if the person had picked it.
+    /// Emits nothing.
+    pub fn choose(&mut self, id: EntryId, chosen: Vec<usize>, cx: &mut Context<Self>) {
+        if let Some((
+            _,
+            ChatEntry::Choices {
+                picked, answered, ..
+            },
+        )) = self.entries.iter_mut().find(|(entry, _)| *entry == id)
+        {
+            *picked = chosen;
+            *answered = true;
+            cx.notify();
+        }
+    }
+
     /// Whether an approval is still waiting for the person.
     pub fn awaiting_approval(&self) -> bool {
         self.entries
@@ -746,6 +825,52 @@ impl ChatView {
                     card.into_any_element()
                 }
             },
+            ChatEntry::Choices {
+                question,
+                options,
+                multiple,
+                picked,
+                ..
+            } => {
+                let open = self.choices_open(id);
+                let card = ChoiceCard::new(self.child_id(id, "choices"), question.clone())
+                    .options(options.iter().cloned())
+                    .multiple(*multiple);
+                if !open {
+                    return card.answered(picked.clone()).into_any_element();
+                }
+                let view = cx.entity().downgrade();
+                let toggle = view.clone();
+                card.picked(picked.clone())
+                    .on_toggle(move |index, _, cx| {
+                        toggle
+                            .update(cx, |this, cx| {
+                                if let Some((_, ChatEntry::Choices { picked, .. })) =
+                                    this.entries.iter_mut().find(|(entry, _)| *entry == id)
+                                {
+                                    match picked.iter().position(|ticked| ticked == index) {
+                                        Some(at) => {
+                                            picked.remove(at);
+                                        }
+                                        None => picked.push(*index),
+                                    }
+                                    cx.notify();
+                                }
+                            })
+                            .ok();
+                    })
+                    .on_choose(move |chosen, _, cx| {
+                        view.update(cx, |this, cx| {
+                            this.choose(id, chosen.clone(), cx);
+                            cx.emit(ChatEvent::Chose {
+                                entry: id,
+                                picked: chosen.clone(),
+                            });
+                        })
+                        .ok();
+                    })
+                    .into_any_element()
+            }
             ChatEntry::Notice { kind, text } => match kind {
                 NoticeKind::Status => ChatNotice::status(text.clone()),
                 NoticeKind::Error => ChatNotice::error(text.clone()),

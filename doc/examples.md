@@ -30,9 +30,15 @@ mark; the picked model's mark also stands on the picker and as the avatar of its
 The composer takes typing (a stand-in for the application's own input: no selection or input
 method): `:thi` opens emoji suggestions, Up and Down move through them, Tab or Enter puts 🤔 in,
 and Enter sends the message into the transcript. `--draft "いい感じ :thi"` starts with text typed.
-Pictured with the model picker open.
+The sessions are a `ConversationList`; `--search piano` filters it. `--ask single` or
+`--ask multiple` ends the turn on a question (`ChatEntry::choices`) instead of an approval,
+`--queue` puts two messages in the `MessageQueue` above the composer, and `--short` keeps only
+what the two speakers said, to read the answer's Markdown whole. Pictured with the model picker
+open.
 
 ![Agent desktop](images/agent-desktop.png)
+
+![Agent desktop, a question with the queue under it](images/agent-desktop-ask.png)
 
 ## instrument_lab — a physical-model instrument
 

@@ -32,6 +32,53 @@ its code bumps the minor version while Atelier is below 1.0.
   already did without a GPU. `runtime-shaders` turns on gpui's `runtime_shaders` for Macs
   without full Xcode.
 
+## Unreleased — questions, the queue, the conversation list and Markdown
+
+### Added
+
+- `atelier::Markdown`, Markdown drawn in Atelier's type: paragraphs, headings, bullet, numbered
+  and task lists (nested), quotes, fenced code with its language and a copy button, GitHub
+  tables, rules, bold, italic, struck text, inline code and links. Each block is selectable and
+  copyable (`{id}-block-N`); a click on a link opens it or goes to `.on_link(..)`. Raw HTML stays
+  text. `.plain()` draws it without selection. It reads CommonMark with `pulldown-cmark`, a new
+  dependency (no default features).
+- `AssistantMessage` and `ChatView` draw answers as `Markdown`, which used to understand only
+  paragraphs, `-` bullets, `#` headings and fenced code.
+- `SelectableText::styles(..)` for bold, italic or coloured runs, and `::link(range, url)` with
+  `::on_link(..)` for links a click (not a drag) follows.
+- `agent::ChoiceCard` and `Choice`: a question the agent asked with fixed answers, answered with
+  one press, or with checkboxes and Send when `.multiple(true)`; `.answered(..)` shows the pick.
+  In a `ChatView`, `ChatEntry::choices(question, options)` (`.multiple()`) emits the new
+  `ChatEvent::Chose { entry, picked }`; a message sent after the question closes it.
+  `ChatView::choices_open(id)` and `::choose(id, picked)`.
+- `agent::MessageQueue` and `QueuedMessage`: the messages waiting for the turn to end, with a
+  count, pause and resume, and per message "Send now", "Edit" and remove.
+- `agent::ConversationList` and `Conversation`: "New conversation", a search field the
+  application passes, Recent and Archived, and a row per conversation with its state, when it
+  was used, a line of its last message and a "More actions" button. `ConversationRow::preview(..)`
+  and `::on_more(..)` add the second line and the button to a row of your own.
+- `Strings::pick_any`, `queued`, `queue_paused`, `resume`, `send_now`, `send_now_hint`, `edit`,
+  `new_conversation`, `untitled`, `recent`, `archived`, `no_conversations`,
+  `search_conversations` and `more_actions`, in English and Japanese, and `Strings::queued(n,
+  paused)`.
+- The `agent_desktop` example's sidebar is a `ConversationList` (`--search piano`); `--ask
+  single|multiple` ends the turn on a question, `--queue` fills the queue, and its answer shows
+  a table, a numbered list and a link.
+- Web kit: `markdown(..)`, `choiceCard(..)`, `messageQueue(..)` and `conversationList(..)` in
+  `atelier.js` with `.at-markdown`, `.at-choice-card`, `.at-queue` and `.at-conversations` in
+  `atelier.css`. `chat()` draws answers as Markdown and takes a `choices` entry, firing
+  `atelier:chose`. The showcase's agent view has the conversation list in its sidebar, the queue
+  over the composer, and `?ask=single` or `?ask=multiple`.
+
+### Workarounds you can delete
+
+| Workaround | Use instead |
+| --- | --- |
+| A Markdown view from another crate (gpui-component's `TextView`) passed with `AssistantMessage::body` | Nothing: answers are `Markdown` now; `atelier::Markdown` elsewhere |
+| A choice card built from `ListItem`s and `Checkbox`es, or pushed as `ChatEntry::custom` | `ChatEntry::choices` in a `ChatView`, or `agent::ChoiceCard` |
+| A queued-messages strip with its own Send now, Edit and remove buttons | `agent::MessageQueue` |
+| A conversation browser of hand-built rows with a search and Recent/Archived buttons | `agent::ConversationList` |
+
 ## Unreleased — the preferences window
 
 ### Added
