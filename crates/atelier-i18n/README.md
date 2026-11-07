@@ -7,10 +7,10 @@ not ship. No UI and no gpui, so a command-line tool and the window can share one
 
 ```toml
 [dependencies]
-atelier-i18n = { git = "https://github.com/uthree/design-language", tag = "vX.Y.Z" }
+atelier-i18n = { git = "https://github.com/uthree/design-language", tag = "v0.4.0" }
 
 [build-dependencies]
-atelier-i18n = { git = "https://github.com/uthree/design-language", tag = "vX.Y.Z", features = ["build"] }
+atelier-i18n = { git = "https://github.com/uthree/design-language", tag = "v0.4.0", features = ["build"] }
 ```
 
 ```rust

@@ -14,7 +14,7 @@ Atelier is used straight from this repository, pinned to a release tag:
 ```toml
 [dependencies]
 gpui = "=0.2.2"
-atelier = { git = "https://github.com/uthree/design-language", tag = "v0.3.0" }
+atelier = { git = "https://github.com/uthree/design-language", tag = "v0.4.0" }
 ```
 
 ```rust
