@@ -1,0 +1,11 @@
+_language = { variant = "Japanese", endonym = "日本語" }
+
+mixer = "ミキサー"
+literal_braces = "コードを {{ と }} で囲む"
+multi_line = "1行目\n「引用」のある2行目"
+track_count = "{count}トラック"
+tempo = "{bpm:.1} BPM"
+
+[piano_roll]
+title = "ピアノロール — {clip}"
+moved = "{bar}小節目へ{count}音を移動"

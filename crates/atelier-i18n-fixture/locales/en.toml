@@ -1,0 +1,11 @@
+_language = { variant = "English", endonym = "English" }
+
+mixer = "Mixer"
+literal_braces = "Wrap a chord in {{ and }}"
+multi_line = "First line\nSecond line with \"quotes\""
+track_count = "{count} tracks"
+tempo = "{bpm:.1} BPM"
+
+[piano_roll]
+title = "Piano roll — {clip}"
+moved = "Moved {count} notes to bar {bar}"

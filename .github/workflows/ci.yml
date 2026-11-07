@@ -65,6 +65,8 @@ jobs:
       # The agent runner and its example build only with `agents`.
       - run: cargo clippy --all-targets --features agents --locked
       - run: cargo test --features agents --test agent_runner --locked
+      # The language-file generator is a build-script feature, which plain `cargo test` leaves off.
+      - run: cargo test -p atelier-i18n --features build --locked
 
   app-icon:
     name: App icon action

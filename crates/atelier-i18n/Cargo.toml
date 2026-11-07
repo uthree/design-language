@@ -1,0 +1,30 @@
+[package]
+name = "atelier-i18n"
+description = "Interface text kept in one TOML file per language and compiled into the binary, with a missing translation failing the build"
+version = "0.3.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/uthree/design-language"
+keywords = ["i18n", "localization", "translation", "locale"]
+categories = ["internationalization", "localization"]
+
+# No UI: a command-line tool and a headless library can take their words from here without
+# building gpui. The `atelier` kit does not depend on it either.
+[features]
+# The code generator a build script calls (`atelier_i18n::build`). Applications turn it on under
+# `[build-dependencies]` only, so TOML parsing never reaches the binary.
+build = ["dep:toml"]
+
+[dependencies]
+toml = { version = "0.8", optional = true, default-features = false, features = ["parse"] }
+
+# Asking the operating system which languages its user reads, where no locale variable says.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Globalization"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSLocale", "NSString"] }
+
+[package.metadata.docs.rs]
+all-features = true
