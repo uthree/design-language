@@ -25,6 +25,10 @@ its code bumps the minor version while Atelier is below 1.0.
   (a reading column centred across a row in a scrolling body) a five-line answer stood more
   than 2,000 px tall, and the cards after it fell past the end of the scroll range. The blocks
   keep their spacing, now as a top margin on each block after the first.
+- A `UserMessage`'s attachment chips stay inside the message's column. The row holding them
+  took the width of its chips, so in a side panel narrower than one chip's 240 px a file's
+  chip reached past the panel's leading edge instead of cutting its name short. (The web kit's
+  user message carries no chips, so it is unchanged.)
 
 ### Workarounds you can delete
 
