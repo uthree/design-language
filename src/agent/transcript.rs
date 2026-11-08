@@ -134,7 +134,10 @@ impl RenderOnce for UserMessage {
             .pl(theme.spacing.xxl)
             .when(!self.attachments.is_empty(), |column| {
                 column.child(
+                    // As wide as the column at most, so a long file name is cut rather than
+                    // pushing its chip past the panel's leading edge.
                     div()
+                        .max_w_full()
                         .flex()
                         .flex_wrap()
                         .justify_end()

@@ -14,6 +14,27 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: Markdown as tall as it is drawn
+
+### Fixed
+
+- `Markdown` (and so `AssistantMessage` and `ChatView`) stacks its blocks, list items and
+  quotes as block containers rather than flex columns. As flex columns they could take their
+  height from a measurement made before the width was known, when text wraps at every break
+  opportunity: Japanese breaks between any two characters, so in Auris Studio's song workshop
+  (a reading column centred across a row in a scrolling body) a five-line answer stood more
+  than 2,000 px tall, and the cards after it fell past the end of the scroll range. The blocks
+  keep their spacing, now as a top margin on each block after the first.
+- A `UserMessage`'s attachment chips stay inside the message's column. The row holding them
+  took the width of its chips, so in a side panel narrower than one chip's 240 px a file's
+  chip reached past the panel's leading edge instead of cutting its name short. (The web kit's
+  user message carries no chips, so it is unchanged.)
+
+### Workarounds you can delete
+
+- A Markdown renderer of the application's own, kept only because `Markdown` collapsed or
+  grew in a centred column: Auris Studio's `agent_markdown.rs`.
+
 ## v0.4.0
 
 A workspace: alongside `atelier`, the `atelier-agents` crate drives the coding-agent CLIs
