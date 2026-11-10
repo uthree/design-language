@@ -21,6 +21,7 @@ use crate::display::{Divider, Spinner, StatusDot};
 use crate::focus::selector;
 use crate::icon::{Icon, IconName};
 use crate::overlay::Tooltip;
+use crate::progress::ProgressBar;
 use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
@@ -99,6 +100,9 @@ pub enum NodeState {
     Queued,
     /// Running, with progress from 0 to 1.
     Running(f32),
+    /// Running, with no measure of how far along it is, such as an agent at work: a spinner and
+    /// a bar that sweeps.
+    Working,
     /// Finished, with how long it took in seconds if known.
     Done(Option<f32>),
     /// Nothing upstream changed, so its last result was reused.
@@ -969,6 +973,9 @@ impl NodeCanvas {
                         .color(TextColor::Muted),
                 )
                 .child(Spinner::new(("node-spinner", id.0 as usize)).size(px(12.))),
+            NodeState::Working => mark
+                .child(faint(strings.task_states[1].clone()))
+                .child(Spinner::new(("node-spinner", id.0 as usize)).size(px(12.))),
             NodeState::Done(seconds) => mark
                 .children(seconds.map(|seconds| {
                     Label::new(format!("{seconds:.1} s"))
@@ -1070,7 +1077,7 @@ impl NodeCanvas {
         let strings = cx.strings().clone();
         let geometry = Geometry::new(&theme);
         let selected = self.selected == Some(id);
-        let running = matches!(node.state, NodeState::Running(_));
+        let running = matches!(node.state, NodeState::Running(_) | NodeState::Working);
         let dragging = matches!(self.drag, Drag::Node(dragged, _, _) if dragged == id);
         let rows = node.inputs.len().max(node.outputs.len());
         let border = if node.by_agent {
@@ -1306,7 +1313,13 @@ impl NodeCanvas {
                 }),
             )
             .child(header)
-            .when(running, |card| {
+            .when(node.state == NodeState::Working, |card| {
+                card.child(
+                    ProgressBar::indeterminate(self.child_id(format!("progress-{}", id.0)))
+                        .height(px(2.)),
+                )
+            })
+            .when(matches!(node.state, NodeState::Running(_)), |card| {
                 card.child(
                     div().h(px(2.)).bg(theme.colors.accent_wash).child(
                         div()

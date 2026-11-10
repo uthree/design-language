@@ -2549,6 +2549,15 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
   background: var(--at-accent);
 }
 
+/* Running with no measure: a segment sweeps across, as ProgressBar::indeterminate. */
+.at-node__progress--sweep { overflow: hidden; }
+.at-node__progress--sweep > span { width: 30%; animation: at-node-sweep 1.4s ease-in-out infinite; }
+
+@keyframes at-node-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+
 .at-node__ports { padding-top: var(--at-space-xs); }
 
 .at-node__row {

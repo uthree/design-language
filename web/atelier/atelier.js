@@ -1551,8 +1551,8 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 /// seconds, byAgent }`: ports are `{ name, kind, many }` with `kind` an index into `portTypes` (it
 /// picks the port colour) and `many` marking an input that takes any number of wires, as
 /// `graph::Port::many`; fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
-/// and `state` is idle, queued, running (with `progress` 0–1), done (with `seconds`), cached,
-/// failed, needs-answer or needs-choice (the last two wait on the person). `comments` are notes left on the node, each showing its first four lines with the
+/// and `state` is idle, queued, running (with `progress` 0–1), working (running with no measure,
+/// as `NodeState::Working`), done (with `seconds`), cached, failed, needs-answer or needs-choice (the last two wait on the person). `comments` are notes left on the node, each showing its first four lines with the
 /// whole text in its title; pressing one fires `atelier:node-comment` with `{ id, index, target }`
 /// for the application to edit over `target` (with `inlineEdit`, multiline) and `update` the node.
 /// Wires are `{ from, output, to, input }` by node id, and only join ports of one kind.
@@ -1565,7 +1565,7 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 const COMMENT_LINES = 4;
 
 export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legend = true, labels = {} } = {}) {
-  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", needsAnswer: "Needs you", needsChoice: "Pick one", ...labels };
+  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", working: "Working", needsAnswer: "Needs you", needsChoice: "Pick one", ...labels };
   const graph = new Map();
   let links = [];
   let next = 0;
@@ -1613,6 +1613,9 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       case "running":
         mark.append(`${Math.round((node.progress || 0) * 100)} %`, element("span", "at-spinner"));
         break;
+      case "working":
+        mark.append(words.working, element("span", "at-spinner"));
+        break;
       case "done":
         mark.classList.add("at-node__state--done");
         if (node.seconds != null) mark.textContent = `${node.seconds.toFixed(1)} s`;
@@ -1646,17 +1649,17 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
     card.style.width = `${node.width || 200}px`;
     card.classList.toggle("at-node--agent", !!node.byAgent);
     card.classList.toggle("is-selected", selected === id);
-    card.classList.toggle("is-running", node.state === "running");
+    card.classList.toggle("is-running", node.state === "running" || node.state === "working");
     card.classList.toggle("is-failed", node.state === "failed");
     card.classList.toggle("is-waiting", node.state === "needs-answer" || node.state === "needs-choice");
     const header = element("div", "at-node__header");
     if (node.icon) header.append(icon(node.icon));
     header.append(element("span", "at-node__title", node.title), stateMark(node));
     card.append(header);
-    if (node.state === "running") {
-      const bar = element("div", "at-node__progress");
+    if (node.state === "running" || node.state === "working") {
+      const bar = element("div", `at-node__progress${node.state === "working" ? " at-node__progress--sweep" : ""}`);
       const fill = element("span");
-      fill.style.width = `${(node.progress || 0) * 100}%`;
+      if (node.state === "running") fill.style.width = `${(node.progress || 0) * 100}%`;
       bar.append(fill);
       card.append(bar);
     }
