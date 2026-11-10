@@ -19,14 +19,13 @@ use atelier::agent::{
     SuggestionChip, ThinkingIndicator, ToolCall, ToolGroup, ToolState, UserMessage,
 };
 use atelier::{
-    ActiveTheme, Appearance, Assets, Avatar, BackToPlayhead, Badge, Button, ButtonVariant, Card,
-    Checkbox, ColorPicker, ColorSwatch, Column, ControlSize, Dialog, Direction, Disclosure,
-    Divider, Edge, EmptyState, Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter,
-    ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader,
-    Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList,
-    StepState, Switch, Table, TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor,
-    TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator,
-    skeleton_paragraph,
+    ActiveTheme, Appearance, Avatar, BackToPlayhead, Badge, Button, ButtonVariant, Card, Checkbox,
+    ColorPicker, ColorSwatch, Column, ControlSize, Dialog, Direction, Disclosure, Divider, Edge,
+    EmptyState, Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem,
+    MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment,
+    SegmentedControl, Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList, StepState,
+    Switch, Table, TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor, TextField,
+    TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
@@ -229,6 +228,7 @@ impl Showcase {
             .position(|d| *d == self.direction)
             .unwrap_or(0);
         TitleBar::new()
+            .app_icon(common::app_icon("atelier"))
             .leading(Button::icon_only("sidebar", IconName::SidebarLeft).tooltip("Hide sidebar"))
             .title("Midnight Drive")
             .child(div().w(theme.spacing.lg))
@@ -2090,7 +2090,7 @@ fn main() {
     let (width, height) = common::size_from_args(1480., 920.);
 
     Application::new()
-        .with_assets(Assets::default())
+        .with_assets(common::assets())
         .run(move |cx: &mut App| {
             let theme = Theme::new(direction, appearance);
             let background = theme.window_background();

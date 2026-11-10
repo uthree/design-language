@@ -540,6 +540,7 @@ impl Render for AgentDesktop {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("agent-desktop"))
                     .leading(
                         Button::icon_only("toggle-sidebar", IconName::SidebarLeft)
                             .tooltip("Hide sidebar"),

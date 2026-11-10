@@ -450,6 +450,7 @@ impl Render for Preferences {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("atelier"))
                     .title("設定")
                     .trailing(Divider::vertical())
                     .trailing(switch),

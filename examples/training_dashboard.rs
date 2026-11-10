@@ -1750,6 +1750,7 @@ impl Render for TrainingDashboard {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("atelier"))
                     .title("Training")
                     .child(
                         Tabs::new(

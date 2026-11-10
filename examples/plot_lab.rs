@@ -1046,6 +1046,7 @@ impl Render for PlotLab {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("plot-lab"))
                     .title("Plot lab")
                     .child(
                         Tabs::new("figure", ["Figure 1 · 2-D", "Figure 2 · 3-D"], self.figure)

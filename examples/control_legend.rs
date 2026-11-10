@@ -1261,6 +1261,7 @@ impl Render for Legend {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("atelier"))
                     .title("操作と部品の凡例")
                     .trailing(Divider::vertical())
                     .trailing(switch),

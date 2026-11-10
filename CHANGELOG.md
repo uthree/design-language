@@ -14,6 +14,30 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: the app's mark in the title bar
+
+### Added
+
+- `TitleBar::app_icon(icon)`: the app's mark, first at the window's top left (after the
+  traffic lights on macOS), before every leading control, `title_bar_icon_size(theme)` square
+  (half the bar: 16, 18 or 20 px). It is not a control: pressing it moves the window. The
+  design rules now say every desktop app shows it.
+- The icon tool writes `title-bar.png` (the small drawing at 64 px) for each app, and
+  `--title-bar DIR` writes every app's as `DIR/<slug>.png`. Auris Studio's is committed.
+- Every example shows its mark in the title bar.
+- `check-adoption.sh` warns on `Avatar::logo(IconSource::image(..))`, the usual hand-made
+  title-bar icon.
+
+### Web
+
+- `img.at-title-bar__icon`, first in the leading `.at-title-bar__side`, at half the bar's
+  height. The showcase carries Atelier's mark.
+
+### Workarounds you can delete
+
+- An `Avatar::logo(IconSource::image(..))` or `img(..)` of the app icon placed in
+  `TitleBar::leading(..)`: use `.app_icon(..)`.
+
 ## Unreleased: colours the person picks
 
 ### Added

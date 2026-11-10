@@ -6,10 +6,14 @@
 
 #![allow(dead_code)]
 
-use atelier::{Appearance, Assets, ControlSize, Direction, Segment, SegmentedControl, Theme};
+use std::borrow::Cow;
+
+use atelier::{
+    Appearance, Assets, ControlSize, Direction, IconSource, Segment, SegmentedControl, Theme,
+};
 use gpui::{
-    App, AppContext, Application, Bounds, Context, IntoElement, ParentElement, Render, Styled,
-    TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Application, AssetSource, Bounds, Context, IntoElement, ParentElement, Render,
+    SharedString, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
 };
 
 /// The smallest window every example lays out without overlapping or cutting off its controls.
@@ -99,6 +103,57 @@ pub fn theme_switch<V: Themed>(view: &mut V, cx: &mut Context<V>) -> impl IntoEl
         )
 }
 
+/// The marks the examples carry in their title bars, as if they were apps of one suite (see
+/// tools/app-icon/apps.toml). Drawn by
+/// `python3 tools/app-icon/make_icons.py --no-sheets --title-bar examples/common/app-icons`.
+const APP_ICONS: [(&str, &[u8]); 7] = [
+    (
+        "agent-desktop",
+        include_bytes!("app-icons/agent-desktop.png"),
+    ),
+    ("atelier", include_bytes!("app-icons/atelier.png")),
+    ("auris-studio", include_bytes!("app-icons/auris-studio.png")),
+    (
+        "instrument-lab",
+        include_bytes!("app-icons/instrument-lab.png"),
+    ),
+    ("node-editor", include_bytes!("app-icons/node-editor.png")),
+    ("plot-lab", include_bytes!("app-icons/plot-lab.png")),
+    ("visualizer", include_bytes!("app-icons/visualizer.png")),
+];
+
+/// An example's mark for [`atelier::TitleBar::app_icon`], by its slug in `apps.toml`.
+pub fn app_icon(slug: &str) -> IconSource {
+    debug_assert!(APP_ICONS.iter().any(|(s, _)| *s == slug), "no mark {slug}");
+    IconSource::image(format!("app-icons/{slug}.png"))
+}
+
+/// Atelier's icons, then the examples' marks.
+pub fn assets() -> Assets {
+    Assets::with_fallback(ExampleAssets)
+}
+
+struct ExampleAssets;
+
+impl AssetSource for ExampleAssets {
+    fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        Ok(path
+            .strip_prefix("app-icons/")
+            .and_then(|file| file.strip_suffix(".png"))
+            .and_then(|slug| APP_ICONS.iter().find(|(s, _)| *s == slug))
+            .map(|(_, bytes)| Cow::Borrowed(*bytes)))
+    }
+
+    fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
+        Ok(APP_ICONS
+            .iter()
+            .map(|(slug, _)| format!("app-icons/{slug}.png"))
+            .filter(|candidate| candidate.starts_with(path))
+            .map(SharedString::from)
+            .collect())
+    }
+}
+
 /// Run an application with one custom-framed window holding the view `build` makes.
 pub fn run<V: Themed>(
     title: &'static str,
@@ -109,7 +164,7 @@ pub fn run<V: Themed>(
     let choice = choice_from_args();
     let (width, height) = size_from_args(width, height);
     Application::new()
-        .with_assets(Assets::default())
+        .with_assets(assets())
         .run(move |cx: &mut App| {
             let theme = Theme::new(choice.0, choice.1);
             let background = theme.window_background();

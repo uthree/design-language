@@ -720,6 +720,7 @@ impl Render for AurisScreens {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("auris-studio"))
                     .title(title)
                     .trailing(
                         SegmentedControl::new(

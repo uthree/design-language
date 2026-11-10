@@ -610,6 +610,7 @@ impl Render for InstrumentLab {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("instrument-lab"))
                     .title("Cello")
                     .child(
                         Button::icon_only("play", IconName::Play)

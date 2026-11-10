@@ -1219,6 +1219,7 @@ impl Render for NodeEditor {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("node-editor"))
                     .title("Pad textures")
                     .child(run_button)
                     .when(missing > 0, |bar| {

@@ -273,8 +273,11 @@ first and it becomes stateful like `div().id(..)`: it can then scroll
 (`Sidebar::new(Edge::Left).id("pages").overflow_y_scroll()`), track a `ScrollHandle`, take
 clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
 
-- `TitleBar::new().leading(..).title(..).child(..).trailing(..)` — the window's own
-  title bar, one slim row (`theme.density.title_bar`). Open the window with
+- `TitleBar::new().app_icon(..).leading(..).title(..).child(..).trailing(..)` — the window's own
+  title bar, one slim row (`theme.density.title_bar`). `.app_icon(IconSource::image(..))` puts
+  the app's mark (its `title-bar.png`) first at the leading edge, at the window's top left or
+  after the traffic lights, `title_bar_icon_size(theme)` square; every desktop app sets it. It
+  is not a control and drags the window like the bar. Open the window with
   `atelier::custom_frame(options, cx.theme())` so the system bar is hidden. The title is centred
   on the window and is the only text in the bar: there is no subtitle (a save state, a path or a
   count goes in the content or the `StatusBar`).
@@ -294,8 +297,8 @@ clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
   bar, title included, with every control on top keeping its clicks. The title has an id and
   selector (`"atelier-title"`, or `.title_id(..)`), so a test can check it is centred. There is
   no subtitle slot on purpose: a save state goes in the `StatusBar`, a document's path in a
-  breadcrumb or the content, the application's name nowhere (the window and the dock already
-  say it). On Windows 11 22H2 and later under Glass, the acrylic backdrop makes DWM
+  breadcrumb or the content, the application's name nowhere (its mark at the top left, the
+  window and the dock already say it). On Windows 11 22H2 and later under Glass, the acrylic backdrop makes DWM
   draw its own caption buttons under the window; the title bar paints its chrome opaque there so
   they never show through its own (doubled glyphs when maximised). Do not paint it yourself.
   Do not re-implement the bar's centring: the sides carry no padding, because
