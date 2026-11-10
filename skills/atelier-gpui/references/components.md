@@ -275,8 +275,9 @@ clicks and tooltips. A sidebar whose pages can outgrow the window must scroll.
 
 - `TitleBar::new().app_icon(..).leading(..).title(..).child(..).trailing(..)` — the window's own
   title bar, one slim row (`theme.density.title_bar`). `.app_icon(IconSource::image(..))` puts
-  the app's mark (its `title-bar.png`) first at the leading edge, at the window's top left or
-  after the traffic lights, `title_bar_icon_size(theme)` square; every desktop app sets it. It
+  the app's mark (its `title-bar.png`) first at the leading edge, at the window's top left on
+  Windows and Linux, `title_bar_icon_size(theme)` square; every desktop app sets it, and on
+  macOS it is not drawn (the traffic lights hold the corner). It
   is not a control and drags the window like the bar. Open the window with
   `atelier::custom_frame(options, cx.theme())` so the system bar is hidden. The title is centred
   on the window and is the only text in the bar: there is no subtitle (a save state, a path or a

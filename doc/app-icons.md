@@ -125,13 +125,16 @@ the welcome screen and the app's chrome share a family.
 
 ## Using the mark in the app
 
-- **Every desktop app shows its mark at the top left of its window**, the first thing in the
+- **Every desktop app shows its mark at the top left of its window** on Windows and Linux, the first thing in the
   title bar: `TitleBar::app_icon(IconSource::image(..))` in gpui, `img.at-title-bar__icon` in
-  the web kit. It sits at the window's leading edge on Windows and Linux and right after the
-  traffic lights on macOS, before the sidebar toggle and every other control, half the bar's
+  the web kit. It sits at the window's leading edge, before the sidebar toggle and every other control, half the bar's
   height square (16 px under Studio, 18 under Mono, 20 under Glass) with the bar's usual gap
   after it. It is the small drawing, from `title-bar.png` (gpui) or `icon-small.svg` (web).
   The mark says which app the window belongs to, so the title stays free for the document.
+- **Not on macOS.** The traffic lights hold the top-left corner, and Mac windows carry no app
+  icon in their title bar: the Dock and the app's menu in the menu bar already name it. Set
+  `app_icon` anyway; `TitleBar` leaves it out on macOS, and the web kit hides
+  `.at-title-bar__icon` under `data-platform="mac"`, which `atelier.js` sets.
 - The mark in the title bar is a picture, not a button: it takes no clicks and drags the window
   with the bar. A menu that belongs at that corner (switching the workspace, the account, the
   connected server) is a ghost button right after it, as Knowledge Garden's desktop app puts

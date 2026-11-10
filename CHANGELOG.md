@@ -18,8 +18,9 @@ its code bumps the minor version while Atelier is below 1.0.
 
 ### Added
 
-- `TitleBar::app_icon(icon)`: the app's mark, first at the window's top left (after the
-  traffic lights on macOS), before every leading control, `title_bar_icon_size(theme)` square
+- `TitleBar::app_icon(icon)`: the app's mark, first at the window's top left on Windows and
+  Linux, before every leading control (not drawn on macOS, where the traffic lights hold the
+  corner), `title_bar_icon_size(theme)` square
   (half the bar: 16, 18 or 20 px). It is not a control: pressing it moves the window. The
   design rules now say every desktop app shows it.
 - The icon tool writes `title-bar.png` (the small drawing at 64 px) for each app, and
@@ -31,7 +32,8 @@ its code bumps the minor version while Atelier is below 1.0.
 ### Web
 
 - `img.at-title-bar__icon`, first in the leading `.at-title-bar__side`, at half the bar's
-  height. The showcase carries Atelier's mark.
+  height, hidden on macOS (`atelier.js` sets `data-platform="mac"` on the root). The showcase
+  carries Atelier's mark.
 
 ### Workarounds you can delete
 

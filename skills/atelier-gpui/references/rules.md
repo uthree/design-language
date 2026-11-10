@@ -118,8 +118,8 @@ the direction sets `capsule_controls` (Glass) or for intentional pills.
   line: only the document title, centred, with no subtitle beside or under it; frequent
   commands at the edges, and empty space around the title so the bar can be dragged.
 - The bar starts with the app's mark: every desktop app sets `TitleBar::app_icon(..)`, so its
-  icon sits at the window's top left (after the traffic lights on macOS), before the sidebar
-  toggle. The mark names the app; the title names the document. See
+  icon sits at the window's top left on Windows and Linux, before the sidebar toggle. macOS
+  leaves it out (the traffic lights hold the corner; `TitleBar` skips it there by itself). The mark names the app; the title names the document. See
   [app-icons.md](app-icons.md#in-the-app).
 - Canvas first: the timeline/editor gets `flex_1` and `min_w_0`/`min_h_0`; inspectors and the
   agent panel are fixed-width, dismissible regions on the trailing edge.

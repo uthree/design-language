@@ -288,6 +288,8 @@ function element(tag, className, text) {
 // ---------------------------------------------------------------- shortcuts in tooltips
 
 const MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "");
+// The stylesheet leaves out what macOS does not draw, such as the title bar's app icon.
+if (MAC && globalThis.document) document.documentElement.dataset.platform = "mac";
 
 /// A key binding as the platform writes it, the counterpart of `binding_label`: gpui's
 /// notation in ("secondary-shift-s", "ctrl-k ctrl-s"), "⇧⌘S" on macOS and "Ctrl+Shift+S"

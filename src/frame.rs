@@ -295,8 +295,8 @@ fn resize_cursor(edge: ResizeEdge) -> CursorStyle {
 /// it; when one side is wider it slides away from that side instead of covering it, and then
 /// truncates.
 ///
-/// A desktop application's bar starts with its mark: [`TitleBar::app_icon`] sets the app icon
-/// at the top-left, before every leading control (after the traffic lights on macOS).
+/// On Windows and Linux a desktop application's bar starts with its mark: [`TitleBar::app_icon`]
+/// sets the app icon at the top-left, before every leading control. macOS leaves it out.
 ///
 /// The title is all the bar says: there is no subtitle. A save state, a path or a count belongs
 /// in the window's content or its status bar, not beside the title.
@@ -345,7 +345,9 @@ impl TitleBar {
     }
 
     /// The application's mark, first at the leading edge: at the window's top-left corner on
-    /// Windows and Linux, after the traffic lights on macOS. Every desktop application sets it,
+    /// Windows and Linux. On macOS it is not drawn: the traffic lights hold that corner, Mac
+    /// windows carry no app icon in their title bar, and the Dock and the menu bar already
+    /// name the app. Every desktop application sets it anyway,
     /// from the `title-bar.png` its icon set carries (`IconSource::image(..)` served by the
     /// application's asset source). It is drawn [`title_bar_icon_size`] square, is not a control
     /// (it takes no clicks and drags the window like the bar around it). A test finds it by the
@@ -473,7 +475,7 @@ impl RenderOnce for TitleBar {
         for side in [&mut leading_side, &mut trailing_side] {
             side.style().flex_shrink = Some(YIELD_SHRINK);
         }
-        let app_icon = self.app_icon.map(|icon| {
+        let app_icon = self.app_icon.filter(|_| !mac).map(|icon| {
             // Not shielded: the mark is part of the bar, so pressing it moves the window.
             div()
                 .debug_selector(|| "atelier-app-icon".into())

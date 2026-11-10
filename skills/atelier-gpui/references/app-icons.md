@@ -38,15 +38,17 @@ AI", so an icon in it would say the whole app is the agent.
 
 ## In the app
 
-- **Every desktop app shows its mark at the top left of its window**: first in the title bar,
+- **Every desktop app shows its mark at the top left of its window** on Windows and Linux: first in the title bar,
   `TitleBar::new().app_icon(IconSource::image("app/title-bar.png"))` with `title-bar.png`
-  served by the app's `AssetSource` (`Assets::with_fallback(..)`). It sits at the leading edge
-  on Windows and Linux and after the traffic lights on macOS, before the sidebar toggle,
+  served by the app's `AssetSource` (`Assets::with_fallback(..)`). It sits at the leading edge,
+  before the sidebar toggle,
   `title_bar_icon_size(theme)` square (half the bar). It is a picture, not a control; a
   workspace or server switcher goes right after it as a ghost `ControlSize::Small` button with
   `icon_after(IconName::ChevronDown)`. Do not draw it yourself with `Avatar::logo` or an `img`
   in `.leading(..)`. Web kit: `img.at-title-bar__icon` (`icon-small.svg`) first in the leading
-  `.at-title-bar__side`.
+  `.at-title-bar__side`. Set it on every platform: on macOS `TitleBar` (and the web kit, through
+  `data-platform="mac"`) leaves it out, since the traffic lights hold that corner and Mac
+  windows carry no app icon in their title bar; the Dock and the menu bar name the app there.
 - Ship the generated files: `.icns` for the macOS bundle, `.ico` for the Windows executable,
   `png/<size>.png` and `icon.svg` for Linux `hicolor`, `symbolic.svg` for a tray or menu bar.
 - Beside the app's name (About, welcome card, title of a chooser) use the image at the name's
