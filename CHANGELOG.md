@@ -14,6 +14,22 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: a press on the back-to-playhead button stays there
+
+### Changed
+
+- `BackToPlayhead` stops the mouse-down that presses it, so the view under it (a timeline that
+  starts a selection or a drag on a press) no longer sees it.
+
+### Web
+
+- `hydrate` stops `pointerdown` and `mousedown` on `.at-back-to-playhead`, likewise. The
+  `follow()` doc comment is back on `follow()`.
+
+### Workarounds you can delete
+
+- An `on_mouse_down(.., |_, _, cx| cx.stop_propagation())` wrapped around `BackToPlayhead`.
+
 ## Unreleased: the app's mark in the title bar
 
 ### Added

@@ -7,8 +7,8 @@
 //! [`BackToPlayhead`] button in the corner on the side the playhead went then takes them back.
 
 use gpui::{
-    App, ClickEvent, ElementId, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
-    prelude::FluentBuilder,
+    App, ClickEvent, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    RenderOnce, Styled, Window, div, prelude::FluentBuilder,
 };
 
 use crate::button::{Button, ControlSize};
@@ -122,7 +122,7 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 ///
 /// It floats in the bottom corner on the side the playhead went, with the shadow a popover
 /// casts, and points that way. Put it in the view's `relative()` container, shown while
-/// [`Follow::side`] answers.
+/// [`Follow::side`] answers. A press on it stops there rather than reaching the view under it.
 #[derive(IntoElement)]
 pub struct BackToPlayhead {
     id: ElementId,
@@ -174,6 +174,9 @@ impl RenderOnce for BackToPlayhead {
         }
         let inset = theme.spacing.md;
         div()
+            // It floats over the view it serves, so a press on it is not a press on that view:
+            // a timeline under it would start a selection or a drag.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .absolute()
             .bottom(inset)
             .map(|place| match self.side {

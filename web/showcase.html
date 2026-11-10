@@ -429,6 +429,7 @@
         back.className = "at-button at-button--sm at-back-to-playhead";
         back.hidden = true;
         strip.append(lane, back);
+        hydrate(strip);
         const following = follow();
         let offset = 0, at = 2, playing = false, then = 0;
         const beatWidth = () => strip.clientWidth / span;
