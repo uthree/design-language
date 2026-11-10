@@ -14,6 +14,44 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: text typed where it is shown
+
+### Added
+
+- `TextInput`: editable text, the editing a `TextField` frame was waiting for. A caret and a
+  selection (drag, Shift, double-click for a word, triple-click for all), the platform's input
+  method, so Japanese and other compositions work, clipboard, and undo that takes back a typed
+  run as one step. Return emits `TextInputEvent::Submit` and bubbles the `SubmitText` action,
+  Escape `Cancel` and `CancelText`; `.multiline()` keeps line breaks, Shift-Return makes one.
+  While an input holds focus, Atelier takes its editing keys (Space, Backspace, Delete, the
+  arrows, Home, End, Return, Escape and ⌘/Ctrl with A, C, X, V, Z) before any key binding, so
+  Space for play or Backspace for delete never fires while the person types; scope a
+  single-letter shortcut away with `Some("!AtelierTextInput")` (`TEXT_INPUT_CONTEXT`).
+  `TextBuffer` is the same editing without drawing, for tests.
+- `InlineEdit`: rename a track, a clip, a lyric or a chord over its own label instead of in a
+  sheet, as Auris Studio does. The field opens at the label's place (150 to 420 px wide) with
+  the text selected; Return commits, Escape closes, and a press elsewhere commits unless the
+  text is unchanged or emptied, so wandering off never writes an edit nobody made.
+  `.error(..)` keeps it open with the reason, and focus goes back where it was when it closes.
+  `SpotBook::spot` records where a label laid out by flex was painted, and `SpotBook::get`
+  answers only while it is still on screen, so the application can fall back to its sheet.
+- `TextField::area()`: the well for several lines.
+
+### Web
+
+- `inlineEdit(label, options)` in `atelier.js` and `.at-inline-edit`: the same field over a
+  label, with the same Return, Escape and press-elsewhere rules; it leaves Return alone while an
+  input method composes. The showcase renames a track in place.
+
+### Workarounds you can delete
+
+- An editable text field of the application's own (an `EntityInputHandler` with caret, selection
+  and IME plumbing): Auris Studio's `ui/text_field.rs` and `ui/text_area.rs` for one-line and
+  short multi-line text.
+- Placing a prompt over a label by hand: Auris Studio's `ui/inline_edit.rs` (`Spots`, `spot`,
+  `InlinePlace::Spot`, `fitted`) and the click-away rules in `ui/prompt.rs`.
+- Bindings scoped to keep Space or Backspace from firing while a field has focus.
+
 ## Unreleased: Markdown as tall as it is drawn
 
 ### Fixed

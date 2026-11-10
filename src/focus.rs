@@ -89,6 +89,11 @@ pub(crate) fn init(cx: &mut App) {
         if key == "tab" || arrow && on_control(window) {
             set_focus_visible(true, cx);
         }
+        // A focused text input takes its editing keys first, modified or not.
+        if on(crate::input::TEXT_INPUT_CONTEXT) && crate::input::intercept(keystroke, window, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if keystroke.modifiers.modified() {
             return;
         }

@@ -69,6 +69,8 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `.size(Small)` / `Large`, `Button::icon_only`, `.selected(true)` | `--sm` / `--lg`, `--icon`, `aria-pressed="true"` |
 | `SegmentedControl`, `Tabs` | `.at-segmented`, `.at-tabs` with `<button>`s |
 | `TextField`, `FormField` | `.at-field` around an `<input>`, `.at-form-field` |
+| `TextInput` (in a `TextField`), `TextField::area` | the browser's own `<input>` / `<textarea>` in `.at-field`, `.at-field--area` |
+| `InlineEdit`, `SpotBook` | `inlineEdit(label, { value, multiline, allowEmpty, minWidth, maxWidth, onCommit, onClose })`, returning `field`, `input`, `close`; `onCommit` may return a message to refuse; `atelier:inline-commit` with `{ value }`, `atelier:inline-close`; `.at-inline-edit` (the label's own rectangle stands in for the spot) |
 | `PreferencesWindow`, `SettingsPage`, `SettingsGroup`, `Setting`, `FormGroup` | `preferences(element, { pages, selected, actions, labels })`, returning `select`, `search`, `page`; `atelier:page`; `.at-preferences`, `.at-form-group` |
 | `KeybindingList`, `KeyBinding`, `keystroke_label` | `keybindings(element, { groups, labels })`, returning `update`, `recording`; `keystrokeLabel(event)`; `atelier:keybinding`, `keybinding-remove`, `keybinding-reset`; `.at-keybindings`, `.at-keybinding` |
 | `Switch`, `Checkbox`, `Slider` | `.at-switch`, `.at-checkbox` around an `<input type=checkbox>`, `input.at-slider` |

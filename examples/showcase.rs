@@ -20,16 +20,17 @@ use atelier::agent::{
 };
 use atelier::{
     ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox,
-    ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName, Kbd,
-    Knob, Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo,
-    SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, StepList,
-    StepState, Switch, Tabs, TaskProgress, TaskState, TextColor, TextField, TextSize, Theme,
-    TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
+    ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName,
+    InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar,
+    ProgressRing, ProviderLogo, SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton,
+    Slider, Spinner, SpotBook, StepList, StepState, Switch, Tabs, TaskProgress, TaskState,
+    TextColor, TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator,
+    skeleton_paragraph,
 };
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Hsla, IntoElement,
-    ParentElement, Render, SharedString, Styled, TitlebarOptions, Window, WindowBounds,
-    WindowOptions, div, prelude::*, px, relative, rgb, size,
+    Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
+    IntoElement, ParentElement, Render, SharedString, Styled, TitlebarOptions, Window,
+    WindowBounds, WindowOptions, div, prelude::*, px, relative, rgb, size,
 };
 
 use common::argument;
@@ -105,6 +106,13 @@ struct Showcase {
     dialog: Option<OpenDialog>,
     /// The sample approval's automatic reviewer is still deciding.
     reviewing: bool,
+    /// The project name field's input.
+    project: Entity<TextInput>,
+    /// The track name edited in place, and whether its field is open.
+    track_name: SharedString,
+    renaming: bool,
+    rename: Entity<TextInput>,
+    spots: SpotBook,
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -900,7 +908,7 @@ impl Showcase {
             .into_any_element()
     }
 
-    fn components(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn components(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let progress = self.progress_samples(cx);
         let theme = cx.theme();
         let section = |title: &'static str, body: AnyElement| {
@@ -1017,9 +1025,62 @@ impl Showcase {
                 ),
             )
             .child(
+                div().w(px(200.)).child(
+                    TextField::new()
+                        .placeholder("Project name")
+                        .empty(self.project.read(cx).is_empty())
+                        .focused(self.project.read(cx).is_focused(window))
+                        .child(self.project.clone()),
+                ),
+            )
+            .child(
                 div()
-                    .w(px(200.))
-                    .child(TextField::new().value("Midnight Drive").focused(true)),
+                    .flex()
+                    .items_center()
+                    .gap(theme.spacing.sm)
+                    .child(
+                        Label::new("Track")
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted),
+                    )
+                    .child(
+                        div()
+                            .id("track-name")
+                            .relative()
+                            .child(Label::new(self.track_name.clone()))
+                            .child(self.spots.spot("track-name"))
+                            .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+                                if event.click_count() >= 2 {
+                                    let name = this.track_name.to_string();
+                                    this.rename.update(cx, |input, cx| input.set_text(name, cx));
+                                    this.renaming = true;
+                                    cx.notify();
+                                }
+                            })),
+                    )
+                    .child(
+                        Label::new("double-click to rename in place")
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted),
+                    )
+                    .children(
+                        self.renaming
+                            .then(|| self.spots.get("track-name", window))
+                            .flatten()
+                            .map(|over| {
+                                InlineEdit::new("rename-track", &self.rename, over)
+                                    .original(self.track_name.clone())
+                                    .on_commit(cx.listener(|this, text: &SharedString, _, cx| {
+                                        this.track_name = text.trim().to_owned().into();
+                                        this.renaming = false;
+                                        cx.notify();
+                                    }))
+                                    .on_close(cx.listener(|this, _, _, cx| {
+                                        this.renaming = false;
+                                        cx.notify();
+                                    }))
+                            }),
+                    ),
             )
             .child(
                 div()
@@ -1461,7 +1522,7 @@ impl Render for Showcase {
         let fit = Fit::new(f32::from(window.viewport_size().width), self.agent_open);
         let page = match self.page {
             Page::Arrange => self.arrange(fit, cx).into_any_element(),
-            Page::Components => self.components(cx).into_any_element(),
+            Page::Components => self.components(window, cx).into_any_element(),
         };
         let tabs = Tabs::new("pages", ["Arrange", "Components"], self.page as usize).on_select(
             cx.listener(|this, index: &usize, _, cx| {
@@ -1566,7 +1627,7 @@ fn main() {
             );
             cx.open_window(options, |window, cx| {
                 atelier::set_window_background(window, &Theme::new(direction, appearance));
-                cx.new(|_| Showcase {
+                cx.new(|cx| Showcase {
                     direction,
                     appearance,
                     page,
@@ -1589,6 +1650,11 @@ fn main() {
                         _ => None,
                     },
                     reviewing: false,
+                    project: cx.new(|cx| TextInput::new(cx).with_text("Midnight Drive", cx)),
+                    track_name: "Lead Vocal".into(),
+                    renaming: false,
+                    rename: cx.new(TextInput::new),
+                    spots: SpotBook::new(),
                 })
             })
             .expect("failed to open the showcase window");

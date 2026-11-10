@@ -72,7 +72,9 @@ the control in a mock-up.
 
 | Concept | Use | Not |
 | --- | --- | --- |
-| A short single line (a name, an address) | `TextField` (the frame; the application owns the editing) under a `FormField` label | a placeholder used as the label |
+| A short single line (a name, an address) | `TextInput` in a `TextField` under a `FormField` label | a placeholder used as the label |
+| A few lines (a comment, session notes) | `TextInput::multiline()` in `TextField::area()`; Shift-Return breaks the line | a single-line field that swallows line breaks |
+| Renaming something whose name is on screen (a track, a clip, a lyric, a chord) | `InlineEdit` over the label, `SpotBook` to find it; the sheet only when the label is off screen | a dialog that dims the window to ask for the name again |
 | Searching or filtering | `TextField::icon(IconName::Search)`, at the top of the list it filters | a "Search" button |
 | A file or folder | `TextField` showing the path + `.trailing(Button::new(.., "Choose…"))` | a bare button that hides the current path |
 | A message or prompt to the agent | `agent::Composer` | a `TextField` with a Send button beside it |
@@ -113,7 +115,6 @@ and colours; when the stand-in is not enough, add the component to Atelier.
 | A confirmation dialog | an `ApprovalCard` in place (verb + object, `.destructive()` when it deletes); a destructive command in a menu with a clear name |
 | A drop-down select | the menu button above (`Button` + `ChevronDown` + `Popover` of `MenuItem::checked`) |
 | A radio group | a `SegmentedControl` (few options) or `OptionCard`s (options that need words) |
-| A multi-line text area | the application's own editor inside a `TextField` frame |
 | A number field with steppers | a `TextField` holding the number, the unit trailing |
 | Reordering a list by dragging | `ListItem`s with the application's own drag handling and a menu with "Move up / Move down" |
 | A colour picker, a date or time picker | the application's own, using tokens; ask for it to be added |

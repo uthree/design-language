@@ -1172,6 +1172,7 @@ pub struct TextField {
     focused: bool,
     empty: Option<bool>,
     size: ControlSize,
+    area: bool,
     children: Vec<AnyElement>,
     trailing: Option<AnyElement>,
     on_click: Option<ClickHandler>,
@@ -1190,10 +1191,18 @@ impl TextField {
             focused: false,
             empty: None,
             size: ControlSize::default(),
+            area: false,
             children: Vec::new(),
             trailing: None,
             on_click: None,
         }
+    }
+
+    /// A well for several lines: at least the control's height and two lines tall, growing with
+    /// its input, the placeholder and icon at the top. For a [`crate::TextInput::multiline`].
+    pub fn area(mut self) -> Self {
+        self.area = true;
+        self
     }
 
     /// An id, which keeps the field's interaction state across frames and becomes its test
@@ -1315,6 +1324,12 @@ impl RenderOnce for TextField {
                 theme.colors.border
             })
             .when(self.focused, |el| el.shadow(ring.clone()))
+            .when(self.area, |el| {
+                el.h_auto()
+                    .min_h(height + theme.typography.size_md * 1.4)
+                    .items_start()
+                    .py(px(5.))
+            })
             // A text field shows its ring whenever it has focus, from the pointer or the keyboard:
             // it is where typing goes.
             .focus(move |style| style.border_color(accent).shadow(ring))
@@ -1334,6 +1349,7 @@ impl RenderOnce for TextField {
                     .min_w_0()
                     .h_full()
                     .items_center()
+                    .when(self.area, |el| el.h_auto().items_start())
                     .children(
                         empty
                             .then_some(self.placeholder)
