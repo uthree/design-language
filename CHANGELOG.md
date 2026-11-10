@@ -244,6 +244,40 @@ its code bumps the minor version while Atelier is below 1.0.
 - A hand-built list editor table: Auris Studio's `ui/event_list.rs` heading, rows,
   stripes, sounding tint and cell spots.
 
+## Unreleased: one selection across messages and logs
+
+### Added
+
+- `SelectionScope`: many `SelectableText`s as one selection. A drag that starts in one runs on
+  through the others in reading order, across paragraphs, list items, code, messages and log
+  lines; between pieces it snaps to the nearest text, so it does not stop in a gap. ⌘A or
+  Ctrl+A selects the whole scope, and a press on the scope away from the text lets the
+  selection go. `.scroll(&handle)` scrolls the area it sits in while a drag is held past its
+  top or bottom. A copy joins the pieces with `SelectableText::separator(..)`: a blank line by
+  default (`BLOCK_SEPARATOR`), `LINE_SEPARATOR` for lines. A scope inside another is part of
+  the outer one.
+- `ChatView` is one scope: a drag runs from a question through the answer, its reasoning, tool
+  output and errors into the next message. `Markdown` (and so `AssistantMessage`) is one scope
+  across its blocks, copying list items a line apart and table cells a tab apart. Reasoning
+  text, a tool call's detail, `CodeBlock` and `DiffBlock` lines (without their numbers or
+  signs), an `ApprovalCard`'s title and body, and a `ChatNotice` given `.id(..)` are
+  selectable. `DiffBlock::id(..)` keeps its selection when one file is shown twice.
+- `LogView`, `LogLine` and `LogLevel`: an application's own log, one record to a line with its
+  time, level, source and message, warnings and errors coloured. It is one scope and copies
+  as a terminal would, `12s WARN app::audio: message`, with a cut source in full.
+
+### Web
+
+- `logView(element, { lines })` and `.at-log`: the same log, whose copy gives one record to a
+  line in the same form. The showcase has one. The transcript already selected across messages
+  with the page's own selection.
+
+### Workarounds you can delete
+
+- A message footer's Copy button kept only because a drag stopped at each Markdown block
+  (Auris Studio's `CopyLabels` reason); keep it if the person should get the Markdown source.
+- `log_panel.rs`'s rows, each message its own `SelectableText`: `LogView`.
+
 ## Unreleased: text typed where it is shown
 
 ### Added

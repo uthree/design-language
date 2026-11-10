@@ -253,6 +253,11 @@
               </div>
 
               <div class="at-card at-card--padded" style="grid-column: 1 / -1">
+                <div class="at-section-header"><h3 class="at-heading">Log</h3><span class="at-small at-muted">Drag across the lines and copy: one record to a line.</span></div>
+                <div id="log" style="max-height: 160px; overflow: auto"></div>
+              </div>
+
+              <div class="at-card at-card--padded" style="grid-column: 1 / -1">
                 <div class="at-section-header"><h3 class="at-heading">Node canvas</h3><span class="at-small at-muted" id="graph-event">Drag nodes, wire an output to an input, pan the background.</span></div>
                 <div id="graph" style="height: 380px; border-radius: var(--at-radius-md)"></div>
               </div>
@@ -342,7 +347,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, colorPicker, colorSwatch, conversationList, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, colorPicker, colorSwatch, conversationList, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, logView, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -612,6 +617,15 @@
         { title: "Profile physical piano", when: "09:05", preview: "Most of the time goes to the soundboard filter." },
         { title: "", when: "Yesterday", preview: "How do I add a word to the VOICEVOX dictionary?" },
       ];
+      logView(document.getElementById("log"), {
+        lines: [
+          { key: 1, time: "0s", level: "info", source: "auris::app", message: "Opened “Night drive.auris”" },
+          { key: 2, time: "3s", level: "debug", source: "auris_session::library::soundfonts", message: "Loaded 3 soundfonts in 412 ms" },
+          { key: 3, time: "12s", level: "warn", source: "auris::audio", message: "Lost the output device; falling back to the default output" },
+          { key: 4, time: "12s", level: "error", source: "auris_session::plugin_worker", message: "Plugin “Tape Echo” stopped answering and was restarted" },
+          { key: 5, time: "13s", level: "info", source: "auris::audio", message: "Playing at 48 kHz, 256 frames" },
+        ],
+      });
       const sessionList = conversationList(sessionsRoot, { conversations: sessions, selected: 0, archived: false });
       sessionsRoot.addEventListener("atelier:conversation-open", (event) => sessionList.update({ selected: event.detail.index }));
       sessionsRoot.addEventListener("atelier:conversation-archived", (event) => sessionList.update({ archived: event.detail.archived }));

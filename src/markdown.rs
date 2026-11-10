@@ -11,7 +11,9 @@ use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 use crate::button::CopyButton;
 use crate::icon::{Icon, IconName};
-use crate::selectable::{LinkHandler, SelectableText, merge};
+use crate::selectable::{
+    BLOCK_SEPARATOR, LINE_SEPARATOR, LinkHandler, SelectableText, SelectionScope, merge,
+};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
 
@@ -24,7 +26,9 @@ use crate::theme::{ActiveTheme, Theme};
 /// is shown as text, never interpreted.
 ///
 /// Each paragraph, heading, list item and code block is a [`SelectableText`] the person can
-/// select and copy, with ids `{id}-block-1`, `{id}-block-2`… in reading order, and a click on a
+/// select and copy, with ids `{id}-block-1`, `{id}-block-2`… in reading order, all in one
+/// [`crate::SelectionScope`]: a drag runs across blocks, and a copy keeps paragraphs a blank line
+/// apart, list items a line apart and table cells a tab apart. A click on a
 /// link opens it (or calls [`Markdown::on_link`]). [`Markdown::plain`] draws the same without
 /// selection, for text that changes every frame or has no stable id.
 ///
@@ -416,6 +420,8 @@ struct Painter<'a> {
     on_link: Option<LinkHandler>,
     count: usize,
     theme: &'a Theme,
+    /// What the next selectable piece puts before itself when copied with the one before.
+    separator: Option<&'static str>,
 }
 
 impl Painter<'_> {
@@ -481,7 +487,9 @@ impl Painter<'_> {
                 )
                 .into_any_element();
         }
+        let separator = self.separator.take().unwrap_or(BLOCK_SEPARATOR);
         let mut text = SelectableText::new(self.next_id("block"), inline.text.clone())
+            .separator(separator)
             .size(size)
             .color(color)
             .styles(styles)
@@ -523,6 +531,10 @@ impl Painter<'_> {
                     .iter()
                     .enumerate()
                     .map(|(index, item)| {
+                        // Items copy one to a line, like the list they came from.
+                        if index > 0 {
+                            self.separator = Some(LINE_SEPARATOR);
+                        }
                         let marker = match (item.task, start) {
                             (Some(done), _) => task_box(done, theme).into_any_element(),
                             (None, Some(first)) => div()
@@ -584,7 +596,7 @@ impl Painter<'_> {
                 .into_any_element(),
             Block::Table { head, rows } => {
                 let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
-                let row = |cells: &[Inline], header: bool, painter: &mut Self| {
+                let row = |cells: &[Inline], header: bool, first_row: bool, painter: &mut Self| {
                     div()
                         .flex()
                         .min_w_0()
@@ -597,6 +609,12 @@ impl Painter<'_> {
                         })
                         .children((0..columns).map(|column| {
                             let cell = cells.get(column).cloned().unwrap_or_default();
+                            // A table copies as tab-separated rows, which a spreadsheet takes.
+                            if column > 0 {
+                                painter.separator = Some("\t");
+                            } else if !first_row {
+                                painter.separator = Some(LINE_SEPARATOR);
+                            }
                             div()
                                 .flex_1()
                                 .flex_basis(px(0.))
@@ -616,10 +634,10 @@ impl Painter<'_> {
                     .border_color(colors.border)
                     .overflow_hidden();
                 if !head.is_empty() {
-                    table = table.child(row(head, true, self));
+                    table = table.child(row(head, true, true, self));
                 }
-                for cells in rows {
-                    table = table.child(row(cells, false, self));
+                for (index, cells) in rows.iter().enumerate() {
+                    table = table.child(row(cells, false, index == 0 && head.is_empty(), self));
                 }
                 table.into_any_element()
             }
@@ -641,6 +659,7 @@ impl Painter<'_> {
         let body = if self.plain {
             div().child(code.to_owned()).into_any_element()
         } else {
+            self.separator = None;
             SelectableText::new(self.next_id("block"), code.to_owned())
                 .mono()
                 .size(TextSize::Small)
@@ -738,11 +757,25 @@ impl RenderOnce for Markdown {
             on_link: self.on_link.clone(),
             count: 0,
             theme,
+            separator: None,
         };
         let children = painter.blocks(&blocks, TextColor::Default, 0);
-        stack(children, theme.spacing.sm)
+        let body = stack(children, theme.spacing.sm)
             .text_size(theme.typography.size_md)
-            .text_color(theme.colors.text)
+            .text_color(theme.colors.text);
+        if self.plain {
+            return body.into_any_element();
+        }
+        // One selection over every block, so a drag runs from a paragraph into a list and on
+        // into code. Inside a larger scope, such as a conversation, it is part of that one.
+        SelectionScope::new(ElementId::NamedChild(
+            Box::new(self.id.clone()),
+            "selection".into(),
+        ))
+        .w_full()
+        .min_w_0()
+        .child(body)
+        .into_any_element()
     }
 }
 

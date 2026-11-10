@@ -154,6 +154,12 @@ fn the_view_counts_what_arrives_while_the_person_reads_further_up(cx: &mut TestA
     let (chat, _, cx) = open(cx);
     fill(&chat, 12, cx);
     assert_eq!(chat.read_with(cx, |chat, _| chat.unread()), 0);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("chat-jump").is_none(),
+        "at the end, with no jump button"
+    );
 
     // Scroll back up, away from the end.
     cx.simulate_event(ScrollWheelEvent {

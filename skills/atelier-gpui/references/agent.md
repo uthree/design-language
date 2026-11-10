@@ -115,7 +115,8 @@ On the web, `chat(element, { panel, logo, strings })` from `atelier.js` is the s
 `Markdown::new(id, source)` draws what an agent writes: paragraphs, headings, bullet, numbered
 and task lists (nested), quotes, fenced code with its language and a copy button, GitHub tables,
 rules, bold, italic, struck text, inline code and links. Every block is a `SelectableText`
-(`{id}-block-N` in reading order) and a click on a link opens it, or goes to `.on_link(|url, ..|)`
+(`{id}-block-N` in reading order), all in one `SelectionScope` so a drag runs across blocks,
+and a click on a link opens it, or goes to `.on_link(|url, ..|)`
 for links into the project. Raw HTML is shown as text. `.plain()` drops selection and links for
 text without a stable id. `AssistantMessage` and `ChatView` answers use it already; use it as
 well for plans, release notes and tool results that are Markdown. `SelectableText::styles(..)`
@@ -291,8 +292,13 @@ pass; the picker keeps the full one.
 ## Message actions
 
 A message's own text is the first way to copy it: give `UserMessage` and `AssistantMessage` an
-id and their text is selectable (`SelectableText`; the assistant's built-in Markdown block by
-block). With your own Markdown view in `AssistantMessage::body`, make it selectable there.
+id and their text is selectable (`SelectableText`; the assistant's built-in Markdown as one
+selection across its blocks). `ChatView` makes its whole transcript one `SelectionScope`, so a
+drag runs from a question through the answer, its code, reasoning, tool output and errors into
+the next message; a transcript of your own gets the same by wrapping its column in
+`SelectionScope::new(id).scroll(&handle)`. Reasoning, tool details, `CodeBlock`, `DiffBlock`,
+an `ApprovalCard`'s words and a `ChatNotice` with an `.id(..)` are selectable too. With your
+own Markdown view in `AssistantMessage::body`, make it selectable there.
 
 Put a message's actions — Copy, Retry, Edit — in its footer with `.action(..)`, on
 `AssistantMessage` and `UserMessage` alike: small ghost **icon-only** buttons, Copy first

@@ -405,7 +405,7 @@ impl RenderOnce for ReasoningBlock {
             window,
             cx,
         );
-        let reveal_id = (self.id.clone(), "text");
+        let reveal_id: ElementId = (self.id.clone(), "text").into();
         let theme = cx.theme();
         let colors = &theme.colors;
         let hover = colors.hover;
@@ -444,9 +444,11 @@ impl RenderOnce for ReasoningBlock {
                         .pl(theme.spacing.md)
                         .border_l_1()
                         .border_color(colors.border_strong)
-                        .text_size(theme.typography.size_sm)
-                        .text_color(colors.text_muted)
-                        .child(self.text),
+                        .child(
+                            SelectableText::new(reveal_id.clone(), self.text)
+                                .size(TextSize::Small)
+                                .color(TextColor::Muted),
+                        ),
                     reveal_id,
                     cx,
                 ))
@@ -593,7 +595,7 @@ impl RenderOnce for ToolCall {
             cx,
             |mark, delta| mark.opacity(delta),
         ));
-        let reveal_id = (id, "detail");
+        let reveal_id: ElementId = (id, "detail").into();
         if let Some(handler) = self.on_toggle {
             row = row.on_click(handler);
         }
@@ -608,10 +610,12 @@ impl RenderOnce for ToolCall {
                         .py(theme.spacing.sm)
                         .rounded(theme.shape.radius_sm)
                         .bg(colors.sunken)
-                        .font(theme.typography.mono.clone())
-                        .text_size(theme.typography.size_xs)
-                        .text_color(colors.text_muted)
-                        .child(detail),
+                        .child(
+                            SelectableText::new(reveal_id.clone(), detail)
+                                .mono()
+                                .size(TextSize::XSmall)
+                                .color(TextColor::Muted),
+                        ),
                     reveal_id,
                     cx,
                 ))
@@ -799,10 +803,16 @@ impl RenderOnce for ApprovalCard {
                             .size(px(15.))
                             .color(colors.warning),
                     )
-                    .child(Label::new(self.title).weight(theme.typography.label_weight)),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .font_weight(theme.typography.label_weight)
+                            .child(SelectableText::new((self.id.clone(), "title"), self.title)),
+                    ),
             )
             .children(self.body.map(|body| {
-                Label::new(body)
+                SelectableText::new((self.id.clone(), "body"), body)
                     .size(TextSize::Small)
                     .color(TextColor::Muted)
             }))
@@ -832,6 +842,7 @@ pub enum NoticeKind {
 /// A centred line from the runtime, not from either speaker.
 #[derive(IntoElement)]
 pub struct ChatNotice {
+    id: Option<ElementId>,
     text: SharedString,
     kind: NoticeKind,
     action: Option<AnyElement>,
@@ -841,6 +852,7 @@ impl ChatNotice {
     /// A status line.
     pub fn status(text: impl Into<SharedString>) -> Self {
         Self {
+            id: None,
             text: text.into(),
             kind: NoticeKind::Status,
             action: None,
@@ -850,10 +862,18 @@ impl ChatNotice {
     /// An error line. Say what happened and how to recover.
     pub fn error(text: impl Into<SharedString>) -> Self {
         Self {
+            id: None,
             text: text.into(),
             kind: NoticeKind::Error,
             action: None,
         }
+    }
+
+    /// A stable id. With one, its text can be selected and copied, so an error message can be
+    /// pasted into a report.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// A recovery action, for example Retry.
@@ -867,17 +887,27 @@ impl RenderOnce for ChatNotice {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
+        let (size, color) = match self.kind {
+            NoticeKind::Status => (TextSize::XSmall, TextColor::Faint),
+            NoticeKind::Error => (TextSize::Small, TextColor::Default),
+        };
+        let text = match self.id {
+            Some(id) => SelectableText::new(id, self.text)
+                .size(size)
+                .color(color)
+                .into_any_element(),
+            None => Label::new(self.text)
+                .size(size)
+                .color(color)
+                .into_any_element(),
+        };
         match self.kind {
             NoticeKind::Status => div()
                 .flex()
                 .items_center()
                 .gap(theme.spacing.sm)
                 .child(div().flex_1().h(px(1.)).bg(colors.separator))
-                .child(
-                    Label::new(self.text)
-                        .size(TextSize::XSmall)
-                        .color(TextColor::Faint),
-                )
+                .child(div().flex_none().max_w(gpui::relative(0.8)).child(text))
                 .child(div().flex_1().h(px(1.)).bg(colors.separator)),
             NoticeKind::Error => div()
                 .flex()
@@ -892,14 +922,7 @@ impl RenderOnce for ChatNotice {
                         .size(px(14.))
                         .color(colors.danger),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(theme.typography.size_sm)
-                        .text_color(colors.text)
-                        .child(self.text),
-                )
+                .child(div().flex_1().min_w_0().child(text))
                 .children(self.action.map(|action| div().flex_none().child(action))),
         }
     }
