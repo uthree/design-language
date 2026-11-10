@@ -261,6 +261,8 @@
               <div class="at-card at-card--padded" style="grid-column: 1 / -1">
                 <div class="at-section-header"><h3 class="at-heading">Node canvas</h3><span class="at-small at-muted" id="graph-event">Drag nodes, wire an output to an input, pan the background.</span></div>
                 <div id="graph" style="height: 380px; border-radius: var(--at-radius-md)"></div>
+                <span class="at-small at-muted">A task graph: "After" takes every step wired into it, and two steps wait on the person.</span>
+                <div id="task-graph" style="height: 260px; border-radius: var(--at-radius-md)"></div>
               </div>
 
               <div class="at-card at-card--padded" style="grid-column: 1 / -1">
@@ -734,6 +736,24 @@
         wires: [
           { from: 0, output: 0, to: 1, input: 0 },
           { from: 1, output: 0, to: 2, input: 0 },
+          { from: 2, output: 0, to: 3, input: 0 },
+        ],
+      });
+      // A task graph, as an agent orchestrator draws one: each step waits for every step wired
+      // into its "After" input.
+      const step = (title, x, y, state, extra = {}) => ({ title, x, y, width: 180, inputs: [{ name: "After", kind: 0, many: true }], outputs: [{ name: "Then", kind: 0 }], state, ...extra });
+      nodeCanvas(document.getElementById("task-graph"), {
+        portTypes: ["Step"],
+        nodes: [
+          { ...step("Plan the change", 0, 70, "done", { seconds: 12.4 }), inputs: [] },
+          step("Write the tests", 230, 0, "needs-answer"),
+          step("Implement", 230, 130, "needs-choice"),
+          { ...step("Review", 460, 70, "queued"), outputs: [] },
+        ],
+        wires: [
+          { from: 0, output: 0, to: 1, input: 0 },
+          { from: 0, output: 0, to: 2, input: 0 },
+          { from: 1, output: 0, to: 3, input: 0 },
           { from: 2, output: 0, to: 3, input: 0 },
         ],
       });

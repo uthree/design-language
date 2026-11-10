@@ -2496,6 +2496,7 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 .at-node.is-selected,
 .at-node.is-running { border-color: var(--at-accent); }
 .at-node.is-failed { border-color: var(--at-danger); }
+.at-node.is-waiting { border-color: var(--at-warning); }
 .at-node.is-dragging { box-shadow: var(--at-shadow-medium); }
 .at-node--agent { border: 1px dashed var(--at-agent); }
 
@@ -2534,6 +2535,7 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 .at-node__state .at-spinner { width: 12px; height: 12px; }
 .at-node__state--done::after { content: "✓"; color: var(--at-success); font-family: var(--at-font-ui, inherit); }
 .at-node__state--failed { color: var(--at-danger); }
+.at-node__state--needs-person { color: var(--at-warning); }
 .at-node__state--agent { color: var(--at-agent); }
 
 .at-node__progress {
@@ -2586,6 +2588,8 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 .at-node__socket.is-wired::before { background: var(--_color); }
 .at-node__socket.is-muted { opacity: 0.3; }
 .at-node__socket--in { left: -10px; }
+/* An input that takes many wires is a slot rather than a dot. */
+.at-node__socket--many::before { height: 16px; border-radius: 5px; }
 .at-node__socket--out { right: -10px; }
 .at-node__socket[data-kind="1"] { --_color: var(--at-port-1); }
 .at-node__socket[data-kind="2"] { --_color: var(--at-port-2); }
