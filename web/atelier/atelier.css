@@ -533,6 +533,68 @@ html[data-vibrancy] body.at-root {
 /* A table of short values (`table()` in atelier.js, `Table` natively): a heading row, rows of
    `--at-control-sm`, a stripe in `--_mark` down a marked row, the row being heard in the
    accent wash and the selected one in `--at-selected`. */
+/* A figure read at a glance: a faint caption over a large mono number and its unit. */
+.at-stat {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--at-space-xxs);
+  white-space: nowrap;
+}
+
+.at-stat__caption {
+  color: var(--at-text-faint);
+  font-size: var(--at-size-xs);
+}
+
+.at-stat__figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--at-space-xs);
+}
+
+.at-stat__value {
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xl);
+  font-weight: var(--at-label-weight);
+  font-variant-numeric: tabular-nums;
+}
+
+.at-stat__value:empty::before {
+  content: "—";
+  color: var(--at-text-faint);
+}
+
+.at-stat__unit {
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+}
+
+.at-stat--display .at-stat__value { font-size: var(--at-size-display); }
+.at-stat--md .at-stat__value { font-size: var(--at-size-md); }
+.at-stat--sm .at-stat__value { font-size: var(--at-size-sm); }
+.at-stat[data-tone="success"] .at-stat__value { color: var(--at-success); }
+.at-stat[data-tone="warning"] .at-stat__value { color: var(--at-warning); }
+.at-stat[data-tone="danger"] .at-stat__value { color: var(--at-danger); }
+
+.at-stat--inline {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--at-space-sm);
+}
+
+.at-stat--inline .at-stat__unit {
+  font-size: var(--at-size-xs);
+}
+
+.at-stat--end {
+  align-items: flex-end;
+}
+
+.at-stat--end .at-stat__figure {
+  justify-content: flex-end;
+}
+
 /* The button back to a playhead the person scrolled away from: bottom corner on its side. */
 .at-back-to-playhead {
   position: absolute;

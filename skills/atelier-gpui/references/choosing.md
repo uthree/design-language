@@ -65,6 +65,7 @@ the control in a mock-up.
 | Work done of a known total | `ProgressBar` / `ProgressRing::show_value()`; a named long task `TaskProgress` | a `Slider` (it invites dragging) |
 | Waiting of unknown length | `ProgressBar::indeterminate`, `Spinner`; content that will arrive `Skeleton` | a bar that jumps to 90 % and stops |
 | A live signal level | `LevelMeter` | a `ProgressBar` |
+| A measured figure read at a glance (loudness, peak, a count, a time) | `Stat` with its unit; `Stat::empty` before it is measured | a bold label with the unit glued on; a 0 that was never measured |
 | A quota or budget (tokens, minutes) | `agent::UsageMeter` | a bare percentage label |
 | Steps of a plan | `StepList` | a numbered list of labels |
 

@@ -59,6 +59,7 @@ pub mod plot;
 mod preferences;
 mod progress;
 mod selectable;
+mod stat;
 mod strings;
 mod table;
 mod text;
@@ -105,6 +106,7 @@ pub use progress::{
     skeleton_paragraph,
 };
 pub use selectable::{CopySelection, LinkHandler, SELECTABLE_CONTEXT, SelectAll, SelectableText};
+pub use stat::Stat;
 pub use strings::{ActiveStrings, Strings};
 pub use table::{Column, ColumnWidth, RowMark, Table, TableCell, TableRow};
 pub use text::{Label, TextColor, TextSize};

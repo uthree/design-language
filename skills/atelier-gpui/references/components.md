@@ -205,6 +205,13 @@ Sliders and knobs handle their own dragging and keys; the application keeps only
 prefer it when the model is known), `Divider::horizontal()` / `Divider::vertical().full()`,
 `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
 
+`Stat::new("Integrated", "−14.2").unit("LUFS")` — one figure a panel reports: a faint caption
+over a large mono number and its unit. `Stat::empty(caption)` (or `Stat::maybe(caption,
+Option)`) shows a dash before anything is measured, never a zero. `.size(TextSize::Display)`
+for the one figure a view is about, `.color(TextColor::Danger)` when it is a verdict too (say
+so in words as well), `.inline()` for a title bar or status line, `.min_width(..)` so a row of
+them holds still, `.end()` at the right of a row. In a transport, use `Readout` instead.
+
 ## Progress and loading
 
 `ProgressBar::new(v)` (`.id(..)` to glide, `.tone(..)`, `.height(..)`),

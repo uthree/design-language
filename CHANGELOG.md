@@ -14,6 +14,26 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: figures
+
+### Added
+
+- `Stat`: one figure read at a glance, a faint caption over a large mono number and its unit,
+  as Auris Studio's loudness panel and typing-panel readouts draw by hand. `Stat::empty` shows
+  a dash before anything is measured; `.size(..)`, `.color(..)` for a figure that is a verdict
+  too, `.inline()` for the one-line form in a title bar, `.min_width(..)` and `.end()`.
+
+### Web
+
+- `.at-stat` with `__caption`, `__figure`, `__value` and `__unit`; an empty value shows the
+  dash. Sizes `--display`, `--md`, `--sm`, `--inline`, `--end` and `data-tone`. The showcase
+  has a row of loudness figures.
+
+### Workarounds you can delete
+
+- Auris Studio's `labelled_figure` in `ui/visualizer.rs` and `readout` in
+  `ui/typing_panel.rs`.
+
 ## Unreleased: following the playhead
 
 ### Added

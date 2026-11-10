@@ -23,9 +23,9 @@ use atelier::{
     Checkbox, Column, ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState,
     Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover,
     ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment, SegmentedControl,
-    Sidebar, Skeleton, Slider, Spinner, SpotBook, StepList, StepState, Switch, Table, TableCell,
-    TableRow, Tabs, TaskProgress, TaskState, TextColor, TextField, TextInput, TextSize, Theme,
-    TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
+    Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList, StepState, Switch, Table,
+    TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor, TextField, TextInput, TextSize,
+    Theme, TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
@@ -923,6 +923,39 @@ impl Showcase {
         let progress = self.progress_samples(cx);
         let event_list = self.event_list(window, cx);
         let follow = self.follow_demo(cx);
+        // A loudness panel's figures: one not measured yet, one over its ceiling.
+        let figures = div()
+            .flex()
+            .flex_wrap()
+            .items_end()
+            .gap(px(28.))
+            .child(
+                Stat::new("Integrated", "−14.2")
+                    .unit("LUFS")
+                    .min_width(px(110.)),
+            )
+            .child(
+                Stat::new("Short-term", "−11.8")
+                    .unit("LUFS")
+                    .min_width(px(110.)),
+            )
+            .child(
+                Stat::new("True peak", "+0.4")
+                    .unit("dBTP")
+                    .color(TextColor::Danger)
+                    .min_width(px(100.)),
+            )
+            .child(Stat::empty("Range").unit("LU"))
+            .child(
+                Stat::new("Tempo", "120.00")
+                    .unit("BPM")
+                    .size(TextSize::Display),
+            )
+            .child(
+                Stat::new("Position", "013.2.1")
+                    .inline()
+                    .size(TextSize::Small),
+            );
         let theme = cx.theme();
         let section = |title: &'static str, body: AnyElement| {
             div()
@@ -1298,6 +1331,7 @@ impl Showcase {
             .child(section("Fields", fields.into_any_element()))
             .child(section("Event list", event_list))
             .child(section("Following the playhead", follow))
+            .child(section("Figures", figures.into_any_element()))
             .child(section("Status and identity", marks.into_any_element()))
             .child(section("Progress and loading", progress))
             .child(section(
