@@ -137,6 +137,11 @@
                   <span class="at-form-field__help">Shown in the title bar and on export.</span>
                 </div>
                 <span class="at-field at-field--area"><textarea placeholder="Notes for the session…"></textarea></span>
+                <div class="row">
+                  <span class="at-small at-muted">Track</span>
+                  <span id="inline-name" tabindex="0" title="Double-click to rename">Lead vocal</span>
+                  <span class="at-small at-muted">double-click to rename in place</span>
+                </div>
               </div>
 
               <div class="at-card at-card--padded">
@@ -290,7 +295,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, keybindings, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, inlineEdit, keybindings, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -309,6 +314,19 @@
       };
       hydrate();
       sync();
+
+      // A label edited where it is shown: Return or a press elsewhere commits, Escape closes.
+      const trackName = document.getElementById("inline-name");
+      const rename = () =>
+        inlineEdit(trackName, {
+          onCommit: (text) => {
+            trackName.textContent = text.trim();
+          },
+        });
+      trackName.addEventListener("dblclick", rename);
+      trackName.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") rename();
+      });
 
       // Sample readouts for the sliders and knobs, which keep their own values: the page plays
       // nothing. An application formats its own units.

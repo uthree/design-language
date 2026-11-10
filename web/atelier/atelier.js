@@ -282,6 +282,85 @@ function element(tag, className, text) {
   return node;
 }
 
+// ---------------------------------------------------------------- inline edit
+
+/// Edit `target`'s text where it is shown, the counterpart of `InlineEdit`: a field opens over
+/// the label, about its size (at least `minWidth`, at most `maxWidth` pixels wide), with the
+/// text selected so the first key replaces it. Return commits and Escape closes; a press
+/// anywhere else commits too, unless the text is unchanged, or emptied where `allowEmpty` is not
+/// set, which closes it. A `multiline` field is an area where Shift-Return breaks the line.
+///
+/// `onCommit(text)` may return a message to refuse the edit: the field stays open and shows it.
+/// The target also receives `atelier:inline-commit` (`detail.value`) and `atelier:inline-close`.
+/// Returns `{ field, input, close }`.
+export function inlineEdit(
+  target,
+  { value, multiline = false, allowEmpty = false, minWidth = 150, maxWidth = 420, onCommit, onClose } = {},
+) {
+  const original = value ?? target.textContent.trim();
+  const previous = document.activeElement;
+  const rect = target.getBoundingClientRect();
+  const field = element("span", `at-field at-inline-edit${multiline ? " at-field--area" : ""}`);
+  const input = document.createElement(multiline ? "textarea" : "input");
+  input.value = original;
+  if (multiline) input.rows = Math.min(Math.max(original.split("\n").length, 2), 6);
+  field.append(input);
+  const width = Math.min(Math.max(rect.width + 8, minWidth), maxWidth);
+  const left = Math.max(8, Math.min(rect.left - 4, window.innerWidth - width - 8));
+  field.style.width = `${width}px`;
+  field.style.left = `${left}px`;
+  (target.closest(".at-root") || document.body).append(field);
+  // Centred on a one-line label; an area opens downward from the label's top.
+  const height = field.getBoundingClientRect().height;
+  field.style.top = `${multiline ? rect.top : rect.top + (rect.height - height) / 2}px`;
+  input.focus();
+  input.select();
+
+  let done = false;
+  let error = null;
+  const finish = (commit) => {
+    if (done) return;
+    const text = input.value;
+    if (commit && text !== original && (allowEmpty || text.trim())) {
+      const refusal = onCommit?.(text);
+      if (typeof refusal === "string" && refusal) {
+        error ??= field.appendChild(element("span", "at-inline-edit__error"));
+        error.textContent = refusal;
+        input.focus();
+        return;
+      }
+      target.dispatchEvent(new CustomEvent("atelier:inline-commit", { bubbles: true, detail: { value: text } }));
+    } else {
+      onClose?.();
+      target.dispatchEvent(new CustomEvent("atelier:inline-close", { bubbles: true }));
+    }
+    done = true;
+    document.removeEventListener("pointerdown", outside, true);
+    field.remove();
+    if (previous instanceof HTMLElement && document.contains(previous)) previous.focus();
+  };
+  const outside = (event) => {
+    if (!field.contains(event.target)) finish(true);
+  };
+  document.addEventListener("pointerdown", outside, true);
+  input.addEventListener("keydown", (event) => {
+    // While an input method composes, Return and Escape are its own.
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === "Enter" && !(multiline && event.shiftKey)) {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      finish(false);
+    }
+  });
+  input.addEventListener("input", () => {
+    if (multiline) input.rows = Math.min(Math.max(input.value.split("\n").length, 2), 6);
+  });
+  return { field, input, close: () => finish(false) };
+}
+
 // ---------------------------------------------------------------- Markdown
 
 /// Links that may be followed: the web, mail, and the page's own paths. Anything else, such as

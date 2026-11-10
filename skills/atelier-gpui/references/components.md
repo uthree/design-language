@@ -138,9 +138,33 @@ one per row).
   `.readout("80 %")` is a fixed string; prefer `.readout_with` so the readout follows the value.
 - `AudioPlayer` without `on_play`/`on_seek`/`on_volume`/`on_mute` keeps its own state too, so a
   mock-up's player plays, seeks and mutes; give it the handlers once real playback drives it.
+- `TextInput` — the editing itself: caret, selection (drag, Shift, double- and triple-click),
+  the platform's input method (Japanese and other compositions), clipboard and undo. It draws
+  only the text; put it in a `TextField`. Return emits `TextInputEvent::Submit` and bubbles
+  `SubmitText`, Escape `Cancel`/`CancelText`; `.multiline()` grows a line per break and
+  Shift-Return breaks the line. While it holds focus Atelier takes Space, Backspace, the arrows,
+  Return, Escape and ⌘/Ctrl A C X V Z before any binding; scope a single-letter shortcut away
+  with `Some("!AtelierTextInput")`.
+
+  ```rust
+  let name = cx.new(|cx| TextInput::new(cx).with_text("Untitled", cx));
+  TextField::new()
+      .placeholder("Name")
+      .empty(name.read(cx).is_empty())
+      .focused(name.read(cx).is_focused(window))
+      .child(name.clone())
+  ```
+- `InlineEdit::new(id, &input, label_bounds)` — rename where the name is shown: a field over the
+  label (at least 150 px, at most 420 px wide), focused with everything selected. Return commits,
+  Escape closes, a press elsewhere commits unless the text is unchanged or emptied
+  (`.allow_empty()` to commit an empty one); `.original(..)`, `.on_commit(..)`, `.on_close(..)`,
+  `.error(..)` keeps it open with a reason. Focus goes back where it was when it closes. For a
+  label laid out by flex, give it `SpotBook::spot(key)` (in a `relative()` parent) and read
+  `SpotBook::get(key, window)`; `None` means the label is off screen, so open a sheet instead.
 - `TextField::new().icon(IconName::Search).placeholder("Search sounds…")` — the frame of a
-  text input. Atelier draws the well, the height, the radius and the ring; the application owns
-  the editing (caret, selection, IME). This is the supported way to use it:
+  text input. Atelier draws the well, the height, the radius and the ring; the editing is a
+  `TextInput` (above) or the application's own editor. `.area()` is the well for several lines.
+  An editor of the application's own goes in like this:
 
   ```rust
   TextField::new()

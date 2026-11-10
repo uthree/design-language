@@ -528,6 +528,44 @@ html[data-vibrancy] body.at-root {
   min-height: 4.2em;
 }
 
+/* An inline edit: a field opened over the label it edits (`inlineEdit()` in atelier.js). An
+   opaque layer under the sunken well keeps the label from showing through a translucent one. */
+.at-inline-edit {
+  position: fixed;
+  z-index: 40;
+  box-sizing: border-box;
+  height: var(--at-control-sm);
+  border-radius: var(--at-control-sm-radius);
+  background:
+    linear-gradient(var(--at-sunken), var(--at-sunken)),
+    var(--at-elevated);
+  box-shadow: var(--at-shadow-medium);
+  font-size: var(--at-size-md);
+}
+
+.at-inline-edit.at-field--area {
+  height: auto;
+  border-radius: var(--at-radius-md);
+}
+
+.at-inline-edit.at-field--area textarea {
+  resize: none;
+  min-height: 2.8em;
+}
+
+.at-inline-edit__error {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  padding: 2px 6px;
+  border-radius: var(--at-radius-sm);
+  background: var(--at-elevated);
+  box-shadow: var(--at-shadow-medium);
+  color: var(--at-danger);
+  font-size: var(--at-size-xs);
+  white-space: nowrap;
+}
+
 .at-form-field {
   display: flex;
   flex-direction: column;

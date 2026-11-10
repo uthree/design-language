@@ -45,6 +45,8 @@ mod frame;
 mod gpu;
 pub mod graph;
 mod icon;
+mod inline_edit;
+mod input;
 mod keyboard;
 mod layout;
 mod markdown;
@@ -77,6 +79,10 @@ pub use focus::{
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
 pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
+pub use inline_edit::{InlineEdit, SpotBook};
+pub use input::{
+    CancelText, SubmitText, TEXT_INPUT_CONTEXT, TextBuffer, TextInput, TextInputEvent,
+};
 pub use keyboard::{PianoKeyboard, note_name};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
@@ -125,7 +131,7 @@ pub mod prelude {
         ActiveStrings, ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card,
         Checkbox, ControlSize, Dialog, Direction, Divider, EmptyState, FormField, FormGroup, Icon,
         IconName, Label, ListItem, MenuItem, Popover, SectionHeader, Sidebar, Slider, Spinner,
-        StatusBar, Strings, Switch, Tabs, TextColor, TextField, TextSize, Theme, TitleBar, Tone,
-        Toolbar, Tooltip, WindowFrame,
+        StatusBar, Strings, Switch, Tabs, TextColor, TextField, TextInput, TextInputEvent,
+        TextSize, Theme, TitleBar, Tone, Toolbar, Tooltip, WindowFrame,
     };
 }
