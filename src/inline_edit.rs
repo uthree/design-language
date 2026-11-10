@@ -160,6 +160,8 @@ pub struct InlineEdit {
     min_width: Pixels,
     max_width: Pixels,
     error: Option<SharedString>,
+    hint: Option<SharedString>,
+    below: Vec<AnyElement>,
     on_commit: Option<CommitHandler>,
     on_return: Option<ReturnHandler>,
     on_close: Option<CloseHandler>,
@@ -177,6 +179,8 @@ impl InlineEdit {
             min_width: px(150.),
             max_width: px(420.),
             error: None,
+            hint: None,
+            below: Vec::new(),
             on_commit: None,
             on_return: None,
             on_close: None,
@@ -216,6 +220,23 @@ impl InlineEdit {
         self
     }
 
+    /// A faint line under the field saying what may be typed: `bVII7, Cm/G`, `Name.ext`.
+    pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    /// Something under the field, after the error and the hint, usually [`crate::Completions`]
+    /// for what is being typed. Set [`TextInput::set_completing`] while it lists anything, so
+    /// Up, Down and Tab move through it and Escape closes it rather than the field.
+    ///
+    /// The error, the hint and these share one panel, at least 220 px wide (or the field's
+    /// width) and at most 360, so a list of chord names is not squeezed under a narrow cell.
+    pub fn below(mut self, element: impl IntoElement) -> Self {
+        self.below.push(element.into_any_element());
+        self
+    }
+
     /// Called with the new text on Return or a press elsewhere. Close the field (stop drawing
     /// it) when the edit is taken, or keep it open with [`InlineEdit::error`].
     pub fn on_commit(
@@ -245,7 +266,7 @@ impl InlineEdit {
 }
 
 impl RenderOnce for InlineEdit {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme().clone();
         let (focused, multiline) = {
             let input = self.input.read(cx);
@@ -351,6 +372,8 @@ impl RenderOnce for InlineEdit {
             }
         };
         let error = self.error.clone();
+        let hint = self.hint.clone();
+        let below = std::mem::take(&mut self.below);
         let field = TextField::new()
             .size(ControlSize::Small)
             .focused(focused)
@@ -366,11 +389,39 @@ impl RenderOnce for InlineEdit {
             .shadow(theme.elevation.medium.clone())
             .child(field);
 
+        let panel = (error.is_some() || hint.is_some() || !below.is_empty()).then(|| {
+            div()
+                .min_w(width.max(px(PANEL_MIN)))
+                .max_w(width.max(px(PANEL_MAX)))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .p(px(4.))
+                .rounded(theme.shape.radius_md)
+                .bg(theme.colors.elevated)
+                .shadow(theme.elevation.medium.clone())
+                .children(error.map(|error| {
+                    div().px(px(4.)).child(
+                        Label::new(error)
+                            .size(TextSize::XSmall)
+                            .color(crate::text::TextColor::Custom(theme.colors.danger)),
+                    )
+                }))
+                .children(hint.map(|hint| {
+                    div().px(px(4.)).child(
+                        Label::new(hint)
+                            .size(TextSize::XSmall)
+                            .color(crate::text::TextColor::Faint),
+                    )
+                }))
+                .children(below)
+        });
+        let input = self.input.clone();
         let body: AnyElement = div()
             .id(self.id.clone())
-            .w(width)
             .flex()
             .flex_col()
+            .items_start()
             .gap(px(2.))
             .occlude()
             .on_action({
@@ -380,23 +431,17 @@ impl RenderOnce for InlineEdit {
             .on_action(move |_: &CancelText, window, cx| cancel(window, cx))
             .on_mouse_down_out({
                 let finish = finish.clone();
-                move |_, window, cx| finish(false, window, cx)
+                move |_, window, cx| {
+                    // A press while an input method is composing ends the composition, not the
+                    // edit: what is half-typed is not an answer yet.
+                    if input.read(cx).buffer().marked().is_none() {
+                        finish(false, window, cx)
+                    }
+                }
             })
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(field)
-            .children(error.map(|error| {
-                div()
-                    .px(px(6.))
-                    .py(px(2.))
-                    .rounded(theme.shape.radius_sm)
-                    .bg(theme.colors.elevated)
-                    .shadow(theme.elevation.medium.clone())
-                    .child(
-                        Label::new(error)
-                            .size(TextSize::XSmall)
-                            .color(crate::text::TextColor::Custom(theme.colors.danger)),
-                    )
-            }))
+            .child(div().w(width).child(field))
+            .children(panel)
             .into_any_element();
         deferred(
             anchored()
@@ -407,6 +452,10 @@ impl RenderOnce for InlineEdit {
         .with_priority(1)
     }
 }
+
+/// The narrowest and widest the panel under a field is drawn.
+const PANEL_MIN: f32 = 220.;
+const PANEL_MAX: f32 = 360.;
 
 /// What an open field remembers between frames.
 struct Opened {

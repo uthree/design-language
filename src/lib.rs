@@ -91,7 +91,8 @@ pub use frame::{TitleBar, WindowFrame, custom_frame, title_bar_icon_size};
 pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
 pub use inline_edit::{InlineEdit, SpotBook};
 pub use input::{
-    CancelText, SubmitText, TEXT_INPUT_CONTEXT, TextBuffer, TextInput, TextInputEvent,
+    AcceptCompletion, CancelText, DismissCompletions, NextCompletion, PreviousCompletion,
+    SubmitText, TEXT_INPUT_CONTEXT, TextBuffer, TextInput, TextInputEvent,
 };
 pub use keyboard::{PianoKeyboard, note_name};
 pub use layout::{
