@@ -145,6 +145,12 @@
               </div>
 
               <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Event list</h3></div>
+                <div id="event-table" style="height: 180px"></div>
+                <span class="at-small at-muted">Double-click a cell to edit it; Return moves down the column.</span>
+              </div>
+
+              <div class="at-card at-card--padded">
                 <div class="at-section-header"><h3 class="at-heading">Toggles and sliders</h3></div>
                 <label class="at-switch"><input type="checkbox" role="switch" checked />Input monitoring</label>
                 <label class="at-switch"><input type="checkbox" role="switch" />Count-in</label>
@@ -295,7 +301,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, inlineEdit, keybindings, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, inlineEdit, keybindings, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -314,6 +320,39 @@
       };
       hydrate();
       sync();
+
+      // An event list: notes, a controller and a bend, the second note sounding.
+      const events = [
+        ["1.1", "C4", "96", 0],
+        ["1.2", "E4", "88", 0],
+        ["1.3", "CC11 Expression", "72", 1],
+        ["1.3", "G4", "90", 0],
+        ["2.1", "Pitch bend", "+2", 2],
+        ["2.1", "C5", "100", 0],
+        ["2.3", "B4", "84", 0],
+      ].map(([at, event, value, family], index) => ({ cells: [at, event, value], mark: family, tinted: family > 0, active: index === 1 }));
+      const eventTable = table(document.getElementById("event-table"), {
+        columns: [{ title: "Pos", width: 48, end: true, mono: true }, { title: "Event" }, { title: "Value", width: 56, end: true, mono: true }],
+        rows: events,
+      });
+      const editCell = (row, column) => {
+        const cell = eventTable.cell(row, column);
+        if (!cell) return;
+        cell.scrollIntoView({ block: "nearest" });
+        let walked = false;
+        const field = inlineEdit(cell, {
+          minWidth: 80,
+          onCommit: (text) => {
+            events[row].cells[column] = text.trim();
+            eventTable.update(events);
+            // Return walks to the same cell of the next row, as a list editor does.
+            if (walked && row + 1 < events.length) requestAnimationFrame(() => editCell(row + 1, column));
+          },
+        });
+        // Seen before the field's own Return handler, which commits.
+        field.field.addEventListener("keydown", (event) => (walked = event.key === "Enter" && !event.isComposing), true);
+      };
+      eventTable.cell(0, 0).closest(".at-table").addEventListener("atelier:cell-activate", (event) => editCell(event.detail.row, event.detail.column));
 
       // A label edited where it is shown: Return or a press elsewhere commits, Escape closes.
       const trackName = document.getElementById("inline-name");

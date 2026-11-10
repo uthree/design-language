@@ -14,6 +14,38 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: tables
+
+### Added
+
+- `Table`: rows of short values under column headings, such as Auris Studio's MIDI event
+  list. `Column`s are fixed (`.width(..)`) or share the free width (`.grow(..)`), with `.end()`
+  for numbers and `.mono()` for digits that line up. A `TableRow` can carry a stripe down its
+  leading edge (`RowMark::Category(n)` from the theme's categorical colours, `Accent`,
+  `Agent`), `.tinted()` text in the same colour, `.active(..)` for the row being heard and
+  `.faint(..)` for one past the clip's end. Only the rows on screen are built. A click selects
+  (`on_select`); a double-click on a cell, or Enter on the selected row, asks to edit it
+  (`on_activate` with a `TableCell`); while the table has focus, Up, Down, Home and End move the
+  selection and keep it in view, taken before any key binding (`LIST_CONTEXT`, `SelectNext` and
+  the rest). `Table::spots(&book)` records every visible cell under `Table::cell_key`, so an
+  `InlineEdit` opens over the cell.
+- `InlineEdit::on_return(..)`: Return hands over the text (or `None` when nothing changed)
+  instead of committing, for a list editor whose Return walks on to the same cell of the next
+  row. A field that moves on to another label opens there afresh, focused, with everything
+  selected.
+
+### Web
+
+- `table(element, { columns, rows, empty })` in `atelier.js`, returning `update`, `select` and
+  `cell`; `atelier:row-select` and `atelier:cell-activate` (with the cell's element, for
+  `inlineEdit`); `.at-table` with its heading, stripes and the row being heard. The showcase
+  has an event list whose cells edit in place and whose Return walks down the column.
+
+### Workarounds you can delete
+
+- A hand-built list editor table: Auris Studio's `ui/event_list.rs` heading, rows,
+  stripes, sounding tint and cell spots.
+
 ## Unreleased: text typed where it is shown
 
 ### Added

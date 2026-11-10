@@ -59,6 +59,7 @@ mod preferences;
 mod progress;
 mod selectable;
 mod strings;
+mod table;
 mod text;
 mod theme;
 mod transport;
@@ -73,8 +74,9 @@ pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, Te
 pub use dialog::{DIALOG_CONTEXT, Dialog};
 pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
 pub use focus::{
-    CONTROL_CONTEXT, FocusNext, FocusPrevious, StepBackward, StepForward, StepToEnd, StepToStart,
-    TRACK_CONTEXT, focus_visible, set_focus_visible, tab_navigation,
+    CONTROL_CONTEXT, FocusNext, FocusPrevious, LIST_CONTEXT, SelectFirst, SelectLast, SelectNext,
+    SelectPrevious, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT,
+    focus_visible, set_focus_visible, tab_navigation,
 };
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
@@ -102,6 +104,7 @@ pub use progress::{
 };
 pub use selectable::{CopySelection, LinkHandler, SELECTABLE_CONTEXT, SelectAll, SelectableText};
 pub use strings::{ActiveStrings, Strings};
+pub use table::{Column, ColumnWidth, RowMark, Table, TableCell, TableRow};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,

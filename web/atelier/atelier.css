@@ -528,6 +528,78 @@ html[data-vibrancy] body.at-root {
   min-height: 4.2em;
 }
 
+/* ---------------------------------------------------------------- table */
+
+/* A table of short values (`table()` in atelier.js, `Table` natively): a heading row, rows of
+   `--at-control-sm`, a stripe in `--_mark` down a marked row, the row being heard in the
+   accent wash and the selected one in `--at-selected`. */
+.at-table {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  font-size: var(--at-size-sm);
+  outline: none;
+}
+
+.at-table:focus-visible {
+  box-shadow: 0 0 0 2px var(--at-focus-ring);
+  border-radius: var(--at-radius-sm);
+}
+
+.at-table__head,
+.at-table__row {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+}
+
+.at-table__head {
+  height: calc(var(--at-control-sm) + 4px);
+  border-bottom: 1px solid var(--at-separator);
+  color: var(--at-text-muted);
+  font-size: var(--at-size-xs);
+}
+
+.at-table__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.at-table__row {
+  height: var(--at-control-sm);
+  color: var(--at-text);
+  cursor: default;
+}
+
+.at-table__row:hover { background: var(--at-hover); }
+.at-table__row[data-active] { background: var(--at-accent-wash); }
+.at-table__row[aria-selected="true"] { background: var(--at-selected); }
+.at-table__row[data-faint] { color: var(--at-text-faint); }
+.at-table__row[data-tinted] { color: color-mix(in oklab, var(--_mark) 75%, var(--at-text)); }
+
+.at-table--marked .at-table__head::before,
+.at-table--marked .at-table__row::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  background: var(--_mark, transparent);
+}
+
+.at-table__cell {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.at-table__cell--end { justify-content: flex-end; }
+.at-table__cell--mono { font-family: var(--at-font-mono); }
+
 /* An inline edit: a field opened over the label it edits (`inlineEdit()` in atelier.js). An
    opaque layer under the sunken well keeps the label from showing through a translucent one. */
 .at-inline-edit {

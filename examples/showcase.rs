@@ -19,13 +19,13 @@ use atelier::agent::{
     SuggestionChip, ThinkingIndicator, ToolCall, ToolGroup, ToolState, UserMessage,
 };
 use atelier::{
-    ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox,
+    ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox, Column,
     ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName,
     InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar,
-    ProgressRing, ProviderLogo, SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton,
-    Slider, Spinner, SpotBook, StepList, StepState, Switch, Tabs, TaskProgress, TaskState,
-    TextColor, TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator,
-    skeleton_paragraph,
+    ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment, SegmentedControl, Sidebar,
+    Skeleton, Slider, Spinner, SpotBook, StepList, StepState, Switch, Table, TableCell, TableRow,
+    Tabs, TaskProgress, TaskState, TextColor, TextField, TextInput, TextSize, Theme, TitleBar,
+    Tone, WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
@@ -113,6 +113,12 @@ struct Showcase {
     renaming: bool,
     rename: Entity<TextInput>,
     spots: SpotBook,
+    /// The event list's rows (position, event, value), its selection and the cell being edited.
+    events: Vec<[SharedString; 3]>,
+    event_row: Option<usize>,
+    event_edit: Option<TableCell>,
+    cell_input: Entity<TextInput>,
+    event_scroll: gpui::UniformListScrollHandle,
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -910,6 +916,7 @@ impl Showcase {
 
     fn components(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let progress = self.progress_samples(cx);
+        let event_list = self.event_list(window, cx);
         let theme = cx.theme();
         let section = |title: &'static str, body: AnyElement| {
             div()
@@ -1283,6 +1290,7 @@ impl Showcase {
             .child(section("Buttons", buttons.into_any_element()))
             .child(section("Controls", controls.into_any_element()))
             .child(section("Fields", fields.into_any_element()))
+            .child(section("Event list", event_list))
             .child(section("Status and identity", marks.into_any_element()))
             .child(section("Progress and loading", progress))
             .child(section(
@@ -1516,6 +1524,98 @@ fn suggestion_row(
         )
 }
 
+impl Showcase {
+    /// A MIDI event list: notes, a controller and a bend, each family marked down its edge, the
+    /// second note sounding. A double-click edits a cell in place; Return walks down the column.
+    fn event_list(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let family = |event: &str| match event {
+            event if event.starts_with("CC") => 1,
+            event if event.starts_with("Pitch") => 2,
+            _ => 0,
+        };
+        let rows = self.events.iter().enumerate().map(|(index, row)| {
+            let family = family(&row[1]);
+            let row = TableRow::new(row.iter().cloned())
+                .mark(RowMark::Category(family))
+                .active(index == 1)
+                .selected(self.event_row == Some(index));
+            if family > 0 { row.tinted() } else { row }
+        });
+        let table = Table::new(
+            "event-list",
+            [
+                Column::new("Pos").width(px(48.)).end().mono(),
+                Column::new("Event"),
+                Column::new("Value").width(px(56.)).end().mono(),
+            ],
+            rows,
+        )
+        .track_scroll(&self.event_scroll)
+        .spots(&self.spots)
+        .on_select(cx.listener(|this, row: &usize, _, cx| {
+            this.event_row = Some(*row);
+            cx.notify();
+        }))
+        .on_activate(cx.listener(|this, cell: &TableCell, _, cx| this.edit_event(*cell, cx)));
+        let editor = self.event_edit.and_then(|cell| {
+            let over = self
+                .spots
+                .get(&Table::cell_key("event-list", cell), window)?;
+            let original = self.events[cell.row][cell.column].clone();
+            Some(
+                InlineEdit::new("edit-event", &self.cell_input, over)
+                    .min_width(px(80.))
+                    .original(original)
+                    .on_commit(cx.listener(move |this, text: &SharedString, _, cx| {
+                        this.events[cell.row][cell.column] = text.trim().to_owned().into();
+                        this.event_edit = None;
+                        cx.notify();
+                    }))
+                    .on_return(
+                        cx.listener(move |this, text: &Option<SharedString>, _, cx| {
+                            if let Some(text) = text {
+                                this.events[cell.row][cell.column] = text.trim().to_owned().into();
+                            }
+                            // On to the same cell of the next row, as a list editor walks.
+                            match cell.row + 1 < this.events.len() {
+                                true => this.edit_event(
+                                    TableCell {
+                                        row: cell.row + 1,
+                                        ..cell
+                                    },
+                                    cx,
+                                ),
+                                false => this.event_edit = None,
+                            }
+                            cx.notify();
+                        }),
+                    )
+                    .on_close(cx.listener(|this, _, _, cx| {
+                        this.event_edit = None;
+                        cx.notify();
+                    })),
+            )
+        });
+        div()
+            .w(px(360.))
+            .h(px(200.))
+            .child(table)
+            .children(editor)
+            .into_any_element()
+    }
+
+    fn edit_event(&mut self, cell: TableCell, cx: &mut Context<Self>) {
+        let text = self.events[cell.row][cell.column].to_string();
+        self.cell_input
+            .update(cx, |input, cx| input.set_text(text, cx));
+        self.event_scroll
+            .scroll_to_item(cell.row, gpui::ScrollStrategy::Top);
+        self.event_row = Some(cell.row);
+        self.event_edit = Some(cell);
+        cx.notify();
+    }
+}
+
 impl Render for Showcase {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -1655,6 +1755,21 @@ fn main() {
                     renaming: false,
                     rename: cx.new(TextInput::new),
                     spots: SpotBook::new(),
+                    events: [
+                        ["1.1", "C4", "96"],
+                        ["1.2", "E4", "88"],
+                        ["1.3", "CC11 Expression", "72"],
+                        ["1.3", "G4", "90"],
+                        ["2.1", "Pitch bend", "+2"],
+                        ["2.1", "C5", "100"],
+                        ["2.3", "B4", "84"],
+                    ]
+                    .map(|row| row.map(SharedString::from))
+                    .to_vec(),
+                    event_row: None,
+                    event_edit: None,
+                    cell_input: cx.new(TextInput::new),
+                    event_scroll: gpui::UniformListScrollHandle::new(),
                 })
             })
             .expect("failed to open the showcase window");

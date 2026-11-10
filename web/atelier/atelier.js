@@ -282,6 +282,103 @@ function element(tag, className, text) {
   return node;
 }
 
+// ---------------------------------------------------------------- table
+
+/// A table of short values, the counterpart of `Table`. `columns` are `{ title, width, grow,
+/// end, mono }` (a `width` in pixels fixes the column, otherwise it takes `grow` shares of what
+/// is left); `rows` are `{ cells, mark, tinted, active, faint, selected }`, where `mark` is a
+/// category number (`--at-category-N`), `"accent"` or `"agent"`.
+///
+/// A click selects a row (`atelier:row-select` with `{ index }`); a double-click on a cell, or
+/// Enter on the selected row, asks for it to be edited (`atelier:cell-activate` with `{ row,
+/// column, element }`, column 0 for Enter): open `inlineEdit(element, …)` over it. While the
+/// table has focus, Up, Down, Home and End move the selection and keep it in view. Returns
+/// `{ update(rows), select(index), cell(row, column) }`.
+export function table(root, { columns = [], rows = [], empty = "" } = {}) {
+  root.classList.add("at-table");
+  root.tabIndex = 0;
+  root.replaceChildren();
+  const head = element("div", "at-table__head");
+  const body = element("div", "at-table__body");
+  const sizeCell = (cell, column) => {
+    cell.className = `at-table__cell${column.end ? " at-table__cell--end" : ""}${column.mono ? " at-table__cell--mono" : ""}`;
+    if (column.width) cell.style.flex = `0 0 ${column.width}px`;
+    else if (column.grow) cell.style.flexGrow = String(column.grow);
+    return cell;
+  };
+  for (const column of columns) head.append(sizeCell(element("span", "", column.title), column));
+  root.append(head, body);
+  let current = rows;
+  const markColor = (mark) =>
+    mark === "accent" ? "var(--at-accent)" : mark === "agent" ? "var(--at-agent)" : `var(--at-category-${mark % 8})`;
+  const draw = () => {
+    root.classList.toggle("at-table--marked", current.some((row) => row.mark != null));
+    body.replaceChildren();
+    if (!current.length && empty) body.append(element("div", "at-small at-faint", empty));
+    current.forEach((row, index) => {
+      const line = element("div", "at-table__row");
+      line.setAttribute("aria-selected", String(Boolean(row.selected)));
+      if (row.active) line.dataset.active = "";
+      if (row.faint) line.dataset.faint = "";
+      if (row.tinted) line.dataset.tinted = "";
+      if (row.mark != null) line.style.setProperty("--_mark", markColor(row.mark));
+      columns.forEach((column, columnIndex) => {
+        const cell = sizeCell(element("span", "", row.cells[columnIndex] ?? ""), column);
+        cell.dataset.row = String(index);
+        cell.dataset.column = String(columnIndex);
+        line.append(cell);
+      });
+      body.append(line);
+    });
+  };
+  const cellAt = (row, column) => body.children[row]?.children[column];
+  const selectedIndex = () => current.findIndex((row) => row.selected);
+  const select = (index) => {
+    if (!current.length) return;
+    const to = Math.max(0, Math.min(index, current.length - 1));
+    current = current.map((row, at) => ({ ...row, selected: at === to }));
+    draw();
+    body.children[to]?.scrollIntoView({ block: "nearest" });
+    root.dispatchEvent(new CustomEvent("atelier:row-select", { bubbles: true, detail: { index: to } }));
+  };
+  const activate = (row, column) =>
+    root.dispatchEvent(
+      new CustomEvent("atelier:cell-activate", { bubbles: true, detail: { row, column, element: cellAt(row, column) } }),
+    );
+  body.addEventListener("mousedown", (event) => {
+    const cell = event.target.closest(".at-table__cell");
+    if (!cell) return;
+    const row = Number(cell.dataset.row);
+    if (event.detail >= 2) {
+      // Keep the press from focusing the table over the field that opens.
+      event.preventDefault();
+      activate(row, Number(cell.dataset.column));
+    }
+    else if (selectedIndex() !== row) select(row);
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.target !== root) return;
+    const at = selectedIndex();
+    const to = { ArrowUp: at < 0 ? current.length - 1 : at - 1, ArrowDown: at + 1, Home: 0, End: current.length - 1 }[event.key];
+    if (to !== undefined) {
+      select(to);
+      event.preventDefault();
+    } else if (event.key === "Enter" && at >= 0) {
+      activate(at, 0);
+      event.preventDefault();
+    }
+  });
+  draw();
+  return {
+    update(rows) {
+      current = rows;
+      draw();
+    },
+    select,
+    cell: cellAt,
+  };
+}
+
 // ---------------------------------------------------------------- inline edit
 
 /// Edit `target`'s text where it is shown, the counterpart of `InlineEdit`: a field opens over

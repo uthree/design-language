@@ -74,6 +74,7 @@ the control in a mock-up.
 | --- | --- | --- |
 | A short single line (a name, an address) | `TextInput` in a `TextField` under a `FormField` label | a placeholder used as the label |
 | A few lines (a comment, session notes) | `TextInput::multiline()` in `TextField::area()`; Shift-Return breaks the line | a single-line field that swallows line breaks |
+| Many records with the same few fields, read and edited as text (MIDI events, markers) | `Table`, cells edited with `InlineEdit` | a column of `ListItem`s with values glued into the label |
 | Renaming something whose name is on screen (a track, a clip, a lyric, a chord) | `InlineEdit` over the label, `SpotBook` to find it; the sheet only when the label is off screen | a dialog that dims the window to ask for the name again |
 | Searching or filtering | `TextField::icon(IconName::Search)`, at the top of the list it filters | a "Search" button |
 | A file or folder | `TextField` showing the path + `.trailing(Button::new(.., "Choose…"))` | a bare button that hides the current path |

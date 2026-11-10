@@ -161,6 +161,13 @@ one per row).
   `.error(..)` keeps it open with a reason. Focus goes back where it was when it closes. For a
   label laid out by flex, give it `SpotBook::spot(key)` (in a `relative()` parent) and read
   `SpotBook::get(key, window)`; `None` means the label is off screen, so open a sheet instead.
+- `Table::new(id, columns, rows)` — rows of short values: an event list, markers, a parameter
+  sheet. `Column::new("Bar").width(px(48.)).end().mono()`, `Column::new("Event")` (shares the
+  free width, `.grow(2.)` for more). `TableRow::new(cells).mark(RowMark::Category(n)).tinted()
+  .active(playing).faint(past_end).selected(..)`. `.on_select(row)` on a click or Up/Down/Home/End,
+  `.on_activate(TableCell)` on a double-click or Enter; `.track_scroll(&handle)` to bring a row
+  into view, `.spots(&book)` so `InlineEdit` opens over `Table::cell_key(id, cell)`. Use
+  `InlineEdit::on_return` to walk down a column. Only visible rows are built.
 - `TextField::new().icon(IconName::Search).placeholder("Search sounds…")` — the frame of a
   text input. Atelier draws the well, the height, the radius and the ring; the editing is a
   `TextInput` (above) or the application's own editor. `.area()` is the well for several lines.
