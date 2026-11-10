@@ -121,6 +121,8 @@ check warn 'fn [a-z_]*plot_well\b|const GUTTER: \(f32, f32\)' \
     "a plot made draggable by hand, guessing its data area: use atelier::plot::LinePlot::id(..).on_drag(..) (deltas in plot units), .on_reset, .on_wheel."
 check warn 'fn keyed_tip\b|fn [a-z_]*shortcut_tooltip\b' \
     "a tooltip with keys built by hand: use Button::shortcut_for(&action) (read from the keymap) or Button::shortcut(..)."
+check warn 'fn user_message_with_attachments\b' \
+    "a person's message rebuilt to make its chips open: use ChatView::open_attachments() and ChatEvent::OpenAttachment."
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use atelier::agent::{ChatEntry, ChatEvent, ChatView, Decision, ToolState};
+use atelier::agent::{ChatAttachment, ChatEntry, ChatEvent, ChatView, Decision, ToolState};
 use atelier::{Theme, WindowFrame};
 use gpui::{
     AppContext, Context, Entity, IntoElement, Modifiers, ParentElement, Render, ScrollDelta,
@@ -30,12 +30,19 @@ impl Render for Host {
 type Events = Rc<RefCell<Vec<ChatEvent>>>;
 
 fn open(cx: &mut TestAppContext) -> (Entity<ChatView>, Events, &mut VisualTestContext) {
+    open_with(cx, |chat| chat)
+}
+
+fn open_with(
+    cx: &mut TestAppContext,
+    build: impl FnOnce(ChatView) -> ChatView,
+) -> (Entity<ChatView>, Events, &mut VisualTestContext) {
     cx.update(|cx| {
         atelier::init(cx, Theme::default());
         atelier::motion::reduce_motion(cx);
     });
     let events = Events::default();
-    let chat = cx.new(|_| ChatView::new("chat"));
+    let chat = cx.new(|_| build(ChatView::new("chat")));
     cx.update({
         let events = events.clone();
         let chat = chat.clone();
@@ -235,4 +242,42 @@ fn a_message_sent_past_a_question_closes_it(cx: &mut TestAppContext) {
         id
     });
     assert!(!chat.read_with(cx, |chat, _| chat.choices_open(id)));
+}
+
+#[gpui::test]
+fn an_attachment_chip_asks_to_be_opened(cx: &mut TestAppContext) {
+    let (chat, events, cx) = open_with(cx, ChatView::open_attachments);
+    let message = chat.update(cx, |chat, cx| {
+        chat.push(
+            ChatEntry::user("Why does this clip clip?")
+                .attachment("mix.wav")
+                .attachment(ChatAttachment::new("Bars 17–24").icon(atelier::IconName::Music)),
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let chip = cx
+        .debug_bounds("chat-attachment-0-1-open")
+        .expect("the second chip is pressable");
+    cx.simulate_click(chip.center(), Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(
+        events.borrow().as_slice(),
+        [ChatEvent::OpenAttachment {
+            entry: message,
+            index: 1,
+            attachment: ChatAttachment::new("Bars 17–24").icon(atelier::IconName::Music),
+        }]
+    );
+}
+
+#[gpui::test]
+fn attachment_chips_stay_still_unless_asked(cx: &mut TestAppContext) {
+    let (chat, _, cx) = open(cx);
+    chat.update(cx, |chat, cx| {
+        chat.push(ChatEntry::user("Look").attachment("mix.wav"), cx);
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("chat-attachment-0-0").is_some());
+    assert!(cx.debug_bounds("chat-attachment-0-0-open").is_none());
 }

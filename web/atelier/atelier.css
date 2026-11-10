@@ -1954,6 +1954,17 @@ dialog.at-dialog::backdrop {
   height: 12px;
 }
 
+/* A chip that opens what it names: `ContextChip::on_click`, `ChatView::open_attachments`. */
+button.at-context-chip {
+  font: inherit;
+  font-size: var(--at-size-xs);
+  cursor: pointer;
+}
+
+button.at-context-chip:hover {
+  color: var(--at-text);
+}
+
 /* The edge glow while the AI is working: the agent gradient turning round a surface. */
 .at-agent-glow {
   position: relative;

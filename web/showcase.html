@@ -513,7 +513,9 @@
       if (params.get("view")) showView(params.get("view"));
 
       // The conversation: a ChatView driven as an application would, with a mock agent.
-      const conversation = chat(document.getElementById("chat"), { logo: "logo-anthropic" });
+      const conversation = chat(document.getElementById("chat"), { logo: "logo-anthropic", openAttachments: true });
+      // An application opens the file; the page says so in the transcript.
+      document.getElementById("chat").addEventListener("atelier:open-attachment", (event) => conversation.push({ kind: "status", text: `Opened ${event.detail.label}` }));
       conversation.push({ kind: "user", text: "The playback test fails about one run in ten on Windows. Find out why and fix it.", attachments: ["engine/tests/playback.rs"] });
       conversation.push({ kind: "reasoning", summary: "Thought for 9 s", text: "One in ten points at a race rather than a logic error. The test starts the transport and reads the position straight away; if the audio thread has not taken the first block yet, the position is still zero." });
       conversation.push({ kind: "tool", name: "bash", summary: "Ran the test 50 times", state: "succeeded", icon: "code", detail: "$ for i in $(seq 50); do cargo test -p auris-engine playback; done\n→ 6 failures in 50 runs" });

@@ -794,14 +794,18 @@ function copyButton(text, strings) {
 /// `atelier:decided` with `{ id, decision }` ("allow", "alwaysAllow" or "deny") when an approval
 /// is answered.
 ///
-/// Entries are plain objects with a `kind`: `user` (`text`, `attachments`), `assistant` (`text`,
+/// With `{ openAttachments: true }` a user entry's attachment chips are buttons that fire
+/// `atelier:open-attachment` with `{ id, index, label }`, as `ChatView::open_attachments` does.
+///
+/// Entries are plain objects with a `kind`: `user` (`text`, `attachments`: labels, or `{ label,
+/// icon }` for another kind than a file), `assistant` (`text`,
 /// `meta`, `streaming`), `reasoning` (`summary`, `text`), `tool` (`name`, `summary`, `state`:
 /// "running" | "succeeded" | "failed" | "awaiting", `detail`, `icon`), `approval` (`title`,
 /// `body`, `allowLabel`, `destructive`, `offerAlways`), `choices` (`question`, `options`,
 /// `multiple`; answering fires `atelier:chose` with `{ id, picked }`, and a message sent after
 /// it closes it), `status`, `error` (`text`) or `custom` (`element`). Answers are drawn as
 /// Markdown. `{ panel: true }` fits it to a side panel; without, it is a centred column.
-export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
+export function chat(root, { panel = false, logo = null, strings = {}, openAttachments = false } = {}) {
   const words = { ...CHAT_STRINGS, ...strings };
   root.classList.add("at-chat");
   root.classList.toggle("at-chat--panel", panel);
@@ -867,11 +871,18 @@ export function chat(root, { panel = false, logo = null, strings = {} } = {}) {
     switch (entry.kind) {
       case "user": {
         const node = element("div", "at-message at-message--user");
-        for (const label of entry.attachments || []) {
-          const chip = element("span", "at-context-chip");
-          chip.append(icon("file"), label);
+        (entry.attachments || []).forEach((attachment, index) => {
+          const { label, icon: kind = "file" } = typeof attachment === "string" ? { label: attachment } : attachment;
+          const chip = element(openAttachments ? "button" : "span", "at-context-chip");
+          chip.append(icon(kind), label);
+          if (openAttachments) {
+            chip.type = "button";
+            chip.addEventListener("click", () =>
+              root.dispatchEvent(new CustomEvent("atelier:open-attachment", { bubbles: true, detail: { id: entry.id, index, label } })),
+            );
+          }
           node.append(chip);
-        }
+        });
         const actions = element("div", "at-message__actions");
         actions.append(copyButton(() => entry.text, words));
         node.append(element("div", "at-user-message", entry.text), actions);

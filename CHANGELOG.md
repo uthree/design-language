@@ -14,6 +14,32 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: attachments that open
+
+### Added
+
+- `ChatView::open_attachments()`: the chips on the person's messages become tab stops. A
+  click, Enter or Space emits `ChatEvent::OpenAttachment { entry, index, attachment }`, for the
+  application to open the file or preview it.
+- `ChatAttachment::new(label).icon(..)`: an attachment of another kind than a file, with its
+  own icon. `ChatEntry::attachment(..)` takes one, or a label as before.
+
+### Changed
+
+- `ChatEntry::User { attachments }` holds `ChatAttachment`s instead of labels; read
+  `attachment.label`. A `match` on `ChatEvent` needs an arm for `OpenAttachment`.
+
+### Web
+
+- `chat(element, { openAttachments: true })` draws attachment chips as buttons that fire
+  `atelier:open-attachment` with `{ id, index, label }`; an attachment can be `{ label, icon }`.
+  The showcase's transcript says what it opened.
+
+### Workarounds you can delete
+
+- Auris Studio's `user_message_with_attachments` in `ui/agent_components.rs`, which rebuilt the
+  person's message to hang `ContextChip::on_click` on its chips.
+
 ## Unreleased: shortcuts in button tooltips
 
 ### Added
