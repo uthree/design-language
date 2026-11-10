@@ -51,6 +51,9 @@ export function icon(name, { size } = {}) {
 /// segmented controls and tabs select on click and with the arrow keys, keep slider fills in
 /// step with their values, and draw and turn knobs. Safe to call again on the same subtree.
 export function hydrate(root = document) {
+  for (const element of root.querySelectorAll("[data-shortcut]")) {
+    shortcutTooltip(element, element.dataset.tooltip || element.textContent.trim(), element.dataset.shortcut);
+  }
   for (const element of root.querySelectorAll("[data-icon]")) {
     if (element.dataset.iconDrawn === element.dataset.icon) continue;
     element.classList.add("at-icon");
@@ -280,6 +283,50 @@ function element(tag, className, text) {
   if (className) node.className = className;
   if (text != null) node.textContent = text;
   return node;
+}
+
+// ---------------------------------------------------------------- shortcuts in tooltips
+
+const MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform || "");
+
+/// A key binding as the platform writes it, the counterpart of `binding_label`: gpui's
+/// notation in ("secondary-shift-s", "ctrl-k ctrl-s"), "⇧⌘S" on macOS and "Ctrl+Shift+S"
+/// elsewhere out. `secondary` is ⌘ on macOS and Ctrl elsewhere.
+export function shortcutLabel(binding) {
+  const names = { space: "Space", enter: "Enter", escape: "Esc", backspace: "Backspace", delete: "Delete", tab: "Tab", home: "Home", end: "End", pageup: "Page Up", pagedown: "Page Down", left: "←", right: "→", up: "↑", down: "↓" };
+  return binding
+    .trim()
+    .split(/\s+/)
+    .map((stroke) => {
+      const parts = stroke.split("-");
+      let key = parts.pop() || "-";
+      key = names[key] || key.charAt(0).toUpperCase() + key.slice(1);
+      const held = new Set(parts.map((part) => (part === "secondary" ? (MAC ? "cmd" : "ctrl") : part)));
+      if (MAC) {
+        return [["ctrl", "⌃"], ["alt", "⌥"], ["shift", "⇧"], ["cmd", "⌘"]].filter(([name]) => held.has(name)).map(([, mark]) => mark).join("") + key;
+      }
+      return [["ctrl", "Ctrl"], ["alt", "Alt"], ["shift", "Shift"], ["cmd", "Super"]].filter(([name]) => held.has(name)).map(([, word]) => word).concat(key).join("+");
+    })
+    .join(" ");
+}
+
+/// Give `element` a tooltip that names its keys, faint after the words, as `Button::shortcut`
+/// does. `keys` is gpui's notation ("secondary-d") or already written ("⌘D"); empty shows
+/// none. `hydrate()` does this for every `[data-shortcut]`, using `data-tooltip` or the
+/// element's own text for the words.
+export function shortcutTooltip(target, words, keys) {
+  target.querySelector(":scope > .at-tooltip")?.remove();
+  const notation = /^[a-z0-9,.;/'=`[\]-]+( [a-z0-9,.;/'=`[\]-]+)*$/;
+  const written = keys && notation.test(keys) ? shortcutLabel(keys) : keys || "";
+  const tip = element("span", "at-tooltip", words);
+  if (written) {
+    tip.append(element("span", "at-tooltip__keys", written));
+    target.setAttribute("aria-keyshortcuts", written);
+  }
+  tip.setAttribute("aria-hidden", "true");
+  target.classList.add("at-has-tooltip");
+  delete target.dataset.tooltip;
+  target.append(tip);
 }
 
 // ---------------------------------------------------------------- level meters

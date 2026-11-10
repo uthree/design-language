@@ -86,9 +86,14 @@ Button::new("dup", "Duplicate").ghost().icon(IconName::Copy)
 Button::new("ask", "Ask assistant").variant(ButtonVariant::Agent).icon(IconName::Sparkles)
 Button::new("del", "Delete track").variant(ButtonVariant::Danger)
 Button::new("grid", "Grid: 1/16").icon_after(IconName::ChevronDown).size(ControlSize::Small)
-Button::icon_only("settings", IconName::Settings).tooltip("Project settings…")
+Button::icon_only("settings", IconName::Settings).tooltip("Project settings…").shortcut_for(&OpenSettings)
 Button::new(("solo", i), "S").size(ControlSize::Small).selected(solo).tint(colors.warning)
 ```
+
+A command with a key names it in its tooltip: `.shortcut_for(&Action)` looks the binding up in
+the keymap each time the tooltip opens (so a rebound key shows as rebound), `.shortcut("⌘R")`
+takes it already written (empty shows none). A labelled button with a shortcut and no tooltip
+shows its label there. `binding_label(&KeyBinding)` writes a binding for the platform.
 
 Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, and
 `.radius(px)` for a button sitting in a surface's corner, which must follow that corner:

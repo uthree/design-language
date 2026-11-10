@@ -32,9 +32,10 @@ impl Tooltip {
         }
     }
 
-    /// A keyboard shortcut shown after the text, already formatted for the platform.
+    /// A keyboard shortcut shown after the text, already formatted for the platform. Empty
+    /// shows none.
     pub fn shortcut(mut self, shortcut: impl Into<SharedString>) -> Self {
-        self.shortcut = Some(shortcut.into());
+        self.shortcut = Some(shortcut.into()).filter(|shortcut| !shortcut.is_empty());
         self
     }
 
@@ -558,5 +559,22 @@ impl RenderOnce for Completions {
                         }))
                     }),
             )
+    }
+}
+
+#[cfg(test)]
+mod tooltip_tests {
+    use super::Tooltip;
+
+    #[test]
+    fn an_empty_shortcut_draws_no_chip() {
+        assert!(Tooltip::new("Stop").shortcut("").shortcut.is_none());
+        assert_eq!(
+            Tooltip::new("Play")
+                .shortcut("Space")
+                .shortcut
+                .map(|keys| keys.to_string()),
+            Some("Space".to_string())
+        );
     }
 }

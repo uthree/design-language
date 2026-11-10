@@ -1,16 +1,18 @@
 //! Buttons: the one primary action, everything else, and icon-only tools.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    AnyView, App, ClickEvent, ClipboardItem, ElementId, FocusHandle, Hsla, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Window, div, linear_color_stop, linear_gradient, px,
+    Action, AnyView, App, ClickEvent, ClipboardItem, ElementId, FocusHandle, Hsla,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, linear_color_stop, linear_gradient, px,
 };
 
 use crate::focus::focusable_with;
 use crate::icon::{Icon, IconName, IconSource};
 use crate::overlay::Tooltip;
+use crate::preferences::keystroke_label;
 use crate::strings::ActiveStrings;
 use crate::theme::{ActiveTheme, PrimaryStyle, Theme, mix};
 
@@ -63,6 +65,38 @@ impl ControlSize {
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
+/// The keys a button's tooltip names.
+enum Shortcut {
+    /// Written by the application.
+    Text(SharedString),
+    /// Looked up in the keymap when the tooltip opens.
+    Action(Rc<dyn Action>),
+}
+
+impl Shortcut {
+    /// The keys as the platform writes them, or `None` when there are none.
+    fn label(&self, window: &Window) -> Option<SharedString> {
+        match self {
+            Self::Text(text) => Some(text.clone()).filter(|text| !text.is_empty()),
+            Self::Action(action) => window
+                .highest_precedence_binding_for_action(action.as_ref())
+                .map(|binding| binding_label(&binding)),
+        }
+    }
+}
+
+/// A key binding as the platform writes it in menus and tooltips: "⌘⇧S" on macOS,
+/// "Ctrl+Shift+S" elsewhere, a sequence with spaces between its keys.
+pub fn binding_label(binding: &KeyBinding) -> SharedString {
+    binding
+        .keystrokes()
+        .iter()
+        .map(|keystroke| keystroke_label(keystroke.inner()).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .into()
+}
+
 /// A push button, optionally latching (`selected`) like a mute or solo switch.
 #[derive(IntoElement)]
 pub struct Button {
@@ -79,6 +113,7 @@ pub struct Button {
     square: bool,
     radius: Option<gpui::Pixels>,
     tooltip: Option<SharedString>,
+    shortcut: Option<Shortcut>,
     focus: Option<FocusHandle>,
     on_click: Option<ClickHandler>,
 }
@@ -117,6 +152,7 @@ impl Button {
             square: false,
             radius: None,
             tooltip: None,
+            shortcut: None,
             focus: None,
             on_click: None,
         }
@@ -199,6 +235,22 @@ impl Button {
     /// Hover text.
     pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
         self.tooltip = Some(tooltip.into());
+        self
+    }
+
+    /// The keys that do the same, faint after the tooltip's words, already written for the
+    /// platform ("⌘R", "Ctrl+R"). A labelled button without a [`Button::tooltip`] shows its
+    /// label there. Empty shows none, so a command with no key needs no branch.
+    pub fn shortcut(mut self, keys: impl Into<SharedString>) -> Self {
+        self.shortcut = Some(Shortcut::Text(keys.into()));
+        self
+    }
+
+    /// The keys bound to `action`, looked up in the keymap each time the tooltip opens, so a
+    /// shortcut the person rebinds shows as they bound it. A binding scoped to a key context
+    /// shows while focus is inside that context; an unbound action shows no keys.
+    pub fn shortcut_for(mut self, action: &dyn Action) -> Self {
+        self.shortcut = Some(Shortcut::Action(Rc::from(action.boxed_clone())));
         self
     }
 
@@ -363,7 +415,7 @@ impl RenderOnce for Button {
         if let Some(icon) = self.icon {
             button = button.child(Icon::new(icon).size(self.size.icon()).color(paint.text));
         }
-        if let Some(label) = self.label {
+        if let Some(label) = self.label.clone() {
             button = button.child(label);
         }
         if let Some(icon) = self.icon_after {
@@ -382,9 +434,17 @@ impl RenderOnce for Button {
         button = button
             .hover(move |style| style.bg(hover))
             .active(move |style| style.bg(pressed));
-        if let Some(tooltip) = self.tooltip {
+        let words = self
+            .tooltip
+            .or_else(|| self.shortcut.as_ref().and(self.label.clone()));
+        if let Some(words) = words {
+            let shortcut = self.shortcut;
             button = button.tooltip(move |window, cx| -> AnyView {
-                Tooltip::new(tooltip.clone()).build(window, cx)
+                let mut tooltip = Tooltip::new(words.clone());
+                if let Some(keys) = shortcut.as_ref().and_then(|keys| keys.label(window)) {
+                    tooltip = tooltip.shortcut(keys);
+                }
+                tooltip.build(window, cx)
             });
         }
         if let Some(handler) = self.on_click {

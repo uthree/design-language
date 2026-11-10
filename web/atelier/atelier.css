@@ -1358,6 +1358,46 @@ a.at-list-item:hover {
   transition-delay: 500ms;
 }
 
+/* A tooltip that names its keys, from `shortcutTooltip()` or `[data-shortcut]`: the same
+   bubble as `data-tooltip`, with the keys faint after the words. */
+.at-has-tooltip {
+  position: relative;
+}
+
+.at-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--at-border);
+  border-radius: var(--at-radius-sm);
+  background: var(--at-overlay);
+  box-shadow: var(--at-shadow-medium);
+  color: var(--at-text);
+  font-size: var(--at-size-sm);
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -2px);
+  transition: opacity var(--at-motion-fast) ease-out, transform var(--at-motion-fast) ease-out;
+}
+
+.at-has-tooltip:hover > .at-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 500ms;
+}
+
+.at-tooltip__keys {
+  color: var(--at-text-faint);
+  font-size: var(--at-size-xs);
+}
+
 /* ---------------------------------------------------------------- menus */
 
 .at-menu {

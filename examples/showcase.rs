@@ -37,6 +37,16 @@ use atelier::plot::{DragPhase, LinePlot, PlotDrag, Series, SeriesStyle};
 use common::argument;
 use common::readout::{gain_db, pan, percent, volume_db};
 
+gpui::actions!(
+    showcase,
+    [
+        /// Duplicate the selected clip; its button's tooltip shows the key.
+        DuplicateClip,
+        /// Open the project settings; its button's tooltip shows the key.
+        OpenSettings
+    ]
+);
+
 /// The sample dialog open over the window.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OpenDialog {
@@ -1012,7 +1022,8 @@ impl Showcase {
             .child(
                 Button::new("b-ghost", "Duplicate")
                     .ghost()
-                    .icon(IconName::Copy),
+                    .icon(IconName::Copy)
+                    .shortcut_for(&DuplicateClip),
             )
             .child(
                 Button::new("b-agent", "Ask assistant")
@@ -1031,7 +1042,11 @@ impl Showcase {
                     .primary()
                     .size(ControlSize::Large),
             )
-            .child(Button::icon_only("b-icon", IconName::Settings).tooltip("Project settings…"));
+            .child(
+                Button::icon_only("b-icon", IconName::Settings)
+                    .tooltip("Project settings…")
+                    .shortcut_for(&OpenSettings),
+            );
 
         // Every control here is live, so its transition can be watched.
         let controls = row()
@@ -2031,6 +2046,10 @@ fn main() {
             let theme = Theme::new(direction, appearance);
             let background = theme.window_background();
             atelier::init(cx, theme);
+            cx.bind_keys([
+                gpui::KeyBinding::new("secondary-d", DuplicateClip, None),
+                gpui::KeyBinding::new("secondary-,", OpenSettings, None),
+            ]);
             let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
             let options = atelier::custom_frame(
                 WindowOptions {

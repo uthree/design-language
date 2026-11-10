@@ -14,6 +14,33 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: shortcuts in button tooltips
+
+### Added
+
+- `Button::shortcut_for(&action)`: the tooltip names the keys bound to the action, looked up
+  in the keymap each time it opens, so a key the person rebinds shows as rebound.
+  `Button::shortcut("⌘R")` takes the keys already written. A labelled button with a shortcut
+  and no tooltip shows its label there.
+- `binding_label(&KeyBinding)`: a binding as the platform writes it ("⇧⌘S", "Ctrl+Shift+S",
+  chords with spaces).
+
+### Changed
+
+- `Tooltip::shortcut("")` shows no keys, so a command without one needs no branch.
+
+### Web
+
+- `data-shortcut` beside `data-tooltip` (gpui's notation such as `secondary-d`, or already
+  written) gives the tooltip its keys, faint after the words, and sets `aria-keyshortcuts`;
+  `shortcutTooltip(..)` and `shortcutLabel(..)` in `atelier.js`. The showcase's transport and
+  settings buttons have them.
+
+### Workarounds you can delete
+
+- Auris Studio's `keyed_tip` and `tip` in `ui/tooltip.rs`, and the adapter around the native
+  button that kept them.
+
 ## Unreleased: plots that are dragged
 
 ### Added

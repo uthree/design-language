@@ -119,6 +119,8 @@ check warn 'fn (level_meter|db_to_meter_position|meter_level)\b' \
     "a level meter or dB scale of the application's own: use atelier::LevelMeter::db(..).peak_db(..).clipped(..) and LevelMeter::position."
 check warn 'fn [a-z_]*plot_well\b|const GUTTER: \(f32, f32\)' \
     "a plot made draggable by hand, guessing its data area: use atelier::plot::LinePlot::id(..).on_drag(..) (deltas in plot units), .on_reset, .on_wheel."
+check warn 'fn keyed_tip\b|fn [a-z_]*shortcut_tooltip\b' \
+    "a tooltip with keys built by hand: use Button::shortcut_for(&action) (read from the keymap) or Button::shortcut(..)."
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

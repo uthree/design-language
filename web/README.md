@@ -99,6 +99,7 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `agent::MessageQueue`, `QueuedMessage` | `messageQueue(element, { messages, paused, editable, labels })`, returning `update`; `atelier:queue-send-now`, `queue-edit`, `queue-remove` with `{ index }`, `queue-pause` with `{ paused }`; `.at-queue` |
 | `agent::ConversationList`, `Conversation`, `ConversationRow` | `conversationList(element, { conversations, selected, archived, labels })`, returning `update`, `search`; `atelier:conversation-open`, `conversation-more` with `{ index }`, `conversation-new`, `conversation-archived`; `.at-conversations`, `.at-conversation` |
 | `Tooltip` | `data-tooltip="…"` on any element |
+| `Button::shortcut`, `Button::shortcut_for`, `Tooltip::shortcut`, `binding_label` | `data-shortcut="secondary-d"` (gpui's notation, or already written) beside `data-tooltip`, turned by `hydrate()` into `.at-tooltip` with `.at-tooltip__keys` and `aria-keyshortcuts`; `shortcutTooltip(element, words, keys)` and `shortcutLabel(binding)` from `atelier.js` |
 
 Icons are `<span data-icon="sparkles"></span>`; `hydrate()` from `atelier.js` draws them, and
 wires segmented controls and tabs (click and arrow keys, an `atelier:select` event), slider fills

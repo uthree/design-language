@@ -71,7 +71,7 @@ mod window;
 
 pub use ambient::{Ambience, AmbientBackdrop};
 pub use backdrop::BackdropPalette;
-pub use button::{Button, ButtonVariant, ControlSize, CopyButton};
+pub use button::{Button, ButtonVariant, ControlSize, CopyButton, binding_label};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use dialog::{DIALOG_CONTEXT, Dialog};
 pub use display::{
