@@ -662,6 +662,72 @@ export function table(root, { columns = [], rows = [], empty = "" } = {}) {
 
 // ---------------------------------------------------------------- inline edit
 
+// ---------------------------------------------------------------- text input
+
+/// Grow a textarea a row per line it shows, wrapped lines included, from `minLines` to
+/// `maxLines`, and scroll inside it past that: `TextInput::min_lines` and `max_lines`. The
+/// browser keeps the caret in view as it moves. Returns a function that re-measures, for text
+/// set from script.
+export function growLines(textarea, { minLines = 1, maxLines = Infinity } = {}) {
+  textarea.classList.add("at-grow");
+  const fit = () => {
+    const style = getComputedStyle(textarea);
+    const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    textarea.style.height = "auto";
+    const rows = Math.round((textarea.scrollHeight - padding) / line);
+    const shown = Math.min(Math.max(rows, minLines), Math.max(maxLines, minLines));
+    textarea.style.height = `${shown * line + padding}px`;
+    textarea.style.overflowY = rows > shown ? "auto" : "hidden";
+  };
+  textarea.addEventListener("input", fit);
+  fit();
+  return fit;
+}
+
+/// Hand an input's Up, Down, Tab and Escape to a list of suggestions while `isOpen()` says one
+/// is open: `TextInput::set_completing`. Up and Down call `onPrevious` and `onNext` instead of
+/// moving the caret, Tab calls `onAccept` instead of moving focus, and Escape calls `onDismiss`
+/// instead of reaching the field's own Escape. Shift with an arrow still selects, and nothing is
+/// taken while an input method composes.
+export function completionKeys(input, { isOpen = () => true, onPrevious, onNext, onAccept, onDismiss } = {}) {
+  input.addEventListener("keydown", (event) => {
+    if (event.isComposing || event.keyCode === 229 || !isOpen()) return;
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    const handler = { ArrowUp: onPrevious, ArrowDown: onNext, Tab: onAccept, Escape: onDismiss }[event.key];
+    if (!handler) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    handler();
+  });
+}
+
+/// The suggestions under an input as the person types, the counterpart of `Completions`:
+/// `items` are `{ label, description }` (or strings), `selected` the row the keyboard is on,
+/// scrolled into view, and `rows` how many show before the list scrolls. A click calls
+/// `onSelect(index)`. Focus stays in the input, so the rows are no tab stops. Call it again to
+/// redraw; returns the list.
+export function completions(root, { items = [], selected = null, rows = 6, empty, onSelect } = {}) {
+  root.replaceChildren();
+  root.classList.add("at-completions");
+  root.style.setProperty("--_rows", rows);
+  const list = root.appendChild(element("div", "at-completions__rows"));
+  items.forEach((item, index) => {
+    const { label, description } = typeof item === "string" ? { label: item } : item;
+    const row = list.appendChild(element("div", "at-completion"));
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(index === selected));
+    row.append(element("span", "at-completion__label", label));
+    if (description) row.append(element("span", "at-completion__description", description));
+    // Pressing a row must not take focus from the input.
+    row.addEventListener("pointerdown", (event) => event.preventDefault());
+    row.addEventListener("click", () => onSelect?.(index));
+  });
+  if (!items.length && empty) list.append(element("div", "at-completion at-completion--empty", empty));
+  list.children[selected]?.scrollIntoView({ block: "nearest" });
+  return root;
+}
+
 /// Edit `target`'s text where it is shown, the counterpart of `InlineEdit`: a field opens over
 /// the label, about its size (at least `minWidth`, at most `maxWidth` pixels wide), with the
 /// text selected so the first key replaces it. Return commits and Escape closes; a press
@@ -670,10 +736,29 @@ export function table(root, { columns = [], rows = [], empty = "" } = {}) {
 ///
 /// `onCommit(text)` may return a message to refuse the edit: the field stays open and shows it.
 /// The target also receives `atelier:inline-commit` (`detail.value`) and `atelier:inline-close`.
-/// Returns `{ field, input, close }`.
+///
+/// `hint` is a faint line under the field, and `below` an element after it, usually a
+/// `completions()` list; both share the error's panel, 220 to 360 pixels wide. Pass
+/// `completing` (the options of `completionKeys`) so Up, Down and Tab move through the list and
+/// Escape closes it rather than the field. A multi-line field grows from `minLines` to
+/// `maxLines` (2 and 6) and then scrolls. A press elsewhere while an input method composes
+/// does not commit. Returns `{ field, input, close }`.
 export function inlineEdit(
   target,
-  { value, multiline = false, allowEmpty = false, minWidth = 150, maxWidth = 420, onCommit, onClose } = {},
+  {
+    value,
+    multiline = false,
+    allowEmpty = false,
+    minWidth = 150,
+    maxWidth = 420,
+    minLines = 2,
+    maxLines = 6,
+    hint,
+    below,
+    completing,
+    onCommit,
+    onClose,
+  } = {},
 ) {
   const original = value ?? target.textContent.trim();
   const previous = document.activeElement;
@@ -681,13 +766,26 @@ export function inlineEdit(
   const field = element("span", `at-field at-inline-edit${multiline ? " at-field--area" : ""}`);
   const input = document.createElement(multiline ? "textarea" : "input");
   input.value = original;
-  if (multiline) input.rows = Math.min(Math.max(original.split("\n").length, 2), 6);
   field.append(input);
   const width = Math.min(Math.max(rect.width + 8, minWidth), maxWidth);
   const left = Math.max(8, Math.min(rect.left - 4, window.innerWidth - width - 8));
   field.style.width = `${width}px`;
   field.style.left = `${left}px`;
   (target.closest(".at-root") || document.body).append(field);
+  if (multiline) growLines(input, { minLines, maxLines });
+  let panel = null;
+  const showPanel = () => {
+    if (!panel) {
+      panel = field.appendChild(element("span", "at-inline-edit__panel"));
+      panel.style.minWidth = `${Math.max(width, 220)}px`;
+      panel.style.maxWidth = `${Math.max(width, 360)}px`;
+      panel.addEventListener("pointerdown", (event) => event.target === panel && event.preventDefault());
+    }
+    return panel;
+  };
+  if (hint) showPanel().append(element("span", "at-inline-edit__hint", hint));
+  if (below) showPanel().append(below);
+  if (completing) completionKeys(input, completing);
   // Centred on a one-line label; an area opens downward from the label's top.
   const height = field.getBoundingClientRect().height;
   field.style.top = `${multiline ? rect.top : rect.top + (rect.height - height) / 2}px`;
@@ -702,7 +800,7 @@ export function inlineEdit(
     if (commit && text !== original && (allowEmpty || text.trim())) {
       const refusal = onCommit?.(text);
       if (typeof refusal === "string" && refusal) {
-        error ??= field.appendChild(element("span", "at-inline-edit__error"));
+        error ??= showPanel().insertBefore(element("span", "at-inline-edit__error"), panel.firstChild);
         error.textContent = refusal;
         input.focus();
         return;
@@ -717,8 +815,12 @@ export function inlineEdit(
     field.remove();
     if (previous instanceof HTMLElement && document.contains(previous)) previous.focus();
   };
+  let composing = false;
+  input.addEventListener("compositionstart", () => (composing = true));
+  input.addEventListener("compositionend", () => (composing = false));
   const outside = (event) => {
-    if (!field.contains(event.target)) finish(true);
+    // What an input method is still composing is not an answer yet.
+    if (!field.contains(event.target) && !composing) finish(true);
   };
   document.addEventListener("pointerdown", outside, true);
   input.addEventListener("keydown", (event) => {
@@ -732,9 +834,6 @@ export function inlineEdit(
       event.stopPropagation();
       finish(false);
     }
-  });
-  input.addEventListener("input", () => {
-    if (multiline) input.rows = Math.min(Math.max(input.value.split("\n").length, 2), 6);
   });
   return { field, input, close: () => finish(false) };
 }

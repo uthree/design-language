@@ -800,17 +800,111 @@ html[data-vibrancy] body.at-root {
   min-height: 2.8em;
 }
 
-.at-inline-edit__error {
+.at-inline-edit__panel {
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
-  padding: 2px 6px;
-  border-radius: var(--at-radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 4px;
+  border-radius: var(--at-radius-md);
   background: var(--at-elevated);
   box-shadow: var(--at-shadow-medium);
-  color: var(--at-danger);
+}
+
+.at-inline-edit__error,
+.at-inline-edit__hint {
+  padding: 0 4px;
   font-size: var(--at-size-xs);
+}
+
+.at-inline-edit__error {
+  color: var(--at-danger);
+}
+
+.at-inline-edit__hint {
+  color: var(--at-text-faint);
+}
+
+/* A completion list inside the panel needs no frame of its own. */
+.at-inline-edit__panel .at-completions {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* `growLines()`: the script sets the height; the area scrolls past its cap. */
+.at-field textarea.at-grow,
+.at-composer textarea.at-grow {
+  resize: none;
+  min-height: 0;
+  overflow-y: hidden;
+}
+
+/* ---------------------------------------------------------------- completions */
+
+/* `Completions`: suggestions under an input, the keyboard's row in `--at-selected`. */
+.at-completions {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: var(--at-space-xxs);
+  border: 1px solid var(--at-border);
+  border-radius: var(--at-radius-md);
+  background: var(--at-overlay);
+  box-shadow: var(--at-shadow-medium);
+}
+
+.at-completions__rows {
+  display: flex;
+  flex-direction: column;
+  max-height: calc((var(--at-row) - 2px) * var(--_rows, 6));
+  overflow-y: auto;
+}
+
+.at-completion {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--at-space-sm);
+  height: calc(var(--at-row) - 2px);
+  padding: 0 var(--at-space-sm);
+  border-radius: max(0px, calc(var(--at-radius-md) - var(--at-space-xxs)));
+  color: var(--at-text);
+  font-size: var(--at-size-md);
+  cursor: default;
+}
+
+.at-completion:hover {
+  background: var(--at-hover);
+}
+
+.at-completion[aria-selected="true"] {
+  background: var(--at-selected);
+}
+
+.at-completion__label {
+  flex: none;
   white-space: nowrap;
+}
+
+.at-completion__description {
+  min-width: 0;
+  margin-inline-start: auto;
+  padding-inline-start: var(--at-space-lg);
+  overflow: hidden;
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-completion--empty {
+  color: var(--at-text-faint);
+  font-size: var(--at-size-sm);
 }
 
 .at-form-field {

@@ -162,10 +162,15 @@ one per row).
 - `TextInput` — the editing itself: caret, selection (drag, Shift, double- and triple-click),
   the platform's input method (Japanese and other compositions), clipboard and undo. It draws
   only the text; put it in a `TextField`. Return emits `TextInputEvent::Submit` and bubbles
-  `SubmitText`, Escape `Cancel`/`CancelText`; `.multiline()` grows a line per break and
-  Shift-Return breaks the line. While it holds focus Atelier takes Space, Backspace, the arrows,
-  Return, Escape and ⌘/Ctrl A C X V Z before any binding; scope a single-letter shortcut away
-  with `Some("!AtelierTextInput")`.
+  `SubmitText`, Escape `Cancel`/`CancelText`; `.multiline()` wraps, grows a row per line from
+  `.min_lines(n)` to `.max_lines(n)` and then scrolls inside itself, following the caret, and
+  Shift-Return breaks the line. It is a tab stop (`.tab_index(..)`). While it holds focus
+  Atelier takes Space, Backspace, the arrows, Return, Escape and ⌘/Ctrl A C X V Z before any
+  binding; scope a single-letter shortcut away with `Some("!AtelierTextInput")`. With a
+  `Completions` list open, call `set_completing(true, cx)`: Up/Down then emit
+  `PreviousCompletion`/`NextCompletion`, Tab `AcceptCompletion` and Escape `DismissCompletions`
+  (never moving the caret or focus); write the choice with `replace_range(range, text, cx)` and
+  select part of the text with `select_range(range, cx)`.
 
   ```rust
   let name = cx.new(|cx| TextInput::new(cx).with_text("Untitled", cx));
@@ -179,7 +184,8 @@ one per row).
   label (at least 150 px, at most 420 px wide), focused with everything selected. Return commits,
   Escape closes, a press elsewhere commits unless the text is unchanged or emptied
   (`.allow_empty()` to commit an empty one); `.original(..)`, `.on_commit(..)`, `.on_close(..)`,
-  `.error(..)` keeps it open with a reason. Focus goes back where it was when it closes. For a
+  `.error(..)` keeps it open with a reason; `.hint(..)` and `.below(completions)` sit under it in
+  one panel with the error. Focus goes back where it was when it closes. For a
   label laid out by flex, give it `SpotBook::spot(key)` (in a `relative()` parent) and read
   `SpotBook::get(key, window)`; `None` means the label is off screen, so open a sheet instead.
 - `Table::new(id, columns, rows)` — rows of short values: an event list, markers, a parameter

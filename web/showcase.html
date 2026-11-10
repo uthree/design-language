@@ -29,6 +29,8 @@
       .transcript-pane { display: flex; flex-direction: column; overflow: hidden; }
       .transcript-pane #chat { flex: 1; min-height: 0; }
       #activity { padding: 0 var(--at-space-sm) var(--at-space-xs); }
+      .chord-field { position: relative; width: 180px; }
+      .chord-field #chord-completions { position: absolute; top: 100%; left: 0; right: 0; z-index: 5; margin-top: 4px; }
       .composer-wrap { max-width: 760px; width: 100%; margin: 0 auto; padding: 0 var(--at-space-lg) var(--at-space-lg); }
       .welcome { position: relative; display: grid; place-items: center; }
       .welcome[hidden] { display: none; }
@@ -144,7 +146,15 @@
                   <span class="at-field"><input id="name" value="Midnight Drive" /></span>
                   <span class="at-form-field__help">Shown in the title bar and on export.</span>
                 </div>
-                <span class="at-field at-field--area"><textarea placeholder="Notes for the session…"></textarea></span>
+                <div class="at-form-field chord-field">
+                  <label for="chord">Chord</label>
+                  <span class="at-field"><input id="chord" placeholder="Chord (try C)" autocomplete="off" /></span>
+                  <div id="chord-completions" hidden></div>
+                </div>
+                <span class="at-field at-field--area"><textarea id="notes" placeholder="Notes for the session…">Bridge: try the pad an octave down and let the bass rest for two bars before the last chorus.
+Vocal take 3 is the keeper; comp the second verse from take 5.
+Ask about the tempo map: the click drifts after bar 64.
+Remember to print the stems at 48 kHz.</textarea></span>
                 <div class="row">
                   <span class="at-small at-muted">Track</span>
                   <span id="inline-name" tabindex="0" title="Double-click to rename">Lead vocal</span>
@@ -350,7 +360,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, colorPicker, colorSwatch, conversationList, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, logView, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, colorPicker, colorSwatch, completionKeys, completions, conversationList, growLines, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, logView, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -391,6 +401,7 @@
         let walked = false;
         const field = inlineEdit(cell, {
           minWidth: 80,
+          hint: ["Bar.beat, such as 2.3", "A note, CC11 or Pitch bend", "0 to 127"][Math.min(column, 2)],
           onCommit: (text) => {
             events[row].cells[column] = text.trim();
             eventTable.update(events);
@@ -512,6 +523,42 @@
       }
       setMeter(document.getElementById("meter-left"), { level: meterPosition(-4), peak: meterPosition(-1.5) });
       setMeter(document.getElementById("meter-right"), { level: meterPosition(-7), peak: meterPosition(0.8), clipped: true });
+
+      // Notes that wrap and grow to four rows, then scroll; and a chord field whose suggestions
+      // follow Up, Down and Tab while focus stays in it.
+      growLines(document.getElementById("notes"), { minLines: 2, maxLines: 4 });
+      {
+        const CHORDS = ["Cmaj7", "Cm7", "C7", "Csus4", "Dm7", "Em7", "G7", "bVII7"];
+        const chord = document.getElementById("chord");
+        const list = document.getElementById("chord-completions");
+        let selected = 0;
+        let dismissed = false;
+        const matches = () => {
+          const typed = chord.value.trim().toLowerCase();
+          return typed ? CHORDS.filter((name) => name.toLowerCase().startsWith(typed) && name.length > typed.length) : [];
+        };
+        const accept = (index) => {
+          const name = matches()[index];
+          if (name) chord.setRangeText(name, 0, chord.value.length, "end");
+          dismissed = true;
+          draw();
+        };
+        const draw = () => {
+          const items = matches();
+          list.hidden = dismissed || !items.length || document.activeElement !== chord;
+          completions(list, { items, selected, rows: 4, onSelect: accept });
+        };
+        completionKeys(chord, {
+          isOpen: () => !list.hidden,
+          onPrevious: () => ((selected = (selected + matches().length - 1) % matches().length), draw()),
+          onNext: () => ((selected = (selected + 1) % matches().length), draw()),
+          onAccept: () => accept(selected),
+          onDismiss: () => ((dismissed = true), draw()),
+        });
+        chord.addEventListener("input", () => ((selected = 0), (dismissed = false), draw()));
+        chord.addEventListener("focus", draw);
+        chord.addEventListener("blur", draw);
+      }
 
       // A label edited where it is shown: Return or a press elsewhere commits, Escape closes.
       const trackName = document.getElementById("inline-name");
@@ -852,12 +899,14 @@
       reflow();
       permissionPicker(document.getElementById("permission-bypass"), { mode: "bypass" });
       const draft = document.getElementById("draft");
+      const fitDraft = growLines(draft, { minLines: 2, maxLines: 8 });
       const send = () => {
         const text = draft.value.trim();
         if (!text) return;
         conversation.jumpToLatest();
         conversation.push({ kind: "user", text });
         draft.value = "";
+        fitDraft();
         reply("This page has no model behind it, so this is where the answer would stream in.");
       };
       draft.addEventListener("keydown", (event) => {
