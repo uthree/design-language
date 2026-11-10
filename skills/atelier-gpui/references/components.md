@@ -71,6 +71,22 @@ triple-click (line) select; ⌘C/Ctrl+C copies the exact characters — line bre
 stop, and its selection shows in `colors.selection` while it holds focus. Takes `.size(..)`,
 `.color(..)`. Each needs its own id.
 
+`SelectionScope::new(id)` makes many of them one selection: a drag that starts in one runs on
+through the others in reading order, as in a browser, and ⌘A selects the whole scope. Wrap
+anything whose text belongs together — a transcript, the lines of a log, a list of results —
+and give it `.scroll(&handle)` when it sits in a scrolled area, so a drag held past the edge
+scrolls on. A copy joins the pieces with each one's `.separator(..)`: a blank line by default
+(`BLOCK_SEPARATOR`), `LINE_SEPARATOR` for the next line of code or a log, `"\t"` between
+cells. A scope inside another is part of the outer one, so `Markdown`, `CodeBlock` and
+`DiffBlock` join a conversation's selection; `ChatView` is one scope already. The scope is
+laid out as a plain `div` and styled like one.
+
+`LogView::new(id).lines(..)` shows an application's own log: `LogLine::new(key, message)`
+with `.time(..)`, `.level(LogLevel::Warn)` and `.source(..)`, one record to a line in the
+monospaced face, warnings and errors coloured. Key each line by its record (a sequence number),
+not its row. It is one `SelectionScope` and copies as a terminal would,
+`12s WARN app::audio: message`, with a cut source in full.
+
 ## Buttons
 
 `CopyButton::new(id, text)` copies `text` and answers: a check and "Copied" for a moment

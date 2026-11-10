@@ -78,7 +78,7 @@ the control in a mock-up.
 | Searching or filtering | `TextField::icon(IconName::Search)`, at the top of the list it filters | a "Search" button |
 | A file or folder | `TextField` showing the path + `.trailing(Button::new(.., "Choose…"))` | a bare button that hides the current path |
 | A message or prompt to the agent | `agent::Composer` | a `TextField` with a Send button beside it |
-| Text to read and copy (a message, a log, an error) | `SelectableText` + `CopyButton` | a `TextField` made read-only |
+| Text to read and copy (a message, a log, an error) | `SelectableText` + `CopyButton`; `SelectionScope` around text that belongs together; `LogView` for a log | a `TextField` made read-only |
 
 ## Doing something
 

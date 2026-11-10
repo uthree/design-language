@@ -144,6 +144,8 @@ with the component and the hook it now has:
 | an opaque title bar on Windows so DWM's caption buttons do not show through | built into `TitleBar` under the acrylic backdrop |
 | `ClaimVisualizationActivation` bound to Enter/Space per area | nothing: controls claim the keys (`AtelierControl`) |
 | `agent_components::selectable_text` and a redrawn user bubble | `UserMessage::new(text).id(..)`; `SelectableText` elsewhere |
+| a transcript whose selection stops at each message or block | wrap the transcript's column in `SelectionScope::new(id).scroll(&handle)` (`ChatView` is one already) |
+| `log_panel.rs` rows of a `SelectableText` per message | `LogView` with `LogLine::new(record, message).time(..).level(..).source(..)`; its whole-log copy stays an app `CopyButton` |
 | copy buttons swapping their own label (`workshop_copy_button`) | `CopyButton::new(id, text).label(..).copied_label(..)` |
 | `audio_player.rs` for seek, volume, mute, loading | `AudioPlayer::on_seek/on_volume/on_mute/loading` |
 | `composer_frame` (a warning-coloured frame, a notice row, attach greyed) | `Composer::tone(..)`, `.notice(..)`, `.attach_disabled(..)` |
