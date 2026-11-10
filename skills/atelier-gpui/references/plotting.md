@@ -42,6 +42,17 @@ position)` and `Plot3d::project(bounds, [x, y, z])` give the same answers from o
 projection the view draws with, so never re-implement it. Offer `ViewPreset::ALL` (3-D, Front,
 Top, Side; `.angles()`, `.label()`) as a small segmented control beside the view.
 
+A `LinePlot` with an `.id(..)` can be the control for what it draws, as a synth's envelope or
+filter plot is. `.on_drag(|drag: &PlotDrag, window, cx| ..)` reports `DragPhase::Start` on the
+press (note the values there), then `Move` and `End` with `drag.delta`, the travel since the
+press in the plot's own units (rightwards and upwards), measured on the data area the plot
+really drew, so never guess its gutters. Set each value to where it started plus the delta.
+Shift goes a tenth as far and switching it mid-drag does not jump; `drag.from` is where the
+press landed, for a plot mirrored about its centre. `.on_reset(..)` takes a double-click,
+`.on_wheel(|steps: &i32, ..| ..)` whole wheel notches for a value that moves in steps (leave it
+off and the wheel scrolls the page). The plot is then a tab stop: each arrow is a whole
+Start, Move, End of a hundredth of a range, Shift a thousandth.
+
 Where there is a GPU, `Plot3d` shades its surface, curves and points off screen with wgpu at
 the display's resolution, four samples a pixel and a depth buffer, and gpui draws the result as
 one image between the walls and the labels: the surface is lit per pixel, its edges stay one

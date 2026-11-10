@@ -14,6 +14,27 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: plots that are dragged
+
+### Added
+
+- `LinePlot::id(..)` with `.on_drag(..)`, `.on_reset(..)` and `.on_wheel(..)`: a plot that is
+  the control for what it draws, such as a synth's envelope or filter. A drag reports
+  `PlotDrag { phase, from, delta }` in the plot's own units, measured on the data area the plot
+  really drew. Shift goes a tenth as far without a jump when it changes mid-drag. A
+  double-click resets, and the wheel reports whole notches. The plot is then a tab stop whose
+  arrows nudge it a hundredth of a range.
+
+### Web
+
+- Not ported: the web kit has no plots yet (listed under "Not yet" in `web/README.md`).
+
+### Workarounds you can delete
+
+- Auris Studio's `synth_plot_well`, `press_synth_plot`, `drag_synth_plot` and the `GUTTER`
+  guess at the plot's data area in `ui/synth_edit.rs`; keep only the mapping from delta to
+  parameters.
+
 ## Unreleased: meters that read dB and hold a clip
 
 ### Added

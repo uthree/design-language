@@ -33,6 +33,7 @@ use gpui::{
     WindowBounds, WindowOptions, div, prelude::*, px, relative, rgb, size,
 };
 
+use atelier::plot::{DragPhase, LinePlot, PlotDrag, Series, SeriesStyle};
 use common::argument;
 use common::readout::{gain_db, pan, percent, volume_db};
 
@@ -124,6 +125,12 @@ struct Showcase {
     follow_offset: f64,
     follow_at: f64,
     follow_run: Option<gpui::Task<()>>,
+    /// The filter plot that is its own control: cutoff in kHz, the resonance peak in dB, the
+    /// poles the wheel steps, and the two values a drag started from.
+    cutoff: f32,
+    peak: f32,
+    poles: i32,
+    filter_from: (f32, f32),
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -923,6 +930,7 @@ impl Showcase {
         let progress = self.progress_samples(cx);
         let event_list = self.event_list(window, cx);
         let follow = self.follow_demo(cx);
+        let filter = self.filter_plot(cx);
         // A loudness panel's figures: one not measured yet, one over its ceiling.
         // The meters take the height of the figures beside them, which nothing sets.
         let meters = div()
@@ -1356,6 +1364,7 @@ impl Showcase {
             .child(section("Fields", fields.into_any_element()))
             .child(section("Event list", event_list))
             .child(section("Following the playhead", follow))
+            .child(section("A plot as its own control", filter))
             .child(section("Figures", figures.into_any_element()))
             .child(section("Status and identity", marks.into_any_element()))
             .child(section("Progress and loading", progress))
@@ -1842,6 +1851,91 @@ impl Showcase {
     }
 }
 
+/// The filter plot's cutoff (kHz) and resonance peak (dB) before anything is dragged.
+const FILTER_DEFAULT: (f32, f32) = (3., 3.);
+
+impl Showcase {
+    /// A low-pass response that is dragged to set it: across for the cutoff, up for the
+    /// resonance, Shift for fine, a double-click to reset and the wheel for the slope.
+    fn filter_plot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let (cutoff, peak, poles) = (self.cutoff, self.peak, self.poles as f32);
+        let response = (0..=200)
+            .map(|step| {
+                let f = step as f32 * 0.05;
+                let ratio = f / cutoff;
+                let roll = -10. * poles * (1. + ratio.powi(4)).log10() / 2.;
+                let bump = peak * (-((ratio - 1.) / 0.18).powi(2)).exp();
+                (f, (roll + bump).max(-36.))
+            })
+            .collect();
+        let plot = LinePlot::new()
+            .id("filter-plot")
+            .series(Series::line(response).style(SeriesStyle::Area))
+            .x_range(0., 10.)
+            .y_range(-36., 12.)
+            .x_label("Frequency [kHz]")
+            .y_label("Gain [dB]")
+            .on_drag(cx.listener(|this, drag: &PlotDrag, _, cx| {
+                if drag.phase == DragPhase::Start {
+                    this.filter_from = (this.cutoff, this.peak);
+                }
+                this.cutoff = (this.filter_from.0 + drag.delta.0).clamp(0.2, 9.5);
+                this.peak = (this.filter_from.1 + drag.delta.1).clamp(0., 12.);
+                cx.notify();
+            }))
+            .on_reset(cx.listener(|this, _, _, cx| {
+                (this.cutoff, this.peak) = FILTER_DEFAULT;
+                this.poles = 2;
+                cx.notify();
+            }))
+            .on_wheel(cx.listener(|this, steps: &i32, _, cx| {
+                this.poles = (this.poles + steps).clamp(1, 4);
+                cx.notify();
+            }));
+        div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.lg)
+            .child(
+                div()
+                    .w(px(420.))
+                    .h(px(200.))
+                    .p(theme.spacing.xs)
+                    .rounded(theme.shape.radius_md)
+                    .bg(theme.colors.sunken)
+                    .child(plot),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.spacing.md)
+                    .child(
+                        Stat::new("Cutoff", format!("{:.2}", self.cutoff))
+                            .unit("kHz")
+                            .size(TextSize::Medium),
+                    )
+                    .child(
+                        Stat::new("Resonance", format!("{:.1}", self.peak))
+                            .unit("dB")
+                            .size(TextSize::Medium),
+                    )
+                    .child(
+                        Stat::new("Slope", format!("{}", self.poles * 6))
+                            .unit("dB/oct")
+                            .size(TextSize::Medium),
+                    )
+                    .child(
+                        Label::new("Drag; Shift for fine; double-click resets; wheel for slope")
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
 impl Render for Showcase {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -2000,6 +2094,10 @@ fn main() {
                     follow_offset: 0.,
                     follow_at: 2.,
                     follow_run: None,
+                    cutoff: FILTER_DEFAULT.0,
+                    peak: FILTER_DEFAULT.1,
+                    poles: 2,
+                    filter_from: FILTER_DEFAULT,
                 })
             })
             .expect("failed to open the showcase window");

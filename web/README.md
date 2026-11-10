@@ -185,7 +185,7 @@ to WebAssembly would bring them over. The liquid-metal backdrop is not ported ye
 The prototype covers the tokens, the core controls, the window frame, the agent transcript and
 composer, dialogs and approvals, the activity line, plan and changed files, the node canvas,
 preferences, Markdown, choice cards, the message queue, the conversation list, and the backdrops. Still to come: menus that open (the menu is
-styled, not positioned; the permission picker's menu is the exception), completions, plots and the instrument controls such as
+styled, not positioned; the permission picker's menu is the exception), completions, plots (and with them `LinePlot::on_drag`) and the instrument controls such as
 `PianoKeyboard`, `NoteRoll` and `ReadoutStrip`/`Readout`, and the effort picker's `note` and
 `EffortButton::disabled`. `IconName::Menu` is in the generated icons.
 
