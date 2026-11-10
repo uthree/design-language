@@ -17,6 +17,7 @@ use super::transcript::{
 };
 use crate::button::{Button, ControlSize, CopyButton};
 use crate::icon::{Icon, IconName, IconSource};
+use crate::selectable::SelectionScope;
 use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
@@ -875,6 +876,7 @@ impl ChatView {
                 NoticeKind::Status => ChatNotice::status(text.clone()),
                 NoticeKind::Error => ChatNotice::error(text.clone()),
             }
+            .id(self.child_id(id, "notice"))
             .into_any_element(),
             ChatEntry::Custom(render) => render(window, cx),
         }
@@ -967,7 +969,10 @@ impl Render for ChatView {
         } else {
             strings.jump_to_latest.clone()
         };
-        let column = div()
+        // One selection over the whole transcript: a drag runs from a question through the
+        // answer, its code and tool output into the next message, and scrolls on past the edge.
+        let column = SelectionScope::new((self.id.clone(), "selection"))
+            .scroll(&self.scroll)
             .flex()
             .flex_col()
             .w_full()

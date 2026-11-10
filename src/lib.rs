@@ -49,6 +49,7 @@ mod inline_edit;
 mod input;
 mod keyboard;
 mod layout;
+mod log_view;
 mod markdown;
 mod media;
 pub mod metal;
@@ -87,6 +88,7 @@ pub use keyboard::{PianoKeyboard, note_name};
 pub use layout::{
     Card, Disclosure, Edge, EmptyState, ListItem, OptionCard, SectionHeader, Sidebar, Tabs, Toolbar,
 };
+pub use log_view::{LogLevel, LogLine, LogView};
 pub use markdown::Markdown;
 pub use media::AudioPlayer;
 pub use metal::MetalBackdrop;
@@ -100,7 +102,10 @@ pub use progress::{
     ProgressBar, ProgressRing, Skeleton, StepList, StepState, TaskProgress, TaskState,
     skeleton_paragraph,
 };
-pub use selectable::{CopySelection, LinkHandler, SELECTABLE_CONTEXT, SelectAll, SelectableText};
+pub use selectable::{
+    BLOCK_SEPARATOR, CopySelection, LINE_SEPARATOR, LinkHandler, SELECTABLE_CONTEXT, SelectAll,
+    SelectableText, SelectionScope,
+};
 pub use strings::{ActiveStrings, Strings};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{

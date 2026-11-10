@@ -7,6 +7,7 @@ use gpui::{
 
 use crate::button::CopyButton;
 use crate::icon::{Icon, IconName};
+use crate::selectable::{LINE_SEPARATOR, SelectableText, SelectionScope};
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::ActiveTheme;
 
@@ -40,7 +41,23 @@ fn header(
         .children(trailing)
 }
 
+/// The text of line `index` of a block: selectable, and copied a line apart from the one
+/// before it.
+fn line_text(block: &ElementId, index: usize, text: SharedString) -> SelectableText {
+    SelectableText::new(
+        ElementId::NamedChild(Box::new(block.clone()), format!("line-{index}").into()),
+        text,
+    )
+    .mono()
+    .size(TextSize::Small)
+    .separator(LINE_SEPARATOR)
+}
+
 /// A block of code or command output, with an optional title bar.
+///
+/// Its text can be selected and copied across lines, exactly as given; the line numbers stay
+/// out of the copy. Inside a larger [`SelectionScope`], such as a conversation, the selection
+/// runs on into what is around it.
 #[derive(IntoElement)]
 pub struct CodeBlock {
     id: ElementId,
@@ -114,11 +131,15 @@ impl RenderOnce for CodeBlock {
                             .text_color(colors.text_faint)
                             .child(format!("{}", first + index))
                     }))
-                    .child(div().flex_1().min_w_0().child(line.to_owned()))
+                    .child(div().flex_1().min_w_0().child(line_text(
+                        &self.id,
+                        index,
+                        line.to_owned().into(),
+                    )))
                     .into_any_element()
             })
             .collect();
-        div()
+        SelectionScope::new(self.id.clone())
             .flex()
             .flex_col()
             .rounded(theme.shape.radius_md)
@@ -157,8 +178,11 @@ pub enum DiffLine {
 }
 
 /// A file change: path, line counts, and the hunks.
+///
+/// The lines can be selected and copied across, without their numbers or signs.
 #[derive(IntoElement)]
 pub struct DiffBlock {
+    id: Option<ElementId>,
     path: SharedString,
     lines: Vec<DiffLine>,
     trailing: Vec<AnyElement>,
@@ -168,10 +192,18 @@ impl DiffBlock {
     /// A diff of the file at `path`.
     pub fn new(path: impl Into<SharedString>) -> Self {
         Self {
+            id: None,
             path: path.into(),
             lines: Vec::new(),
             trailing: Vec::new(),
         }
+    }
+
+    /// A stable id, which keeps a selection in its lines from frame to frame; the path, if
+    /// none is given. Give one when the same file is shown twice in a window.
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Add a line.
@@ -220,11 +252,15 @@ impl RenderOnce for DiffBlock {
                 .into_any_element(),
         ];
         trailing.extend(self.trailing);
+        let id = self
+            .id
+            .unwrap_or_else(|| ElementId::Name(format!("diff-{}", self.path).into()));
 
         let rows: Vec<AnyElement> = self
             .lines
             .into_iter()
-            .map(|line| {
+            .enumerate()
+            .map(|(index, line)| {
                 let (number, sign, text, background, sign_color) = match line {
                     DiffLine::Context(number, text) => {
                         (Some(number), " ", text, None, colors.text_faint)
@@ -271,14 +307,17 @@ impl RenderOnce for DiffBlock {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_color(if hunk { colors.info } else { colors.text })
-                            .child(text),
+                            .child(line_text(&id, index, text).color(if hunk {
+                                TextColor::Custom(colors.info)
+                            } else {
+                                TextColor::Default
+                            })),
                     )
                     .into_any_element()
             })
             .collect();
 
-        div()
+        SelectionScope::new(id.clone())
             .flex()
             .flex_col()
             .rounded(theme.shape.radius_md)

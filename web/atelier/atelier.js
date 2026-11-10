@@ -2073,3 +2073,78 @@ export function conversationList(root, { conversations = [], selected = null, ar
     },
   };
 }
+
+// ---------------------------------------------------------------- log
+
+/// `LogView`'s counterpart: `lines` are `{ key, message, time, level, source }`, oldest first,
+/// with `level` one of `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`. A copy of a
+/// selection in it gives each record touched on a line of its own, its parts as a terminal
+/// writes them: `12s WARN app::audio: lost the device`, the source in full where the column cuts
+/// it. Returns `{ push(line), update(lines) }`.
+export function logView(root, { lines = [] } = {}) {
+  root.classList.add("at-log");
+  const row = (line) => {
+    const node = element("div", "at-log__line");
+    if (line.key != null) node.dataset.key = line.key;
+    if (line.time != null) node.append(element("span", "at-log__time", line.time));
+    if (line.level) {
+      const level = element("span", "at-log__level", line.level.toUpperCase());
+      level.dataset.level = line.level;
+      node.append(level);
+    }
+    if (line.source != null) {
+      const source = element("span", "at-log__source", line.source);
+      source.title = line.source;
+      node.append(source);
+    }
+    node.append(element("span", "at-log__message", line.message ?? ""));
+    return node;
+  };
+  const update = (next) => root.replaceChildren(...next.map(row));
+  update(lines);
+  root.addEventListener("copy", (event) => {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    // The selected part of one piece of a record.
+    const part = (node) => {
+      if (!range.intersectsNode(node)) return null;
+      const piece = document.createRange();
+      piece.selectNodeContents(node);
+      if (range.compareBoundaryPoints(Range.START_TO_START, piece) > 0) {
+        piece.setStart(range.startContainer, range.startOffset);
+      }
+      if (range.compareBoundaryPoints(Range.END_TO_END, piece) < 0) {
+        piece.setEnd(range.endContainer, range.endOffset);
+      }
+      const text = piece.toString();
+      return text === "" ? null : text;
+    };
+    const copied = [];
+    for (const line of root.querySelectorAll(".at-log__line")) {
+      let text = "";
+      let pending = "";
+      for (const [selector, after] of [["time", " "], ["level", " "], ["source", ": "], ["message", ""]]) {
+        const node = line.querySelector(`.at-log__${selector}`);
+        const piece = node && part(node);
+        if (node && !piece && text === "") pending = "";
+        if (piece) {
+          text += (text === "" ? "" : pending) + piece;
+        }
+        if (node) pending = text === "" ? "" : after;
+      }
+      if (text !== "") copied.push(text);
+    }
+    if (copied.length === 0) return;
+    event.clipboardData.setData("text/plain", copied.join("\n"));
+    event.preventDefault();
+  });
+  return {
+    push(line) {
+      const near = root.scrollHeight - root.scrollTop - root.clientHeight <= TAIL_SLACK;
+      root.append(row(line));
+      if (near) root.scrollTop = root.scrollHeight;
+    },
+    update,
+  };
+}

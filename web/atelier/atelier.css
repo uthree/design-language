@@ -2637,3 +2637,34 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
   color: var(--at-text-muted);
   font-size: var(--at-size-sm);
 }
+
+/* ---------------------------------------------------------------- log */
+
+/* `LogView`: records one to a line in the monospaced face, the time, the level, the source and
+   the message. The page's own selection runs across them; `logView(..)` in atelier.js copies a
+   selection as a terminal would, `12s WARN source: message`. Only warnings and errors are
+   coloured. */
+.at-log {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--at-font-mono);
+  font-size: var(--at-size-xs);
+  color: var(--at-text);
+  cursor: text;
+}
+
+.at-log__line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--at-space-sm);
+  min-width: 0;
+  padding: 1px var(--at-space-xs);
+}
+
+.at-log__time { flex: none; min-width: 32px; color: var(--at-text-faint); }
+.at-log__level { flex: none; width: 44px; color: var(--at-text-faint); }
+.at-log__level[data-level="error"] { color: var(--at-danger); }
+.at-log__level[data-level="warn"] { color: var(--at-warning); }
+.at-log__source { flex: none; width: var(--_source-width, 120px); overflow: hidden; white-space: nowrap; color: var(--at-text-faint); }
+.at-log__message { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
