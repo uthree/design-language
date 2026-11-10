@@ -41,6 +41,37 @@ pub enum Decision {
 /// plan, a card of choices.
 pub type CustomEntry = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
+/// A file or other context sent with a message, drawn as a chip above its bubble.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ChatAttachment {
+    /// What the chip says: a file name, "Bars 17–24".
+    pub label: SharedString,
+    /// What kind of thing it is; a file by default.
+    pub icon: IconSource,
+}
+
+impl ChatAttachment {
+    /// A file called `label`.
+    pub fn new(label: impl Into<SharedString>) -> Self {
+        Self {
+            label: label.into(),
+            icon: IconName::File.into(),
+        }
+    }
+
+    /// Another kind of context: `IconName::Music` for a clip, `IconName::Image` for a picture.
+    pub fn icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.icon = icon.into();
+        self
+    }
+}
+
+impl<T: Into<SharedString>> From<T> for ChatAttachment {
+    fn from(label: T) -> Self {
+        Self::new(label)
+    }
+}
+
 /// One entry of the conversation, as plain values. Build one with the constructors and
 /// [`ChatView::push`] it; change it later through its [`EntryId`].
 #[derive(Clone)]
@@ -49,8 +80,8 @@ pub enum ChatEntry {
     User {
         /// Message text, exactly as typed.
         text: SharedString,
-        /// Labels of the attached context, drawn as chips above the bubble.
-        attachments: Vec<SharedString>,
+        /// The attached context, drawn as chips above the bubble.
+        attachments: Vec<ChatAttachment>,
     },
     /// What the agent answered.
     Assistant {
@@ -207,10 +238,11 @@ impl ChatEntry {
         Self::Custom(Rc::new(render))
     }
 
-    /// Attach context to a user entry; other entries are left as they are.
-    pub fn attachment(mut self, label: impl Into<SharedString>) -> Self {
+    /// Attach context to a user entry: a label (a file), or a [`ChatAttachment`] with its own
+    /// icon. Other entries are left as they are.
+    pub fn attachment(mut self, attachment: impl Into<ChatAttachment>) -> Self {
         if let Self::User { attachments, .. } = &mut self {
-            attachments.push(label.into());
+            attachments.push(attachment.into());
         }
         self
     }
@@ -323,6 +355,16 @@ pub enum ChatEvent {
         /// The indices of the picked answers, in order.
         picked: Vec<usize>,
     },
+    /// The person pressed an attachment chip, with [`ChatView::open_attachments`] on: open it
+    /// or preview it.
+    OpenAttachment {
+        /// The message it was sent with.
+        entry: EntryId,
+        /// Which of the message's attachments, from 0.
+        index: usize,
+        /// The attachment itself.
+        attachment: ChatAttachment,
+    },
 }
 
 /// How close to the end, in pixels, still counts as reading the latest entry.
@@ -361,6 +403,7 @@ pub struct ChatView {
     logo: Option<IconSource>,
     anonymous: bool,
     copy_buttons: bool,
+    open_attachments: bool,
     reading_width: Option<Pixels>,
     capacity: Option<usize>,
     empty: Option<CustomEntry>,
@@ -383,6 +426,7 @@ impl ChatView {
             logo: None,
             anonymous: false,
             copy_buttons: true,
+            open_attachments: false,
             reading_width: None,
             capacity: None,
             empty: None,
@@ -412,6 +456,13 @@ impl ChatView {
     /// Leave out the copy buttons under messages.
     pub fn without_copy_buttons(mut self) -> Self {
         self.copy_buttons = false;
+        self
+    }
+
+    /// Make the attachment chips on the person's messages pressable: a click, Enter or Space
+    /// emits [`ChatEvent::OpenAttachment`], for the application to open the file or preview it.
+    pub fn open_attachments(mut self) -> Self {
+        self.open_attachments = true;
         self
     }
 
@@ -748,15 +799,26 @@ impl ChatView {
         match entry {
             ChatEntry::User { text, attachments } => {
                 let mut message = UserMessage::new(text.clone()).id(self.child_id(id, "user"));
-                for (index, label) in attachments.iter().enumerate() {
-                    message = message.attachment(ContextChip::new(
+                for (index, attachment) in attachments.iter().enumerate() {
+                    let mut chip = ContextChip::new(
                         ElementId::NamedChild(
                             Box::new(self.child_id(id, "attachment")),
                             index.to_string().into(),
                         ),
-                        IconName::File,
-                        label.clone(),
-                    ));
+                        attachment.icon.clone(),
+                        attachment.label.clone(),
+                    );
+                    if self.open_attachments {
+                        let attachment = attachment.clone();
+                        chip = chip.on_click(cx.listener(move |_, _, _, cx| {
+                            cx.emit(ChatEvent::OpenAttachment {
+                                entry: id,
+                                index,
+                                attachment: attachment.clone(),
+                            });
+                        }));
+                    }
+                    message = message.attachment(chip);
                 }
                 if self.copy_buttons {
                     message =

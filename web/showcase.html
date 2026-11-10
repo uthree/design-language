@@ -22,7 +22,6 @@
       .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
       .swatches span { height: 22px; border-radius: var(--at-radius-xs); }
       .meters { display: flex; gap: 3px; height: 64px; }
-      .meters .at-meter > span { --_full: 64px; }
       .content-tabs { padding: var(--at-space-md) var(--at-space-xl) 0; }
       #content { display: flex; flex-direction: column; overflow: hidden; }
       .panel { flex: 1; min-height: 0; overflow: auto; }
@@ -37,6 +36,14 @@
       .welcome__words { display: flex; flex-direction: column; align-items: center; gap: var(--at-space-xs); }
       .welcome__name { font-size: var(--at-size-display); }
       .content--clear { background: transparent; }
+      .figures { align-items: flex-end; gap: var(--at-space-lg); }
+      .figures__meters { align-items: stretch; flex-wrap: nowrap; gap: 3px; }
+      .figures__meters .stack { margin-left: var(--at-space-sm); }
+      .follow-strip { position: relative; flex: 1; min-width: 200px; height: 96px; overflow: hidden; border: 1px solid var(--at-border); border-radius: var(--at-radius-md); background: var(--at-background); }
+      .follow-strip__lane { position: absolute; inset: 0 auto 0 0; }
+      .follow-strip__bar { position: absolute; top: 0; bottom: 0; padding: 2px 4px; border-left: 1px solid var(--at-separator); color: var(--at-text-faint); font: var(--at-size-xs) var(--at-font-mono); }
+      .follow-strip__clip { position: absolute; top: 26px; height: 28px; border: 1px solid var(--at-accent); border-radius: var(--at-radius-sm); background: var(--at-accent-wash); }
+      .follow-strip__head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--at-playhead); }
       @media (max-width: 1100px) { .inspector { display: none; } }
       @media (max-width: 760px) { .sidebar { display: none; } }
     </style>
@@ -79,7 +86,7 @@
               <div>uthree</div>
               <div class="at-small at-faint">auris-studio</div>
             </div>
-            <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Settings"><span data-icon="settings"></span></button>
+            <button class="at-button at-button--ghost at-button--sm at-button--icon" data-tooltip="Settings" data-shortcut="secondary-,"><span data-icon="settings"></span></button>
           </div>
         </nav>
 
@@ -119,8 +126,8 @@
                 <div class="at-section-header"><h3 class="at-heading">Transport</h3><span class="at-badge at-badge--success">Live</span></div>
                 <div class="row">
                   <button class="at-button at-button--ghost at-button--icon" data-tooltip="Back"><span data-icon="skip-back"></span></button>
-                  <button class="at-button at-button--ghost at-button--icon" aria-pressed="true" data-tooltip="Play"><span data-icon="play"></span></button>
-                  <button class="at-button at-button--ghost at-button--icon" data-tooltip="Record" style="color: var(--at-record)"><span data-icon="record"></span></button>
+                  <button class="at-button at-button--ghost at-button--icon" aria-pressed="true" data-tooltip="Play" data-shortcut="space"><span data-icon="play"></span></button>
+                  <button class="at-button at-button--ghost at-button--icon" data-tooltip="Record" data-shortcut="r" style="color: var(--at-record)"><span data-icon="record"></span></button>
                   <span class="at-display" style="font-size: var(--at-size-lg)">013.2.1</span>
                   <span class="at-mono at-muted">120 BPM · 4/4</span>
                 </div>
@@ -142,6 +149,46 @@
                   <span id="inline-name" tabindex="0" title="Double-click to rename">Lead vocal</span>
                   <span class="at-small at-muted">double-click to rename in place</span>
                 </div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Event list</h3></div>
+                <div id="event-table" style="height: 180px"></div>
+                <span class="at-small at-muted">Double-click a cell to edit it; Return moves down the column.</span>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Figures</h3></div>
+                <div class="row figures">
+                  <div class="row figures__meters">
+                    <div class="at-meter" id="meter-left"></div>
+                    <div class="at-meter" id="meter-right"></div>
+                    <div class="stack">
+                      <div class="at-stat at-stat--md"><span class="at-stat__caption">Peak L</span><span class="at-stat__figure"><span class="at-stat__value">−1.5</span><span class="at-stat__unit">dB</span></span></div>
+                      <div class="at-stat at-stat--md" data-tone="danger"><span class="at-stat__caption">Peak R</span><span class="at-stat__figure"><span class="at-stat__value">+0.8</span><span class="at-stat__unit">dB · clipped</span></span></div>
+                    </div>
+                  </div>
+                  <div class="at-stat"><span class="at-stat__caption">Integrated</span><span class="at-stat__figure"><span class="at-stat__value">−14.2</span><span class="at-stat__unit">LUFS</span></span></div>
+                  <div class="at-stat" data-tone="danger"><span class="at-stat__caption">True peak</span><span class="at-stat__figure"><span class="at-stat__value">+0.4</span><span class="at-stat__unit">dBTP</span></span></div>
+                  <div class="at-stat"><span class="at-stat__caption">Range</span><span class="at-stat__figure"><span class="at-stat__value"></span><span class="at-stat__unit">LU</span></span></div>
+                  <div class="at-stat at-stat--display"><span class="at-stat__caption">Tempo</span><span class="at-stat__figure"><span class="at-stat__value">120.00</span><span class="at-stat__unit">BPM</span></span></div>
+                  <div class="at-stat at-stat--inline at-stat--sm"><span class="at-stat__caption">Position</span><span class="at-stat__figure"><span class="at-stat__value">013.2.1</span></span></div>
+                </div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Colours</h3></div>
+                <div class="row" id="caption-swatches"></div>
+                <div id="caption-picker" style="max-width: 340px" hidden></div>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Following the playhead</h3></div>
+                <div class="row">
+                  <div id="follow-strip" class="follow-strip"></div>
+                  <button id="follow-play" class="at-button at-button--icon" title="Play"></button>
+                </div>
+                <span class="at-small at-muted">Scroll the strip while it plays.</span>
               </div>
 
               <div class="at-card at-card--padded">
@@ -224,10 +271,10 @@
                 <div class="at-section-header"><h3 class="at-heading">Categories and meters</h3></div>
                 <div class="swatches" id="categories"></div>
                 <div class="meters">
-                  <div class="at-meter"><span style="height: 82%; --_full: 64px"></span></div>
-                  <div class="at-meter"><span style="height: 64%; --_full: 64px"></span></div>
-                  <div class="at-meter"><span style="height: 95%; --_full: 64px"></span></div>
-                  <div class="at-meter"><span style="height: 40%; --_full: 64px"></span></div>
+                  <div class="at-meter" style="--level: 0.82; --peak: 0.86"><span class="at-meter__peak"></span></div>
+                  <div class="at-meter" style="--level: 0.64; --peak: 0.7"><span class="at-meter__peak"></span></div>
+                  <div class="at-meter" style="--level: 0.95; --peak: 0.97" data-clipped><span class="at-meter__peak"></span></div>
+                  <div class="at-meter" style="--level: 0.4"></div>
                 </div>
               </div>
 
@@ -300,7 +347,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, inlineEdit, keybindings, logView, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, colorPicker, colorSwatch, conversationList, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, logView, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -319,6 +366,149 @@
       };
       hydrate();
       sync();
+
+      // An event list: notes, a controller and a bend, the second note sounding.
+      const events = [
+        ["1.1", "C4", "96", 0],
+        ["1.2", "E4", "88", 0],
+        ["1.3", "CC11 Expression", "72", 1],
+        ["1.3", "G4", "90", 0],
+        ["2.1", "Pitch bend", "+2", 2],
+        ["2.1", "C5", "100", 0],
+        ["2.3", "B4", "84", 0],
+      ].map(([at, event, value, family], index) => ({ cells: [at, event, value], mark: family, tinted: family > 0, active: index === 1 }));
+      const eventTable = table(document.getElementById("event-table"), {
+        columns: [{ title: "Pos", width: 48, end: true, mono: true }, { title: "Event" }, { title: "Value", width: 56, end: true, mono: true }],
+        rows: events,
+      });
+      const editCell = (row, column) => {
+        const cell = eventTable.cell(row, column);
+        if (!cell) return;
+        cell.scrollIntoView({ block: "nearest" });
+        let walked = false;
+        const field = inlineEdit(cell, {
+          minWidth: 80,
+          onCommit: (text) => {
+            events[row].cells[column] = text.trim();
+            eventTable.update(events);
+            // Return walks to the same cell of the next row, as a list editor does.
+            if (walked && row + 1 < events.length) requestAnimationFrame(() => editCell(row + 1, column));
+          },
+        });
+        // Seen before the field's own Return handler, which commits.
+        field.field.addEventListener("keydown", (event) => (walked = event.key === "Enter" && !event.isComposing), true);
+      };
+      eventTable.cell(0, 0).closest(".at-table").addEventListener("atelier:cell-activate", (event) => editCell(event.detail.row, event.detail.column));
+
+      // A strip of bars that pages along as it plays; scrolled away, it stays put and offers a
+      // way back. The page draws the strip; the kit gives the following and the button.
+      {
+        const length = 64, span = 16, beatsPerSecond = 4;
+        const strip = document.getElementById("follow-strip");
+        const lane = document.createElement("div");
+        lane.className = "follow-strip__lane";
+        for (let bar = 0; bar < length / 4; bar++) {
+          const line = document.createElement("div");
+          line.className = "follow-strip__bar";
+          line.style.left = `${((bar * 4) / length) * 100}%`;
+          line.textContent = bar + 1;
+          lane.append(line);
+        }
+        for (const [start, size] of [[2, 6], [12, 10], [26, 4], [34, 12], [50, 8]]) {
+          const clip = document.createElement("div");
+          clip.className = "follow-strip__clip";
+          clip.style.left = `${(start / length) * 100}%`;
+          clip.style.width = `${(size / length) * 100}%`;
+          lane.append(clip);
+        }
+        const head = document.createElement("div");
+        head.className = "follow-strip__head";
+        lane.append(head);
+        const back = document.createElement("button");
+        back.className = "at-button at-button--sm at-back-to-playhead";
+        back.hidden = true;
+        strip.append(lane, back);
+        const following = follow();
+        let offset = 0, at = 2, playing = false, then = 0;
+        const beatWidth = () => strip.clientWidth / span;
+        const draw = () => {
+          lane.style.width = `${beatWidth() * length}px`;
+          lane.style.transform = `translateX(${-offset * beatWidth()}px)`;
+          head.style.left = `${at * beatWidth()}px`;
+          const side = following.side(offset, span, at);
+          back.hidden = !side;
+          if (side && back.dataset.side !== side) {
+            back.dataset.side = side;
+            back.replaceChildren(...(side === "before" ? [icon("chevron-left"), "Back to playhead"] : ["Back to playhead", icon("chevron-right")]));
+          }
+        };
+        const tick = (now) => {
+          if (!playing) return;
+          at = (at + ((now - then) / 1000) * beatsPerSecond) % length;
+          then = now;
+          const to = following.update(offset, span, at, true);
+          if (to != null) offset = Math.min(to, length - span);
+          draw();
+          requestAnimationFrame(tick);
+        };
+        const play = document.getElementById("follow-play");
+        const showPlay = () => {
+          play.replaceChildren(icon(playing ? "pause" : "play"));
+          play.title = playing ? "Pause" : "Play";
+        };
+        play.addEventListener("click", () => {
+          playing = !playing;
+          following.update(offset, span, at, playing);
+          showPlay();
+          if (playing) {
+            then = performance.now();
+            requestAnimationFrame(tick);
+          }
+        });
+        strip.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const along = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+          offset = Math.min(Math.max(offset + along / beatWidth(), 0), length - span);
+          draw();
+        }, { passive: false });
+        back.addEventListener("click", () => {
+          offset = Math.min(following.page(span, at), length - span);
+          following.engage();
+          draw();
+        });
+        showPlay();
+        draw();
+      }
+
+      // Meters on the dB scale; the right one went over and holds its clip light.
+      // Caption colours: a swatch each, and a picker under the row for the one pressed.
+      {
+        const captions = [["Chords", "#F4F1EA"], ["Lyrics", "#FFFFFF"], ["Meter", "#3D7BFF"]];
+        const row = document.getElementById("caption-swatches");
+        const holder = document.getElementById("caption-picker");
+        let open = null;
+        const swatches = captions.map(([name, color], index) => {
+          const swatch = colorSwatch(color, { label: name });
+          swatch.addEventListener("click", () => {
+            open = open === index ? null : index;
+            swatches.forEach((other, at) => other.setAttribute("aria-pressed", String(at === open)));
+            holder.hidden = open === null;
+            if (open !== null) colorPicker(holder, { value: captions[open][1], presets: ["#FFFFFF", "#F4F1EA", "#D8D2C4", "#101010", "#FFC94A"] });
+          });
+          const item = document.createElement("label");
+          item.className = "row";
+          item.append(swatch, name);
+          row.append(item);
+          return swatch;
+        });
+        holder.addEventListener("atelier:color", ({ detail: { value } }) => {
+          captions[open][1] = value;
+          swatches[open].style.setProperty("--_color", value);
+          swatches[open].title = `${captions[open][0]} · ${value}`;
+        });
+      }
+      setMeter(document.getElementById("meter-left"), { level: meterPosition(-4), peak: meterPosition(-1.5) });
+      setMeter(document.getElementById("meter-right"), { level: meterPosition(-7), peak: meterPosition(0.8), clipped: true });
 
       // A label edited where it is shown: Return or a press elsewhere commits, Escape closes.
       const trackName = document.getElementById("inline-name");
@@ -360,7 +550,9 @@
       if (params.get("view")) showView(params.get("view"));
 
       // The conversation: a ChatView driven as an application would, with a mock agent.
-      const conversation = chat(document.getElementById("chat"), { logo: "logo-anthropic" });
+      const conversation = chat(document.getElementById("chat"), { logo: "logo-anthropic", openAttachments: true });
+      // An application opens the file; the page says so in the transcript.
+      document.getElementById("chat").addEventListener("atelier:open-attachment", (event) => conversation.push({ kind: "status", text: `Opened ${event.detail.label}` }));
       conversation.push({ kind: "user", text: "The playback test fails about one run in ten on Windows. Find out why and fix it.", attachments: ["engine/tests/playback.rs"] });
       conversation.push({ kind: "reasoning", summary: "Thought for 9 s", text: "One in ten points at a race rather than a logic error. The test starts the transport and reads the position straight away; if the audio thread has not taken the first block yet, the position is still zero." });
       conversation.push({ kind: "tool", name: "bash", summary: "Ran the test 50 times", state: "succeeded", icon: "code", detail: "$ for i in $(seq 50); do cargo test -p auris-engine playback; done\n→ 6 failures in 50 runs" });
@@ -530,10 +722,10 @@
       permissionPicker(document.getElementById("permission-sample"));
       // The node canvas, wired as the gpui node_editor's tail end.
       const graphRoot = document.getElementById("graph");
-      nodeCanvas(graphRoot, {
+      const graph = nodeCanvas(graphRoot, {
         portTypes: ["Model", "Conditioning", "Latent", "Audio", "Value"],
         nodes: [
-          { title: "Sampler", icon: "brain", x: 0, y: 10, width: 220, inputs: [{ name: "Model", kind: 0 }, { name: "Positive", kind: 1 }, { name: "Latent", kind: 2 }], outputs: [{ name: "Latent", kind: 2 }], fields: [{ type: "number", name: "Steps", value: "30", fraction: 0.3 }, { type: "choice", name: "Sampler", value: "DPM++ 2M" }], state: "done", seconds: 4.2 },
+          { title: "Sampler", icon: "brain", x: 0, y: 10, width: 220, inputs: [{ name: "Model", kind: 0 }, { name: "Positive", kind: 1 }, { name: "Latent", kind: 2 }], outputs: [{ name: "Latent", kind: 2 }], fields: [{ type: "number", name: "Steps", value: "30", fraction: 0.3 }, { type: "choice", name: "Sampler", value: "DPM++ 2M" }], comments: ["Try 40 steps for the outro\nKeep the seed for v2"], state: "done", seconds: 4.2 },
           { title: "Decode audio", icon: "waveform", x: 270, y: 10, inputs: [{ name: "Latent", kind: 2 }], outputs: [{ name: "Audio", kind: 3 }], state: "running", progress: 0.45 },
           { title: "Loudness normalize", icon: "waveform", x: 270, y: 150, inputs: [{ name: "Audio", kind: 3 }], outputs: [{ name: "Audio", kind: 3 }], fields: [{ type: "number", name: "Target", value: "−14 LUFS", fraction: 0.6 }], byAgent: true },
           { title: "Save audio", icon: "music", x: 520, y: 60, inputs: [{ name: "Audio", kind: 3 }], fields: [{ type: "text", name: "File name", value: "pad-textures-{n}.wav" }] },
@@ -543,6 +735,21 @@
           { from: 1, output: 0, to: 2, input: 0 },
           { from: 2, output: 0, to: 3, input: 0 },
         ],
+      });
+      // A note on a node is edited where it is drawn.
+      graphRoot.addEventListener("atelier:node-comment", ({ detail: { id, index, target } }) => {
+        const comments = [...graph.nodes().find((node) => node.id === id).comments];
+        inlineEdit(target, {
+          value: comments[index],
+          multiline: true,
+          allowEmpty: true,
+          onCommit: (text) => {
+            if (text.trim()) comments[index] = text.trim();
+            else comments.splice(index, 1);
+            graph.update(id, { comments });
+            document.getElementById("graph-event").textContent = `node-comment: ${id} #${index} edited`;
+          },
+        });
       });
       for (const name of ["node-select", "node-move", "node-connect", "node-disconnect", "node-remove", "node-keep", "node-undo"]) {
         graphRoot.addEventListener(`atelier:${name}`, (event) => (document.getElementById("graph-event").textContent = `${name}: ${JSON.stringify(event.detail)}`));

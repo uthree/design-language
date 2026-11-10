@@ -32,7 +32,13 @@ fn open(cx: &mut TestAppContext) -> (Entity<NodeCanvas>, Log, &mut VisualTestCon
     let (host, window) = cx.add_window_view(|_, cx| {
         let canvas = cx.new(|cx| {
             let mut canvas = NodeCanvas::new("graph").port_types(["Audio", "Value"]);
-            canvas.add(GraphNode::new("Source").at(0., 0.).output("Audio", 0), cx);
+            canvas.add(
+                GraphNode::new("Source")
+                    .at(0., 0.)
+                    .output("Audio", 0)
+                    .comment("Under the vocal\nChorus only"),
+                cx,
+            );
             canvas.add(
                 GraphNode::new("Sink")
                     .at(320., 0.)
@@ -124,4 +130,31 @@ fn keeping_the_assistants_node_clears_its_mark(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(log.borrow().contains(&NodeCanvasEvent::Kept(NodeId(2))));
     assert!(canvas.read_with(cx, |canvas, _| !canvas.node(NodeId(2)).unwrap().by_agent));
+}
+
+#[gpui::test]
+fn pressing_a_comment_asks_to_edit_it_and_does_not_move_the_node(cx: &mut TestAppContext) {
+    let (canvas, log, cx) = open(cx);
+    let before = canvas.read_with(cx, |canvas, _| canvas.node(NodeId(0)).unwrap().position);
+    let note = center("graph-comment-0-0", cx);
+    cx.simulate_mouse_down(note, MouseButton::Left, Modifiers::default());
+    cx.simulate_mouse_move(
+        note + gpui::point(gpui::px(40.), gpui::px(30.)),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.simulate_mouse_up(note, MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(
+        log.borrow().as_slice(),
+        [
+            NodeCanvasEvent::Selected(Some(NodeId(0))),
+            NodeCanvasEvent::CommentPressed {
+                node: NodeId(0),
+                index: 0
+            }
+        ]
+    );
+    let after = canvas.read_with(cx, |canvas, _| canvas.node(NodeId(0)).unwrap().position);
+    assert_eq!(before, after);
 }

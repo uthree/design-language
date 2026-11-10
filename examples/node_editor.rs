@@ -18,9 +18,9 @@ use atelier::agent::{
 use atelier::graph::{GraphNode, NodeCanvas, NodeCanvasEvent, NodeField, NodeId, NodeState, Wire};
 use atelier::{
     ActiveTheme, Appearance, AudioPlayer, Badge, Button, ButtonVariant, ControlSize, Direction,
-    Disclosure, Divider, Edge, IconName, Label, ListItem, ProviderLogo, SectionHeader, Segment,
-    SegmentedControl, Sidebar, Skeleton, Slider, StatusDot, TaskProgress, TextColor, TextField,
-    TextSize, Theme, TitleBar, Tone, WindowFrame,
+    Disclosure, Divider, Edge, IconName, InlineEdit, Label, ListItem, ProviderLogo, SectionHeader,
+    Segment, SegmentedControl, Sidebar, Skeleton, Slider, SpotBook, StatusDot, TaskProgress,
+    TextColor, TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame,
 };
 use common::Themed;
 use gpui::{
@@ -366,6 +366,11 @@ struct NodeEditor {
     run_progress: (usize, usize),
     running_title: &'static str,
     history: Vec<RunRecord>,
+    /// Where the canvas drew each comment, so the one pressed is edited over itself.
+    spots: SpotBook,
+    /// The comment open for editing: its node and which of its comments.
+    editing: Option<(NodeId, usize)>,
+    comment: Entity<TextInput>,
 }
 
 impl Themed for NodeEditor {
@@ -407,8 +412,12 @@ fn graph_node(kind: Kind, params: &[(&'static str, Param)], x: f32, y: f32) -> G
 
 impl NodeEditor {
     fn new(choice: (Direction, Appearance), cx: &mut Context<Self>) -> Self {
-        let canvas =
-            cx.new(|_| NodeCanvas::new("graph").port_types(DataType::ALL.map(DataType::label)));
+        let spots = SpotBook::new();
+        let canvas = cx.new(|_| {
+            NodeCanvas::new("graph")
+                .port_types(DataType::ALL.map(DataType::label))
+                .spots(&spots)
+        });
         let layout = [
             (Kind::LoadModel, 0., 20.),
             (Kind::TempoKey, 0., 250.),
@@ -428,8 +437,12 @@ impl NodeEditor {
                 .map(|(kind, x, y)| {
                     let params = kind.spec().params.to_vec();
                     // The assistant added the normalizer; it waits to be kept.
-                    let node =
+                    let mut node =
                         graph_node(*kind, &params, *x, *y).by_agent(*kind == Kind::Normalize);
+                    // A note left for later, as on a mixer's scribble strip.
+                    if *kind == Kind::Sampler {
+                        node = node.comment("Try 40 steps for the outro\nKeep the seed for v2");
+                    }
                     let id = canvas.add(node, cx);
                     nodes.push((
                         id,
@@ -483,6 +496,9 @@ impl NodeEditor {
                 seconds: 6.8,
                 reused: 0,
             }],
+            spots,
+            editing: None,
+            comment: cx.new(|cx| TextInput::new(cx).multiline()),
         }
     }
 
@@ -512,6 +528,17 @@ impl NodeEditor {
                 if self.selected == Some(*id) {
                     self.selected = None;
                 }
+            }
+            NodeCanvasEvent::CommentPressed { node, index } => {
+                let text = self
+                    .canvas
+                    .read(cx)
+                    .node(*node)
+                    .and_then(|graph| graph.comments.get(*index).cloned())
+                    .unwrap_or_default();
+                self.comment
+                    .update(cx, |input, cx| input.set_text(text.to_string(), cx));
+                self.editing = Some((*node, *index));
             }
             NodeCanvasEvent::Moved(_) | NodeCanvasEvent::Kept(_) => {}
         }
@@ -1117,6 +1144,50 @@ fn preview(
     }
 }
 
+impl NodeEditor {
+    /// The comment being edited, in a field over the note itself.
+    fn comment_edit(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<InlineEdit> {
+        let (node, index) = self.editing?;
+        let over = self
+            .spots
+            .get(&NodeCanvas::comment_key(node, index), window)?;
+        let original = self
+            .canvas
+            .read(cx)
+            .node(node)?
+            .comments
+            .get(index)?
+            .clone();
+        Some(
+            InlineEdit::new("edit-comment", &self.comment, over)
+                .original(original)
+                .allow_empty()
+                .on_commit(cx.listener(move |this, text: &SharedString, _, cx| {
+                    let text = text.trim().to_owned();
+                    this.canvas.update(cx, |canvas, cx| {
+                        canvas.update_node(
+                            node,
+                            |graph| {
+                                if text.is_empty() {
+                                    graph.comments.remove(index);
+                                } else {
+                                    graph.comments[index] = text.into();
+                                }
+                            },
+                            cx,
+                        )
+                    });
+                    this.editing = None;
+                    cx.notify();
+                }))
+                .on_close(cx.listener(|this, _, _, cx| {
+                    this.editing = None;
+                    cx.notify();
+                })),
+        )
+    }
+}
+
 impl Render for NodeEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -1183,7 +1254,8 @@ impl Render for NodeEditor {
                             .flex_1()
                             .min_w_0()
                             .h_full()
-                            .child(self.canvas.clone()),
+                            .child(self.canvas.clone())
+                            .children(self.comment_edit(window, cx)),
                     )
                     .map(|row| {
                         if self.agent_open {

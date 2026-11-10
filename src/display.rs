@@ -295,14 +295,28 @@ impl RenderOnce for Divider {
     }
 }
 
-/// A level meter: green to yellow to red, with a peak hold line.
+/// A level meter: green to yellow to red, with a peak hold line and a clip light.
+///
+/// Levels are positions from 0 to 1 on the meter's own scale. Signal in dBFS goes through
+/// [`LevelMeter::position`] (or [`LevelMeter::db`]), whose scale gives the working range room:
+/// green up to −6 dB, yellow up to full scale, red only over it, down to a floor of −60 dB.
+///
+/// A vertical meter fills the height its parent gives it, stretched or not; a horizontal one
+/// the width.
 #[derive(IntoElement)]
 pub struct LevelMeter {
     level: f32,
     peak: Option<f32>,
+    clipped: bool,
     vertical: bool,
     thickness: Pixels,
 }
+
+/// The quietest level a meter shows, in dBFS; anything at or below it is an empty meter.
+pub const METER_FLOOR_DB: f32 = -60.;
+
+/// Points on the meter's dB scale: (dBFS, position). Straight between them.
+const METER_SCALE: [(f32, f32); 4] = [(METER_FLOOR_DB, 0.), (-6., 0.7), (0., 0.9), (6., 1.)];
 
 impl LevelMeter {
     /// A meter showing `level`, from 0 (silence) to 1 (full scale), on the display's own curve.
@@ -310,9 +324,32 @@ impl LevelMeter {
         Self {
             level: level.clamp(0., 1.),
             peak: None,
+            clipped: false,
             vertical: true,
             thickness: px(6.),
         }
+    }
+
+    /// A meter showing a level in dBFS, on the scale of [`LevelMeter::position`].
+    pub fn db(db: f32) -> Self {
+        Self::new(Self::position(db))
+    }
+
+    /// Where `db` (dBFS) sits on a meter: 0 at the floor of −60 dB and below (and for −∞ or
+    /// NaN), 0.7 at −6 dB where green turns yellow, 0.9 at full scale where yellow turns red,
+    /// 1 at +6 dB.
+    pub fn position(db: f32) -> f32 {
+        if db.is_nan() || db <= METER_FLOOR_DB {
+            return 0.;
+        }
+        let db = db.min(METER_SCALE[3].0);
+        METER_SCALE
+            .windows(2)
+            .find(|pair| db <= pair[1].0)
+            .map_or(1., |pair| {
+                let ((low_db, low), (high_db, high)) = (pair[0], pair[1]);
+                low + (db - low_db) / (high_db - low_db) * (high - low)
+            })
     }
 
     /// Change the level, keeping the other settings.
@@ -324,6 +361,19 @@ impl LevelMeter {
     /// Peak hold position.
     pub fn peak(mut self, peak: f32) -> Self {
         self.peak = Some(peak.clamp(0., 1.));
+        self
+    }
+
+    /// Peak hold in dBFS.
+    pub fn peak_db(self, db: f32) -> Self {
+        self.peak(Self::position(db))
+    }
+
+    /// Light the clip light at the hot end: the signal went over since the person last
+    /// cleared it. The latch is the application's, as an engine's clip flag is; put it out when
+    /// they click the meter or its strip, never on a timer, so a clip heard once is not missed.
+    pub fn clipped(mut self, clipped: bool) -> Self {
+        self.clipped = clipped;
         self
     }
 
@@ -343,13 +393,17 @@ impl LevelMeter {
 /// Where the meter turns from safe to hot, and from hot to clipping.
 const METER_ZONES: [f32; 2] = [0.7, 0.9];
 
+/// How long the clip light is along the meter.
+const CLIP_LIGHT: Pixels = px(3.);
+
 impl RenderOnce for LevelMeter {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let track = theme.colors.sunken;
         let colors = theme.colors.meter;
         let peak_color = theme.colors.text;
-        let (level, peak, vertical) = (self.level, self.peak, self.vertical);
+        let clip_color = theme.colors.danger;
+        let (level, peak, clipped, vertical) = (self.level, self.peak, self.clipped, self.vertical);
         let element = canvas(
             |_, _, _| {},
             move |bounds: Bounds<Pixels>, _, window, _| {
@@ -380,17 +434,47 @@ impl RenderOnce for LevelMeter {
                         window.paint_quad(fill(span(from, to), *color));
                     }
                 }
-                if let Some(peak) = peak {
+                if let Some(peak) = peak.filter(|peak| *peak > 0.001) {
                     let at = (peak - 0.012).max(0.);
                     window.paint_quad(fill(span(at, at + 0.012), peak_color));
                 }
+                // At the end the signal grows towards, where a console's own light sits.
+                if clipped && length > px(0.) {
+                    let light = (CLIP_LIGHT / length).min(1.);
+                    window.paint_quad(fill(span(1. - light, 1.), clip_color));
+                }
             },
-        );
-        if self.vertical {
-            element.w(self.thickness).h_full()
+        )
+        // Pinned to all four sides of its frame, so it takes the frame's size however that was
+        // arrived at: a stretched row has a height to fill, but none a percentage can resolve.
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .left_0()
+        .right_0();
+        let frame = div().relative().flex_none().child(element);
+        if vertical {
+            frame.w(self.thickness).h_full().min_h(px(16.))
         } else {
-            element.h(self.thickness).w_full()
+            frame.h(self.thickness).w_full().min_w(px(16.))
         }
+    }
+}
+
+#[cfg(test)]
+mod meter_tests {
+    use super::LevelMeter;
+
+    #[test]
+    fn the_scale_keeps_its_zones_on_round_numbers() {
+        assert_eq!(LevelMeter::position(f32::NEG_INFINITY), 0.);
+        assert_eq!(LevelMeter::position(f32::NAN), 0.);
+        assert_eq!(LevelMeter::position(-80.), 0.);
+        assert!((LevelMeter::position(-6.) - 0.7).abs() < 1e-6);
+        assert!((LevelMeter::position(0.) - 0.9).abs() < 1e-6);
+        assert!((LevelMeter::position(3.) - 0.95).abs() < 1e-6);
+        assert_eq!(LevelMeter::position(12.), 1.);
+        assert!(LevelMeter::position(-33.) > 0.3 && LevelMeter::position(-33.) < 0.4);
     }
 }
 

@@ -119,6 +119,7 @@ pub(crate) fn leave(original: &str, text: &str, allow_empty: bool) -> Leave {
 
 type CommitHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 type CloseHandler = Rc<dyn Fn(&(), &mut Window, &mut App)>;
+type ReturnHandler = Rc<dyn Fn(&Option<SharedString>, &mut Window, &mut App)>;
 
 /// A field opened over a label to edit it in place.
 ///
@@ -160,6 +161,7 @@ pub struct InlineEdit {
     max_width: Pixels,
     error: Option<SharedString>,
     on_commit: Option<CommitHandler>,
+    on_return: Option<ReturnHandler>,
     on_close: Option<CloseHandler>,
 }
 
@@ -176,6 +178,7 @@ impl InlineEdit {
             max_width: px(420.),
             error: None,
             on_commit: None,
+            on_return: None,
             on_close: None,
         }
     }
@@ -223,6 +226,17 @@ impl InlineEdit {
         self
     }
 
+    /// Called on Return instead of [`InlineEdit::on_commit`] and [`InlineEdit::on_close`],
+    /// with the text to write, or `None` when there is nothing to write: for a list editor whose
+    /// Return writes the cell and walks on to the same cell of the next row.
+    pub fn on_return(
+        mut self,
+        handler: impl Fn(&Option<SharedString>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_return = Some(Rc::new(handler));
+        self
+    }
+
     /// Called on Escape, or when the field is left with nothing to write. Stop drawing it.
     pub fn on_close(mut self, handler: impl Fn(&(), &mut Window, &mut App) + 'static) -> Self {
         self.on_close = Some(Rc::new(handler));
@@ -240,6 +254,9 @@ impl RenderOnce for InlineEdit {
         // Focus and select all once, when the field first opens, remembering where focus was so
         // that it goes back there when the field closes.
         let state = window.use_keyed_state(self.id.clone(), cx, |_, _| None::<Opened>);
+        // A field moved on to another label (a list editor walking down a column) opens afresh
+        // there: focused, everything selected.
+        let target = (self.original.clone(), self.over.origin);
         match state.read(cx) {
             None => {
                 let previous = window.focused(cx);
@@ -247,7 +264,20 @@ impl RenderOnce for InlineEdit {
                     *state = Some(Opened {
                         previous,
                         finished: false,
+                        target,
                     })
+                });
+                self.input.update(cx, |input, cx| {
+                    input.focus(window);
+                    input.select_all(cx);
+                });
+            }
+            Some(opened) if opened.target != target => {
+                state.update(cx, |state, _| {
+                    if let Some(state) = state {
+                        state.finished = false;
+                        state.target = target;
+                    }
                 });
                 self.input.update(cx, |input, cx| {
                     input.focus(window);
@@ -282,11 +312,20 @@ impl RenderOnce for InlineEdit {
             let allow_empty = self.allow_empty;
             let on_commit = self.on_commit.clone();
             let on_close = self.on_close.clone();
+            let on_return = self.on_return.clone();
             let state = state.clone();
-            Rc::new(move |window: &mut Window, cx: &mut App| {
+            Rc::new(move |returned: bool, window: &mut Window, cx: &mut App| {
                 finished(&state, &input, window, cx);
                 let text = input.read(cx).text().to_owned();
-                match leave(&original, &text, allow_empty) {
+                let leaving = leave(&original, &text, allow_empty);
+                if let (true, Some(handler)) = (returned, &on_return) {
+                    let text = match leaving {
+                        Leave::Commit(text) => Some(text),
+                        Leave::Close => None,
+                    };
+                    return handler(&text, window, cx);
+                }
+                match leaving {
                     Leave::Commit(text) => {
                         if let Some(handler) = &on_commit {
                             handler(&text, window, cx);
@@ -336,12 +375,12 @@ impl RenderOnce for InlineEdit {
             .occlude()
             .on_action({
                 let finish = finish.clone();
-                move |_: &SubmitText, window, cx| finish(window, cx)
+                move |_: &SubmitText, window, cx| finish(true, window, cx)
             })
             .on_action(move |_: &CancelText, window, cx| cancel(window, cx))
             .on_mouse_down_out({
                 let finish = finish.clone();
-                move |_, window, cx| finish(window, cx)
+                move |_, window, cx| finish(false, window, cx)
             })
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(field)
@@ -375,6 +414,8 @@ struct Opened {
     previous: Option<FocusHandle>,
     /// Whether the field was committed or closed and has not been drawn since.
     finished: bool,
+    /// What it is editing: the label's text and place.
+    target: (SharedString, gpui::Point<Pixels>),
 }
 
 /// Mark the field finished and, once a frame has been drawn without it, hand focus back to

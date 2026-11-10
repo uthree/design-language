@@ -34,7 +34,7 @@ mod usage;
 
 pub use activity::{AgentActivity, AgentPhase, ChangeKind, ChangedFiles, FileChange, PlanView};
 pub use approval::{ApprovalDialog, PermissionMode, PermissionPicker};
-pub use chat::{ChatEntry, ChatEvent, ChatView, CustomEntry, Decision, EntryId};
+pub use chat::{ChatAttachment, ChatEntry, ChatEvent, ChatView, CustomEntry, Decision, EntryId};
 pub use choice::{Choice, ChoiceCard};
 pub use code::{CodeBlock, DiffBlock, DiffLine};
 pub use composer::{AskBar, Composer, ContextChip, SuggestionChip};

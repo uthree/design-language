@@ -65,6 +65,7 @@ the control in a mock-up.
 | Work done of a known total | `ProgressBar` / `ProgressRing::show_value()`; a named long task `TaskProgress` | a `Slider` (it invites dragging) |
 | Waiting of unknown length | `ProgressBar::indeterminate`, `Spinner`; content that will arrive `Skeleton` | a bar that jumps to 90 % and stops |
 | A live signal level | `LevelMeter` | a `ProgressBar` |
+| A measured figure read at a glance (loudness, peak, a count, a time) | `Stat` with its unit; `Stat::empty` before it is measured | a bold label with the unit glued on; a 0 that was never measured |
 | A quota or budget (tokens, minutes) | `agent::UsageMeter` | a bare percentage label |
 | Steps of a plan | `StepList` | a numbered list of labels |
 
@@ -74,6 +75,7 @@ the control in a mock-up.
 | --- | --- | --- |
 | A short single line (a name, an address) | `TextInput` in a `TextField` under a `FormField` label | a placeholder used as the label |
 | A few lines (a comment, session notes) | `TextInput::multiline()` in `TextField::area()`; Shift-Return breaks the line | a single-line field that swallows line breaks |
+| Many records with the same few fields, read and edited as text (MIDI events, markers) | `Table`, cells edited with `InlineEdit` | a column of `ListItem`s with values glued into the label |
 | Renaming something whose name is on screen (a track, a clip, a lyric, a chord) | `InlineEdit` over the label, `SpotBook` to find it; the sheet only when the label is off screen | a dialog that dims the window to ask for the name again |
 | Searching or filtering | `TextField::icon(IconName::Search)`, at the top of the list it filters | a "Search" button |
 | A file or folder | `TextField` showing the path + `.trailing(Button::new(.., "Choose…"))` | a bare button that hides the current path |
@@ -104,6 +106,7 @@ the control in a mock-up.
 | A category shared across views (cluster, tag) | `theme.categorical(index)`, one index per thing for good, plus a label | a fresh hue per view |
 | Nothing here yet | `EmptyState` with one action | an empty panel |
 | A key that does it | `Kbd` | a shortcut written in plain text |
+| Where playback is, in a view that scrolls (timeline, piano roll, event list) | `Follow` pages along; `BackToPlayhead` once the person scrolls away | a view that snaps back on every page turn, or never follows |
 
 ## Not in Atelier yet
 
@@ -117,4 +120,5 @@ and colours; when the stand-in is not enough, add the component to Atelier.
 | A radio group | a `SegmentedControl` (few options) or `OptionCard`s (options that need words) |
 | A number field with steppers | a `TextField` holding the number, the unit trailing |
 | Reordering a list by dragging | `ListItem`s with the application's own drag handling and a menu with "Move up / Move down" |
-| A colour picker, a date or time picker | the application's own, using tokens; ask for it to be added |
+| A colour picker | `ColorSwatch` that opens a `ColorPicker` under it (or in a `Popover`), with the application's presets |
+| A date or time picker | the application's own, using tokens; ask for it to be added |

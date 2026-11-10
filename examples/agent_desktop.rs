@@ -384,6 +384,14 @@ impl AgentDesktop {
     fn decided(&mut self, event: &ChatEvent, cx: &mut Context<Self>) {
         let decision = match event {
             ChatEvent::Decided { decision, .. } => decision,
+            // A real application opens the file; the mock says so in the transcript.
+            ChatEvent::OpenAttachment { attachment, .. } => {
+                let opened = format!("Opened {}", attachment.label);
+                self.chat.update(cx, |chat, cx| {
+                    chat.push(ChatEntry::status(opened), cx);
+                });
+                return;
+            }
             ChatEvent::Chose { picked, .. } => {
                 let reply = format!(
                     "Going with option {}.",
@@ -817,7 +825,11 @@ const SIDEBAR_MIN_WINDOW: f32 = 1080.;
 
 fn main() {
     common::run("Agent", 1500., 940., |choice, cx| {
-        let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)));
+        let chat = cx.new(|_| {
+            ChatView::new("chat")
+                .reading_width(px(780.))
+                .open_attachments()
+        });
         chat.update(cx, |chat, cx| {
             let ask = common::argument("--ask").map(|kind| kind == "multiple");
             chat.replace(AgentDesktop::conversation(0, ask), cx);

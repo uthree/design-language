@@ -111,6 +111,22 @@ check warn 'impl[^\n]*EntityInputHandler for' \
     "an editable text input of the application's own: use atelier::TextInput inside a TextField (caret, selection, IME, clipboard, undo; Space and Backspace never reach a shortcut while it is focused)."
 check warn 'fn (inline_bounds|[a-z_]*inline_prompt)\b|InlinePlace::' \
     "a field opened over a label by hand: use atelier::InlineEdit, with SpotBook::spot on a label laid out by flex."
+check warn 'struct PlayheadFollow\b|fn [a-z_]*return_to_playhead\b' \
+    "a playhead follow of the application's own: use atelier::Follow (lets go on a scroll, not a zoom) and BackToPlayhead."
+check warn 'fn (labelled_figure|[a-z_]*_figure)\b' \
+    "a caption-number-unit figure drawn by hand: use atelier::Stat (Stat::empty for the dash before it is measured)."
+check warn 'fn (level_meter|db_to_meter_position|meter_level)\b' \
+    "a level meter or dB scale of the application's own: use atelier::LevelMeter::db(..).peak_db(..).clipped(..) and LevelMeter::position."
+check warn 'fn [a-z_]*plot_well\b|const GUTTER: \(f32, f32\)' \
+    "a plot made draggable by hand, guessing its data area: use atelier::plot::LinePlot::id(..).on_drag(..) (deltas in plot units), .on_reset, .on_wheel."
+check warn 'fn keyed_tip\b|fn [a-z_]*shortcut_tooltip\b' \
+    "a tooltip with keys built by hand: use Button::shortcut_for(&action) (read from the keymap) or Button::shortcut(..)."
+check warn 'colou?r swatch has no component|the picker is the application.s own|mod colou?r_picker\b' \
+    "a colour swatch or picker of the application's own: use atelier::ColorSwatch and ColorPicker (with presets), and atelier::{hex, parse_hex, Hsv}."
+check warn 'fn [a-z_]*comment_notes\b' \
+    "notes drawn onto graph nodes by hand: use GraphNode::comment(..), NodeCanvas::spots(..) and NodeCanvasEvent::CommentPressed, then an InlineEdit over NodeCanvas::comment_key."
+check warn 'fn user_message_with_attachments\b' \
+    "a person's message rebuilt to make its chips open: use ChatView::open_attachments() and ChatEvent::OpenAttachment."
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

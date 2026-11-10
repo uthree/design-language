@@ -85,6 +85,16 @@ pub struct Strings {
     pub jump_to_latest: SharedString,
     /// The same button once something arrived meanwhile; `{}` is how many entries.
     pub new_messages: SharedString,
+    /// The button that takes a timeline the person scrolled away from back to its playhead.
+    pub back_to_playhead: SharedString,
+    /// A colour picker's sliders: hue, saturation, brightness.
+    pub hue: SharedString,
+    /// See [`Strings::hue`].
+    pub saturation: SharedString,
+    /// See [`Strings::hue`].
+    pub brightness: SharedString,
+    /// Beside a colour code that could not be read.
+    pub color_code_invalid: SharedString,
     /// A group of tool calls; `{}` is how many.
     pub used_tools: SharedString,
     /// An answered approval: allowed, always allowed, denied.
@@ -223,6 +233,11 @@ impl Strings {
             reset: "Reset".into(),
             jump_to_latest: "Jump to latest".into(),
             new_messages: "{} new".into(),
+            back_to_playhead: "Back to playhead".into(),
+            hue: "Hue".into(),
+            saturation: "Saturation".into(),
+            brightness: "Brightness".into(),
+            color_code_invalid: "Not a colour code".into(),
             used_tools: "Used {} tools".into(),
             approval_answers: ["Allowed".into(), "Always allowed".into(), "Denied".into()],
             reviewing: "Reviewing…".into(),
@@ -337,6 +352,11 @@ impl Strings {
             reset: "リセット".into(),
             jump_to_latest: "最新へ移動".into(),
             new_messages: "新着{}件".into(),
+            back_to_playhead: "再生位置に戻る".into(),
+            hue: "色相".into(),
+            saturation: "彩度".into(),
+            brightness: "明度".into(),
+            color_code_invalid: "カラーコードではありません".into(),
             used_tools: "ツールを{}回使用".into(),
             approval_answers: [
                 "許可しました".into(),

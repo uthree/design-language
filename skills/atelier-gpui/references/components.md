@@ -102,9 +102,14 @@ Button::new("dup", "Duplicate").ghost().icon(IconName::Copy)
 Button::new("ask", "Ask assistant").variant(ButtonVariant::Agent).icon(IconName::Sparkles)
 Button::new("del", "Delete track").variant(ButtonVariant::Danger)
 Button::new("grid", "Grid: 1/16").icon_after(IconName::ChevronDown).size(ControlSize::Small)
-Button::icon_only("settings", IconName::Settings).tooltip("Project settings…")
+Button::icon_only("settings", IconName::Settings).tooltip("Project settings…").shortcut_for(&OpenSettings)
 Button::new(("solo", i), "S").size(ControlSize::Small).selected(solo).tint(colors.warning)
 ```
+
+A command with a key names it in its tooltip: `.shortcut_for(&Action)` looks the binding up in
+the keymap each time the tooltip opens (so a rebound key shows as rebound), `.shortcut("⌘R")`
+takes it already written (empty shows none). A labelled button with a shortcut and no tooltip
+shows its label there. `binding_label(&KeyBinding)` writes a binding for the platform.
 
 Also `.disabled(bool)`, `.full_width()`, `.on_click(|event, window, cx| ...)`, and
 `.radius(px)` for a button sitting in a surface's corner, which must follow that corner:
@@ -177,6 +182,13 @@ one per row).
   `.error(..)` keeps it open with a reason. Focus goes back where it was when it closes. For a
   label laid out by flex, give it `SpotBook::spot(key)` (in a `relative()` parent) and read
   `SpotBook::get(key, window)`; `None` means the label is off screen, so open a sheet instead.
+- `Table::new(id, columns, rows)` — rows of short values: an event list, markers, a parameter
+  sheet. `Column::new("Bar").width(px(48.)).end().mono()`, `Column::new("Event")` (shares the
+  free width, `.grow(2.)` for more). `TableRow::new(cells).mark(RowMark::Category(n)).tinted()
+  .active(playing).faint(past_end).selected(..)`. `.on_select(row)` on a click or Up/Down/Home/End,
+  `.on_activate(TableCell)` on a double-click or Enter; `.track_scroll(&handle)` to bring a row
+  into view, `.spots(&book)` so `InlineEdit` opens over `Table::cell_key(id, cell)`. Use
+  `InlineEdit::on_return` to walk down a column. Only visible rows are built.
 - `TextField::new().icon(IconName::Search).placeholder("Search sounds…")` — the frame of a
   text input. Atelier draws the well, the height, the radius and the ring; the editing is a
   `TextInput` (above) or the application's own editor. `.area()` is the well for several lines.
@@ -206,6 +218,26 @@ one per row).
 
 Sliders and knobs handle their own dragging and keys; the application keeps only the value
 (and its undo), through `on_change`. Do not wrap them in an element that handles the gesture.
+`Slider::color(hsla)` fills one with a colour of the document's instead of the accent.
+
+Colours the person chooses for the document (a track's, a caption's) are a `ColorSwatch` that
+opens a `ColorPicker`:
+
+```rust
+ColorSwatch::new("caption-swatch", self.caption)
+    .label("Chord captions")                    // the tooltip says "Chord captions · #F4F1EA"
+    .selected(self.picking)
+    .on_click(cx.listener(|this, _, _, cx| { this.picking = !this.picking; cx.notify(); })),
+// under it, while picking:
+ColorPicker::new("caption-picker", self.caption)
+    .presets(presets)                          // swatches to start from
+    .on_change(cx.listener(|this, color: &Hsla, _, cx| { this.caption = *color; cx.notify(); })),
+```
+
+The picker shows the colour and its code (typed, then Return; a code it cannot read says so),
+and hue, saturation and brightness sliders filled with what they make. It keeps the hue while
+the colour passes through grey, so do not convert the colour you store back into the picker
+yourself. `atelier::{hex, parse_hex, Hsv}` are the same arithmetic, for a code in a file.
 
 ## Display
 
@@ -213,6 +245,17 @@ Sliders and knobs handle their own dragging and keys; the application keeps only
 `Avatar::agent()`, `Avatar::logo(ProviderLogo::Anthropic)` (the agent as its provider's mark;
 prefer it when the model is known), `Divider::horizontal()` / `Divider::vertical().full()`,
 `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
+A meter of a signal in dBFS is `LevelMeter::db(db).peak_db(held)` (`LevelMeter::position(db)` for
+the scale: green to −6 dB, yellow to full scale, red over it, floor −60 dB); `.clipped(latched)`
+lights the clip light at the hot end until the person clicks to clear it. A meter fills the height
+its parent is stretched to; no absolute pinning needed.
+
+`Stat::new("Integrated", "−14.2").unit("LUFS")` — one figure a panel reports: a faint caption
+over a large mono number and its unit. `Stat::empty(caption)` (or `Stat::maybe(caption,
+Option)`) shows a dash before anything is measured, never a zero. `.size(TextSize::Display)`
+for the one figure a view is about, `.color(TextColor::Danger)` when it is a verdict too (say
+so in words as well), `.inline()` for a title bar or status line, `.min_width(..)` so a row of
+them holds still, `.end()` at the right of a row. In a transport, use `Readout` instead.
 
 ## Progress and loading
 
@@ -348,6 +391,13 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
   "120.00").unit("BPM").on_click(..))` — the transport's display: buttons and captioned values on
   one sunken surface, hairlines between the readouts. Give a changing value `.min_width(..)` so
   the strip holds still. One strip per window, not a box per readout.
+- `Follow` — a view that plays pages along with its playhead. Each frame,
+  `if let Some(to) = follow.update(offset, span, at, playing) { scroll to to }` (one unit for
+  all four: beats, seconds, rows). A scroll that hides the playhead lets go, a zoom does not;
+  while `follow.side(offset, span, at)` is `Some(side)`, show
+  `BackToPlayhead::new(id, side).on_click(..)` in the view's `relative()` container, and on its
+  click scroll to `Follow::page(span, at)` and call `follow.engage()`. Don't pull the view back
+  on every page turn while the person reads elsewhere.
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen. Moving
   from a card to the screen it starts uses the hand-off in [motion.md](motion.md).
@@ -439,6 +489,13 @@ fields. Edit parameters in an inspector beside the canvas and put the new row ba
   `Spinner`, `Skeleton`), and long runs use `TaskProgress`.
 - A node the agent added is drawn with a dashed `colors.agent` border and a sparkle, with Keep
   and Undo on the node itself.
+
+Notes people leave on a node (a mixer's scribble strip, "try 40 steps for the outro") are
+`GraphNode::comment(text)`: each shows its first `COMMENT_LINES` (4) lines on a warning wash,
+with the whole text in a tooltip. Pressing one never drags the node; it selects it and emits
+`NodeCanvasEvent::CommentPressed { node, index }`. Give the canvas `.spots(&book)` and open an
+`InlineEdit` over `book.get(&NodeCanvas::comment_key(node, index), window)` with a multiline
+`TextInput`, then write the text back with `update_node` (`examples/node_editor.rs` does).
 
 ## Overlays
 

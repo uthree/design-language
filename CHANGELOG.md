@@ -14,6 +14,236 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: colours the person picks
+
+### Added
+
+- `ColorSwatch::new(id, color)`: a small square showing a document colour, a tab stop that a
+  click, Enter or Space presses. `.selected(..)` rings it in the accent; its tooltip gives the
+  code, after `.label(..)` if there is one.
+- `ColorPicker::new(id, color)`: the colour and its code (type one and press Return), hue,
+  saturation and brightness sliders filled with what they make, and `.presets(..)` as swatches.
+  `.on_change(..)` gets each new colour; without it the picker keeps its own. The hue survives
+  a trip through grey or black.
+- `atelier::{hex, parse_hex, Hsv, HsvChannel}`: the arithmetic behind it, for codes in files.
+- `Slider::color(hsla)` fills a slider with a colour other than the accent.
+- `Strings::{hue, saturation, brightness, color_code_invalid}`, in English and Japanese.
+
+### Web
+
+- `colorSwatch(color, { label, pressed })` (`.at-swatch`), `colorPicker(element, { value,
+  presets })` firing `atelier:color`, and `parseHex`. `input.at-slider` takes
+  `--at-slider-fill`. The showcase has caption colours to pick.
+
+### Workarounds you can delete
+
+- Auris Studio's `ui/colour_picker.rs` (`Hsv`, `hex`, `parse_hex`) and the `swatch` and
+  `video_colour_picker` helpers in `ui/video_export.rs`, with their `atelier: allow` markers.
+
+## Unreleased: notes on nodes
+
+### Added
+
+- `GraphNode::comment(text)`: a note left on a node, drawn under its fields on a warning wash
+  with a stripe. It shows the first `graph::COMMENT_LINES` (4) lines (`comment_preview` cuts
+  them) and the whole text in a tooltip.
+- Pressing a note selects its node without taking hold of it and emits
+  `NodeCanvasEvent::CommentPressed { node, index }`. `NodeCanvas::spots(&book)` records where
+  each note is drawn under `NodeCanvas::comment_key(node, index)`, so an `InlineEdit` opens
+  over the note itself; write the text back with `update_node`. The node editor example does.
+
+### Changed
+
+- A `match` on `NodeCanvasEvent` needs an arm for `CommentPressed`.
+
+### Web
+
+- `nodeCanvas` draws a node's `comments` as `.at-node__comment` notes; pressing one fires
+  `atelier:node-comment` with `{ id, index, target }`, for `inlineEdit(target, { multiline:
+  true })`. The showcase's Sampler carries one you can edit.
+
+### Workarounds you can delete
+
+- Auris Studio's `mixer_comment_notes` in `ui/mixer_graph.rs`, which drew the notes into a
+  node body and caught presses before the canvas did.
+
+## Unreleased: attachments that open
+
+### Added
+
+- `ChatView::open_attachments()`: the chips on the person's messages become tab stops. A
+  click, Enter or Space emits `ChatEvent::OpenAttachment { entry, index, attachment }`, for the
+  application to open the file or preview it.
+- `ChatAttachment::new(label).icon(..)`: an attachment of another kind than a file, with its
+  own icon. `ChatEntry::attachment(..)` takes one, or a label as before.
+
+### Changed
+
+- `ChatEntry::User { attachments }` holds `ChatAttachment`s instead of labels; read
+  `attachment.label`. A `match` on `ChatEvent` needs an arm for `OpenAttachment`.
+
+### Web
+
+- `chat(element, { openAttachments: true })` draws attachment chips as buttons that fire
+  `atelier:open-attachment` with `{ id, index, label }`; an attachment can be `{ label, icon }`.
+  The showcase's transcript says what it opened.
+
+### Workarounds you can delete
+
+- Auris Studio's `user_message_with_attachments` in `ui/agent_components.rs`, which rebuilt the
+  person's message to hang `ContextChip::on_click` on its chips.
+
+## Unreleased: shortcuts in button tooltips
+
+### Added
+
+- `Button::shortcut_for(&action)`: the tooltip names the keys bound to the action, looked up
+  in the keymap each time it opens, so a key the person rebinds shows as rebound.
+  `Button::shortcut("⌘R")` takes the keys already written. A labelled button with a shortcut
+  and no tooltip shows its label there.
+- `binding_label(&KeyBinding)`: a binding as the platform writes it ("⇧⌘S", "Ctrl+Shift+S",
+  chords with spaces).
+
+### Changed
+
+- `Tooltip::shortcut("")` shows no keys, so a command without one needs no branch.
+
+### Web
+
+- `data-shortcut` beside `data-tooltip` (gpui's notation such as `secondary-d`, or already
+  written) gives the tooltip its keys, faint after the words, and sets `aria-keyshortcuts`;
+  `shortcutTooltip(..)` and `shortcutLabel(..)` in `atelier.js`. The showcase's transport and
+  settings buttons have them.
+
+### Workarounds you can delete
+
+- Auris Studio's `keyed_tip` and `tip` in `ui/tooltip.rs`, and the adapter around the native
+  button that kept them.
+
+## Unreleased: plots that are dragged
+
+### Added
+
+- `LinePlot::id(..)` with `.on_drag(..)`, `.on_reset(..)` and `.on_wheel(..)`: a plot that is
+  the control for what it draws, such as a synth's envelope or filter. A drag reports
+  `PlotDrag { phase, from, delta }` in the plot's own units, measured on the data area the plot
+  really drew. Shift goes a tenth as far without a jump when it changes mid-drag. A
+  double-click resets, and the wheel reports whole notches. The plot is then a tab stop whose
+  arrows nudge it a hundredth of a range.
+
+### Web
+
+- Not ported: the web kit has no plots yet (listed under "Not yet" in `web/README.md`).
+
+### Workarounds you can delete
+
+- Auris Studio's `synth_plot_well`, `press_synth_plot`, `drag_synth_plot` and the `GUTTER`
+  guess at the plot's data area in `ui/synth_edit.rs`; keep only the mapping from delta to
+  parameters.
+
+## Unreleased: meters that read dB and hold a clip
+
+### Added
+
+- `LevelMeter::clipped(bool)`: a clip light at the hot end, latched by the application until
+  the person clears it.
+- `LevelMeter::db(db)`, `.peak_db(db)` and `LevelMeter::position(db)`: a dBFS scale with room
+  for the working range. Green runs to −6 dB, yellow to full scale, red only over it, and the
+  floor is `METER_FLOOR_DB` (−60). −∞ and NaN read as an empty meter.
+
+### Changed
+
+- A vertical `LevelMeter` fills the height its parent is stretched to (a horizontal one the
+  width), where it used to need a parent with a set height. It is never shorter than 16 px.
+  A peak at zero is no longer drawn.
+
+### Web
+
+- `.at-meter` takes `--level` and `--peak`, a `.at-meter__peak` child, `data-clipped` and
+  `.at-meter--horizontal`; `setMeter(..)` and `meterPosition(db)` in `atelier.js`. The span
+  fill with `--_full` still works.
+
+### Workarounds you can delete
+
+- Auris Studio's `level_meter` and `db_to_meter_position` in `ui/widgets.rs`, the clip light
+  drawn over a meter, and the absolute top/bottom pinning around the visualizer's meters.
+
+## Unreleased: figures
+
+### Added
+
+- `Stat`: one figure read at a glance, a faint caption over a large mono number and its unit,
+  as Auris Studio's loudness panel and typing-panel readouts draw by hand. `Stat::empty` shows
+  a dash before anything is measured; `.size(..)`, `.color(..)` for a figure that is a verdict
+  too, `.inline()` for the one-line form in a title bar, `.min_width(..)` and `.end()`.
+
+### Web
+
+- `.at-stat` with `__caption`, `__figure`, `__value` and `__unit`; an empty value shows the
+  dash. Sizes `--display`, `--md`, `--sm`, `--inline`, `--end` and `data-tone`. The showcase
+  has a row of loudness figures.
+
+### Workarounds you can delete
+
+- Auris Studio's `labelled_figure` in `ui/visualizer.rs` and `readout` in
+  `ui/typing_panel.rs`.
+
+## Unreleased: following the playhead
+
+### Added
+
+- `Follow`: a view that plays pages along so the playhead stays in view, and lets go when the
+  person scrolls away. Call `update(offset, span, at, playing)` each frame, in any one unit;
+  it returns the offset of the next page turn. A scroll that hides the playhead releases it, a
+  zoom does not; it follows again once the playhead is back in view, playback starts again, or
+  `engage()` is called. `side(..)` says which way the playhead went while released.
+- `BackToPlayhead`: the button that takes a released view back, floating in the bottom corner
+  on the playhead's side and pointing that way. `Strings::back_to_playhead` ("Back to
+  playhead", "再生位置に戻る").
+
+### Web
+
+- `follow()` in `atelier.js`, with the same `update`, `engage`, `page` and `side`, and
+  `.at-back-to-playhead[data-side]`. The showcase has a strip that plays and can be scrolled
+  away from.
+
+### Workarounds you can delete
+
+- Auris Studio's `PlayheadFollow` in `ui/timeline.rs`, and its return-to-playhead chip in
+  `ui/lanes.rs`.
+
+## Unreleased: tables
+
+### Added
+
+- `Table`: rows of short values under column headings, such as Auris Studio's MIDI event
+  list. `Column`s are fixed (`.width(..)`) or share the free width (`.grow(..)`), with `.end()`
+  for numbers and `.mono()` for digits that line up. A `TableRow` can carry a stripe down its
+  leading edge (`RowMark::Category(n)` from the theme's categorical colours, `Accent`,
+  `Agent`), `.tinted()` text in the same colour, `.active(..)` for the row being heard and
+  `.faint(..)` for one past the clip's end. Only the rows on screen are built. A click selects
+  (`on_select`); a double-click on a cell, or Enter on the selected row, asks to edit it
+  (`on_activate` with a `TableCell`); while the table has focus, Up, Down, Home and End move the
+  selection and keep it in view, taken before any key binding (`LIST_CONTEXT`, `SelectNext` and
+  the rest). `Table::spots(&book)` records every visible cell under `Table::cell_key`, so an
+  `InlineEdit` opens over the cell.
+- `InlineEdit::on_return(..)`: Return hands over the text (or `None` when nothing changed)
+  instead of committing, for a list editor whose Return walks on to the same cell of the next
+  row. A field that moves on to another label opens there afresh, focused, with everything
+  selected.
+
+### Web
+
+- `table(element, { columns, rows, empty })` in `atelier.js`, returning `update`, `select` and
+  `cell`; `atelier:row-select` and `atelier:cell-activate` (with the cell's element, for
+  `inlineEdit`); `.at-table` with its heading, stripes and the row being heard. The showcase
+  has an event list whose cells edit in place and whose Return walks down the column.
+
+### Workarounds you can delete
+
+- A hand-built list editor table: Auris Studio's `ui/event_list.rs` heading, rows,
+  stripes, sounding tint and cell spots.
+
 ## Unreleased: one selection across messages and logs
 
 ### Added

@@ -19,12 +19,13 @@ use atelier::agent::{
     SuggestionChip, ThinkingIndicator, ToolCall, ToolGroup, ToolState, UserMessage,
 };
 use atelier::{
-    ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox,
-    ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName,
-    InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar,
-    ProgressRing, ProviderLogo, SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton,
-    Slider, Spinner, SpotBook, StepList, StepState, Switch, Tabs, TaskProgress, TaskState,
-    TextColor, TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator,
+    ActiveTheme, Appearance, Assets, Avatar, BackToPlayhead, Badge, Button, ButtonVariant, Card,
+    Checkbox, ColorPicker, ColorSwatch, Column, ControlSize, Dialog, Direction, Disclosure,
+    Divider, Edge, EmptyState, Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter,
+    ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader,
+    Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList,
+    StepState, Switch, Table, TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor,
+    TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator,
     skeleton_paragraph,
 };
 use gpui::{
@@ -33,8 +34,19 @@ use gpui::{
     WindowBounds, WindowOptions, div, prelude::*, px, relative, rgb, size,
 };
 
+use atelier::plot::{DragPhase, LinePlot, PlotDrag, Series, SeriesStyle};
 use common::argument;
 use common::readout::{gain_db, pan, percent, volume_db};
+
+gpui::actions!(
+    showcase,
+    [
+        /// Duplicate the selected clip; its button's tooltip shows the key.
+        DuplicateClip,
+        /// Open the project settings; its button's tooltip shows the key.
+        OpenSettings
+    ]
+);
 
 /// The sample dialog open over the window.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -113,6 +125,34 @@ struct Showcase {
     renaming: bool,
     rename: Entity<TextInput>,
     spots: SpotBook,
+    /// The event list's rows (position, event, value), its selection and the cell being edited.
+    events: Vec<[SharedString; 3]>,
+    event_row: Option<usize>,
+    event_edit: Option<TableCell>,
+    cell_input: Entity<TextInput>,
+    event_scroll: gpui::UniformListScrollHandle,
+    /// The follow demo: whether its strip follows, where it shows, the playhead, and the clock.
+    follow: Follow,
+    follow_offset: f64,
+    follow_at: f64,
+    follow_run: Option<gpui::Task<()>>,
+    /// The filter plot that is its own control: cutoff in kHz, the resonance peak in dB, the
+    /// poles the wheel steps, and the two values a drag started from.
+    cutoff: f32,
+    peak: f32,
+    poles: i32,
+    filter_from: (f32, f32),
+    /// A video's caption colours, as the person picks them, and which one's picker is open.
+    captions: [Hsla; 3],
+    picking: Option<usize>,
+}
+
+/// What each caption colour is for.
+const CAPTION_NAMES: [&str; 3] = ["Chords", "Lyrics", "Meter"];
+
+/// Caption colours to start from: whites and a black that read over most videos, and a gold.
+fn caption_presets() -> [Hsla; 5] {
+    [0xffffff, 0xf4f1ea, 0xd8d2c4, 0x101010, 0xffc94a].map(|code| rgb(code).into())
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -910,6 +950,103 @@ impl Showcase {
 
     fn components(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let progress = self.progress_samples(cx);
+        let event_list = self.event_list(window, cx);
+        let follow = self.follow_demo(cx);
+        let filter = self.filter_plot(cx);
+        // A loudness panel's figures: one not measured yet, one over its ceiling.
+        // The meters take the height of the figures beside them, which nothing sets.
+        let meters = div()
+            .flex()
+            .gap(px(3.))
+            .child(LevelMeter::db(-4.).peak_db(-1.5))
+            .child(LevelMeter::db(-7.).peak_db(0.8).clipped(true));
+        // Document colours: a swatch for each, and the picker under the row for the one pressed.
+        let colours = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .w(px(340.))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(20.))
+                    .children(CAPTION_NAMES.iter().enumerate().map(|(index, name)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(
+                                ColorSwatch::new(("caption-swatch", index), self.captions[index])
+                                    .label(*name)
+                                    .selected(self.picking == Some(index))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.picking =
+                                            (this.picking != Some(index)).then_some(index);
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(Label::new(*name).size(TextSize::Small))
+                    })),
+            )
+            .children(self.picking.map(|index| {
+                ColorPicker::new(("caption-picker", index), self.captions[index])
+                    .presets(caption_presets())
+                    .on_change(cx.listener(move |this, color: &Hsla, _, cx| {
+                        this.captions[index] = *color;
+                        cx.notify();
+                    }))
+            }));
+        let figures = div()
+            .flex()
+            .flex_wrap()
+            .items_end()
+            .gap(px(28.))
+            .child(
+                div().flex().gap(px(12.)).child(meters).child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .child(
+                            Stat::new("Peak L", "−1.5")
+                                .unit("dB")
+                                .size(TextSize::Medium),
+                        )
+                        .child(
+                            Stat::new("Peak R", "+0.8")
+                                .unit("dB · clipped")
+                                .size(TextSize::Medium)
+                                .color(TextColor::Danger),
+                        ),
+                ),
+            )
+            .child(
+                Stat::new("Integrated", "−14.2")
+                    .unit("LUFS")
+                    .min_width(px(110.)),
+            )
+            .child(
+                Stat::new("Short-term", "−11.8")
+                    .unit("LUFS")
+                    .min_width(px(110.)),
+            )
+            .child(
+                Stat::new("True peak", "+0.4")
+                    .unit("dBTP")
+                    .color(TextColor::Danger)
+                    .min_width(px(100.)),
+            )
+            .child(Stat::empty("Range").unit("LU"))
+            .child(
+                Stat::new("Tempo", "120.00")
+                    .unit("BPM")
+                    .size(TextSize::Display),
+            )
+            .child(
+                Stat::new("Position", "013.2.1")
+                    .inline()
+                    .size(TextSize::Small),
+            );
         let theme = cx.theme();
         let section = |title: &'static str, body: AnyElement| {
             div()
@@ -933,7 +1070,8 @@ impl Showcase {
             .child(
                 Button::new("b-ghost", "Duplicate")
                     .ghost()
-                    .icon(IconName::Copy),
+                    .icon(IconName::Copy)
+                    .shortcut_for(&DuplicateClip),
             )
             .child(
                 Button::new("b-agent", "Ask assistant")
@@ -952,7 +1090,11 @@ impl Showcase {
                     .primary()
                     .size(ControlSize::Large),
             )
-            .child(Button::icon_only("b-icon", IconName::Settings).tooltip("Project settings…"));
+            .child(
+                Button::icon_only("b-icon", IconName::Settings)
+                    .tooltip("Project settings…")
+                    .shortcut_for(&OpenSettings),
+            );
 
         // Every control here is live, so its transition can be watched.
         let controls = row()
@@ -1283,6 +1425,11 @@ impl Showcase {
             .child(section("Buttons", buttons.into_any_element()))
             .child(section("Controls", controls.into_any_element()))
             .child(section("Fields", fields.into_any_element()))
+            .child(section("Event list", event_list))
+            .child(section("Following the playhead", follow))
+            .child(section("A plot as its own control", filter))
+            .child(section("Figures", figures.into_any_element()))
+            .child(section("Colours", colours.into_any_element()))
             .child(section("Status and identity", marks.into_any_element()))
             .child(section("Progress and loading", progress))
             .child(section(
@@ -1516,6 +1663,343 @@ fn suggestion_row(
         )
 }
 
+impl Showcase {
+    /// A MIDI event list: notes, a controller and a bend, each family marked down its edge, the
+    /// second note sounding. A double-click edits a cell in place; Return walks down the column.
+    fn event_list(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let family = |event: &str| match event {
+            event if event.starts_with("CC") => 1,
+            event if event.starts_with("Pitch") => 2,
+            _ => 0,
+        };
+        let rows = self.events.iter().enumerate().map(|(index, row)| {
+            let family = family(&row[1]);
+            let row = TableRow::new(row.iter().cloned())
+                .mark(RowMark::Category(family))
+                .active(index == 1)
+                .selected(self.event_row == Some(index));
+            if family > 0 { row.tinted() } else { row }
+        });
+        let table = Table::new(
+            "event-list",
+            [
+                Column::new("Pos").width(px(48.)).end().mono(),
+                Column::new("Event"),
+                Column::new("Value").width(px(56.)).end().mono(),
+            ],
+            rows,
+        )
+        .track_scroll(&self.event_scroll)
+        .spots(&self.spots)
+        .on_select(cx.listener(|this, row: &usize, _, cx| {
+            this.event_row = Some(*row);
+            cx.notify();
+        }))
+        .on_activate(cx.listener(|this, cell: &TableCell, _, cx| this.edit_event(*cell, cx)));
+        let editor = self.event_edit.and_then(|cell| {
+            let over = self
+                .spots
+                .get(&Table::cell_key("event-list", cell), window)?;
+            let original = self.events[cell.row][cell.column].clone();
+            Some(
+                InlineEdit::new("edit-event", &self.cell_input, over)
+                    .min_width(px(80.))
+                    .original(original)
+                    .on_commit(cx.listener(move |this, text: &SharedString, _, cx| {
+                        this.events[cell.row][cell.column] = text.trim().to_owned().into();
+                        this.event_edit = None;
+                        cx.notify();
+                    }))
+                    .on_return(
+                        cx.listener(move |this, text: &Option<SharedString>, _, cx| {
+                            if let Some(text) = text {
+                                this.events[cell.row][cell.column] = text.trim().to_owned().into();
+                            }
+                            // On to the same cell of the next row, as a list editor walks.
+                            match cell.row + 1 < this.events.len() {
+                                true => this.edit_event(
+                                    TableCell {
+                                        row: cell.row + 1,
+                                        ..cell
+                                    },
+                                    cx,
+                                ),
+                                false => this.event_edit = None,
+                            }
+                            cx.notify();
+                        }),
+                    )
+                    .on_close(cx.listener(|this, _, _, cx| {
+                        this.event_edit = None;
+                        cx.notify();
+                    })),
+            )
+        });
+        div()
+            .w(px(360.))
+            .h(px(200.))
+            .child(table)
+            .children(editor)
+            .into_any_element()
+    }
+
+    fn edit_event(&mut self, cell: TableCell, cx: &mut Context<Self>) {
+        let text = self.events[cell.row][cell.column].to_string();
+        self.cell_input
+            .update(cx, |input, cx| input.set_text(text, cx));
+        self.event_scroll
+            .scroll_to_item(cell.row, gpui::ScrollStrategy::Top);
+        self.event_row = Some(cell.row);
+        self.event_edit = Some(cell);
+        cx.notify();
+    }
+}
+
+/// The follow demo's length and how much of it its strip shows, in beats, and its tempo.
+const FOLLOW_LENGTH: f64 = 64.;
+const FOLLOW_SPAN: f64 = 16.;
+const FOLLOW_BEATS_PER_SECOND: f64 = 4.;
+const FOLLOW_TICK: Duration = Duration::from_millis(16);
+
+impl Showcase {
+    /// A strip of bars that pages along as it plays. Scroll it away and it stays where it was
+    /// put, with a button back to the playhead in the corner the playhead went.
+    fn follow_demo(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let width = 480.;
+        let x = |beat: f64| px(((beat - self.follow_offset) / FOLLOW_SPAN * width) as f32);
+        let playing = self.follow_run.is_some();
+        let bars = (0..(FOLLOW_LENGTH / 4.) as usize).map(|bar| {
+            let beat = bar as f64 * 4.;
+            div()
+                .absolute()
+                .left(x(beat))
+                .top_0()
+                .bottom_0()
+                .w(px(1.))
+                .bg(colors.separator)
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(4.))
+                        .top(px(2.))
+                        .whitespace_nowrap()
+                        .child(
+                            Label::new((bar + 1).to_string())
+                                .size(TextSize::XSmall)
+                                .color(TextColor::Faint)
+                                .mono(),
+                        ),
+                )
+        });
+        let clips =
+            [(2., 6.), (12., 10.), (26., 4.), (34., 12.), (50., 8.)].map(|(start, length)| {
+                div()
+                    .absolute()
+                    .left(x(start))
+                    .w(px((length / FOLLOW_SPAN * width) as f32))
+                    .top(px(26.))
+                    .h(px(28.))
+                    .rounded(theme.shape.radius_sm)
+                    .bg(colors.accent_wash)
+                    .border_1()
+                    .border_color(colors.accent)
+            });
+        let side = self
+            .follow
+            .side(self.follow_offset, FOLLOW_SPAN, self.follow_at);
+        let strip = div()
+            .id("follow-strip")
+            .relative()
+            .w(px(width as f32))
+            .h(px(96.))
+            .overflow_hidden()
+            .rounded(theme.shape.radius_md)
+            .border_1()
+            .border_color(colors.border)
+            .bg(colors.background)
+            .on_scroll_wheel(
+                cx.listener(|this, event: &gpui::ScrollWheelEvent, window, cx| {
+                    let delta = event.delta.pixel_delta(window.line_height());
+                    let along = if delta.x.abs() > delta.y.abs() {
+                        delta.x
+                    } else {
+                        delta.y
+                    };
+                    let beats = -f64::from(f32::from(along)) / 480. * FOLLOW_SPAN;
+                    this.follow_offset =
+                        (this.follow_offset + beats).clamp(0., FOLLOW_LENGTH - FOLLOW_SPAN);
+                    // The strip takes the wheel; the page around it stays put.
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .children(bars)
+            .children(clips)
+            .child(
+                div()
+                    .absolute()
+                    .left(x(self.follow_at))
+                    .top_0()
+                    .bottom_0()
+                    .w(px(1.5))
+                    .bg(colors.playhead),
+            )
+            .children(side.map(|side| {
+                BackToPlayhead::new("back-to-playhead", side).on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.follow_offset = Follow::page(FOLLOW_SPAN, this.follow_at)
+                            .min(FOLLOW_LENGTH - FOLLOW_SPAN);
+                        this.follow.engage();
+                        cx.notify();
+                    },
+                ))
+            }));
+        div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.md)
+            .child(strip)
+            .child(
+                Button::icon_only(
+                    "follow-play",
+                    if playing {
+                        IconName::Pause
+                    } else {
+                        IconName::Play
+                    },
+                )
+                .tooltip(if playing { "Pause" } else { "Play" })
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_follow_play(cx))),
+            )
+            .child(
+                Label::new("Scroll the strip while it plays")
+                    .size(TextSize::Small)
+                    .color(TextColor::Muted),
+            )
+            .into_any_element()
+    }
+
+    fn toggle_follow_play(&mut self, cx: &mut Context<Self>) {
+        if self.follow_run.take().is_some() {
+            self.follow
+                .update(self.follow_offset, FOLLOW_SPAN, self.follow_at, false);
+            cx.notify();
+            return;
+        }
+        self.follow_run = Some(cx.spawn(async move |this, cx| {
+            let mut then = std::time::Instant::now();
+            loop {
+                cx.background_executor().timer(FOLLOW_TICK).await;
+                let now = std::time::Instant::now();
+                let elapsed = now - then;
+                then = now;
+                let going = this.update(cx, |this, cx| {
+                    let step = elapsed.as_secs_f64() * FOLLOW_BEATS_PER_SECOND;
+                    this.follow_at = (this.follow_at + step) % FOLLOW_LENGTH;
+                    if let Some(to) =
+                        this.follow
+                            .update(this.follow_offset, FOLLOW_SPAN, this.follow_at, true)
+                    {
+                        this.follow_offset = to.min(FOLLOW_LENGTH - FOLLOW_SPAN);
+                    }
+                    cx.notify();
+                });
+                if going.is_err() {
+                    return;
+                }
+            }
+        }));
+        cx.notify();
+    }
+}
+
+/// The filter plot's cutoff (kHz) and resonance peak (dB) before anything is dragged.
+const FILTER_DEFAULT: (f32, f32) = (3., 3.);
+
+impl Showcase {
+    /// A low-pass response that is dragged to set it: across for the cutoff, up for the
+    /// resonance, Shift for fine, a double-click to reset and the wheel for the slope.
+    fn filter_plot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let (cutoff, peak, poles) = (self.cutoff, self.peak, self.poles as f32);
+        let response = (0..=200)
+            .map(|step| {
+                let f = step as f32 * 0.05;
+                let ratio = f / cutoff;
+                let roll = -10. * poles * (1. + ratio.powi(4)).log10() / 2.;
+                let bump = peak * (-((ratio - 1.) / 0.18).powi(2)).exp();
+                (f, (roll + bump).max(-36.))
+            })
+            .collect();
+        let plot = LinePlot::new()
+            .id("filter-plot")
+            .series(Series::line(response).style(SeriesStyle::Area))
+            .x_range(0., 10.)
+            .y_range(-36., 12.)
+            .x_label("Frequency [kHz]")
+            .y_label("Gain [dB]")
+            .on_drag(cx.listener(|this, drag: &PlotDrag, _, cx| {
+                if drag.phase == DragPhase::Start {
+                    this.filter_from = (this.cutoff, this.peak);
+                }
+                this.cutoff = (this.filter_from.0 + drag.delta.0).clamp(0.2, 9.5);
+                this.peak = (this.filter_from.1 + drag.delta.1).clamp(0., 12.);
+                cx.notify();
+            }))
+            .on_reset(cx.listener(|this, _, _, cx| {
+                (this.cutoff, this.peak) = FILTER_DEFAULT;
+                this.poles = 2;
+                cx.notify();
+            }))
+            .on_wheel(cx.listener(|this, steps: &i32, _, cx| {
+                this.poles = (this.poles + steps).clamp(1, 4);
+                cx.notify();
+            }));
+        div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.lg)
+            .child(
+                div()
+                    .w(px(420.))
+                    .h(px(200.))
+                    .p(theme.spacing.xs)
+                    .rounded(theme.shape.radius_md)
+                    .bg(theme.colors.sunken)
+                    .child(plot),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(theme.spacing.md)
+                    .child(
+                        Stat::new("Cutoff", format!("{:.2}", self.cutoff))
+                            .unit("kHz")
+                            .size(TextSize::Medium),
+                    )
+                    .child(
+                        Stat::new("Resonance", format!("{:.1}", self.peak))
+                            .unit("dB")
+                            .size(TextSize::Medium),
+                    )
+                    .child(
+                        Stat::new("Slope", format!("{}", self.poles * 6))
+                            .unit("dB/oct")
+                            .size(TextSize::Medium),
+                    )
+                    .child(
+                        Label::new("Drag; Shift for fine; double-click resets; wheel for slope")
+                            .size(TextSize::Small)
+                            .color(TextColor::Muted),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
 impl Render for Showcase {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -1611,6 +2095,10 @@ fn main() {
             let theme = Theme::new(direction, appearance);
             let background = theme.window_background();
             atelier::init(cx, theme);
+            cx.bind_keys([
+                gpui::KeyBinding::new("secondary-d", DuplicateClip, None),
+                gpui::KeyBinding::new("secondary-,", OpenSettings, None),
+            ]);
             let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
             let options = atelier::custom_frame(
                 WindowOptions {
@@ -1655,6 +2143,31 @@ fn main() {
                     renaming: false,
                     rename: cx.new(TextInput::new),
                     spots: SpotBook::new(),
+                    events: [
+                        ["1.1", "C4", "96"],
+                        ["1.2", "E4", "88"],
+                        ["1.3", "CC11 Expression", "72"],
+                        ["1.3", "G4", "90"],
+                        ["2.1", "Pitch bend", "+2"],
+                        ["2.1", "C5", "100"],
+                        ["2.3", "B4", "84"],
+                    ]
+                    .map(|row| row.map(SharedString::from))
+                    .to_vec(),
+                    event_row: None,
+                    event_edit: None,
+                    cell_input: cx.new(TextInput::new),
+                    event_scroll: gpui::UniformListScrollHandle::new(),
+                    follow: Follow::new(),
+                    follow_offset: 0.,
+                    follow_at: 2.,
+                    follow_run: None,
+                    cutoff: FILTER_DEFAULT.0,
+                    peak: FILTER_DEFAULT.1,
+                    poles: 2,
+                    filter_from: FILTER_DEFAULT,
+                    captions: [0xf4f1ea, 0xffffff, 0x3d7bff].map(|code| rgb(code).into()),
+                    picking: None,
                 })
             })
             .expect("failed to open the showcase window");

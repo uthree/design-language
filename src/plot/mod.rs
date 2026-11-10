@@ -175,6 +175,7 @@ fn title_text(window: &mut Window, theme: &Theme, label: &SharedString) -> Text 
 }
 
 /// The data area of a 2-D plot and the ranges it maps.
+#[derive(Clone, Copy)]
 struct Frame {
     area: Bounds<Pixels>,
     x: (f32, f32),
@@ -484,6 +485,90 @@ pub struct LinePlot {
     y: Axis,
     legend: bool,
     grid: bool,
+    id: Option<gpui::ElementId>,
+    on_drag: Option<Handler<PlotDrag>>,
+    on_reset: Option<Handler<()>>,
+    on_wheel: Option<Handler<i32>>,
+}
+
+/// A plot's handler for one kind of event.
+type Handler<T> = Rc<dyn Fn(&T, &mut Window, &mut App)>;
+
+/// Where a drag over a [`LinePlot`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragPhase {
+    /// The press: note the values the drag moves from.
+    Start,
+    /// The pointer moved: set each value to where it was at the start plus the delta.
+    Move,
+    /// The button came up: end the undo step.
+    End,
+}
+
+/// A drag over a [`LinePlot`] that edits what it draws, as [`LinePlot::on_drag`] reports it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlotDrag {
+    /// Where in the drag this is.
+    pub phase: DragPhase,
+    /// Where the press landed, in the plot's units.
+    pub from: (f32, f32),
+    /// How far the pointer has gone since the press, in the plot's units: rightwards and
+    /// upwards. While Shift is held it goes a tenth as far; pressing or letting go of Shift on
+    /// the way carries on from where the drag is rather than jumping.
+    pub delta: (f32, f32),
+}
+
+/// How much slower a drag goes with Shift held.
+const FINE: f32 = 0.1;
+
+/// How far an arrow key moves a plot's drag, as a share of each axis.
+const PLOT_KEY_STEP: f32 = 0.01;
+
+/// What a [`LinePlot`] with handlers remembers between frames.
+#[derive(Default)]
+struct PlotPointer {
+    /// Where the data area was last drawn and the ranges it maps.
+    frame: Option<Frame>,
+    press: Option<PlotPress>,
+    /// Wheel travel not yet a whole notch.
+    wheel: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PlotPress {
+    from: (f32, f32),
+    /// Where the pointer was when the rate last changed, and the travel up to then.
+    anchor: Point<Pixels>,
+    base: (f32, f32),
+    fine: bool,
+}
+
+impl PlotPointer {
+    /// The travel from the press to `at`, in the plot's units.
+    fn delta(&self, press: &PlotPress, at: Point<Pixels>) -> (f32, f32) {
+        let Some(frame) = self.frame else {
+            return press.base;
+        };
+        let rate = if press.fine { FINE } else { 1. };
+        let width = f32::from(frame.area.size.width).max(1.);
+        let height = f32::from(frame.area.size.height).max(1.);
+        let dx = f32::from(at.x - press.anchor.x) / width * (frame.x.1 - frame.x.0);
+        let dy = f32::from(press.anchor.y - at.y) / height * (frame.y.1 - frame.y.0);
+        (press.base.0 + dx * rate, press.base.1 + dy * rate)
+    }
+
+    /// The plot point under `at`.
+    fn value_at(&self, at: Point<Pixels>) -> (f32, f32) {
+        let Some(frame) = self.frame else {
+            return (0., 0.);
+        };
+        let fx = f32::from(at.x - frame.area.left()) / f32::from(frame.area.size.width).max(1.);
+        let fy = f32::from(frame.area.bottom() - at.y) / f32::from(frame.area.size.height).max(1.);
+        (
+            frame.x.0 + fx * (frame.x.1 - frame.x.0),
+            frame.y.0 + fy * (frame.y.1 - frame.y.0),
+        )
+    }
 }
 
 impl LinePlot {
@@ -495,7 +580,44 @@ impl LinePlot {
             y: Axis::default(),
             legend: false,
             grid: true,
+            id: None,
+            on_drag: None,
+            on_reset: None,
+            on_wheel: None,
         }
+    }
+
+    /// An id, which keeps a drag from frame to frame. Needed for [`LinePlot::on_drag`],
+    /// [`LinePlot::on_reset`] and [`LinePlot::on_wheel`], and also the test selector.
+    pub fn id(mut self, id: impl Into<gpui::ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Make the plot the control for what it draws: a press anywhere on it and a drag move the
+    /// values in the plot's own units, measured on the data area the plot really drew, so a
+    /// drag across the whole width moves the x value by the whole x range. Shift drags a tenth
+    /// as far. The plot becomes a tab stop whose arrows move it a hundredth of a range a press
+    /// (left and right for x, up and down for y), each press a whole Start, Move, End. Needs
+    /// [`LinePlot::id`].
+    pub fn on_drag(mut self, handler: impl Fn(&PlotDrag, &mut Window, &mut App) + 'static) -> Self {
+        self.on_drag = Some(Rc::new(handler));
+        self
+    }
+
+    /// Called on a double-click: put what the plot edits back to its defaults. Needs
+    /// [`LinePlot::id`].
+    pub fn on_reset(mut self, handler: impl Fn(&(), &mut Window, &mut App) + 'static) -> Self {
+        self.on_reset = Some(Rc::new(handler));
+        self
+    }
+
+    /// Called with whole wheel notches over the plot, up positive, for a value that moves in
+    /// steps (how many copies a stack draws). Without it the wheel scrolls what holds the
+    /// plot. Needs [`LinePlot::id`].
+    pub fn on_wheel(mut self, handler: impl Fn(&i32, &mut Window, &mut App) + 'static) -> Self {
+        self.on_wheel = Some(Rc::new(handler));
+        self
     }
 
     /// Add a series, drawn over the ones before it.
@@ -548,7 +670,7 @@ impl Default for LinePlot {
 }
 
 impl RenderOnce for LinePlot {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme().clone();
         let Self {
             series,
@@ -556,8 +678,23 @@ impl RenderOnce for LinePlot {
             y,
             legend,
             grid,
+            id,
+            on_drag,
+            on_reset,
+            on_wheel,
         } = self;
-        canvas(
+        let interactive =
+            id.is_some() && (on_drag.is_some() || on_reset.is_some() || on_wheel.is_some());
+        let pointer = interactive.then(|| {
+            let id = id.clone().unwrap_or_else(|| "line-plot".into());
+            window.use_keyed_state(
+                gpui::ElementId::NamedChild(Box::new(id), "pointer".into()),
+                cx,
+                |_, _| PlotPointer::default(),
+            )
+        });
+        let painted = pointer.clone();
+        let plot = canvas(
             |_, _, _| {},
             move |bounds: Bounds<Pixels>, _, window, cx| {
                 let points = || series.iter().flat_map(|series| series.points.iter());
@@ -583,6 +720,9 @@ impl RenderOnce for LinePlot {
                     y.label.as_ref(),
                     grid,
                 );
+                if let Some(pointer) = &painted {
+                    pointer.update(cx, |pointer, _| pointer.frame = Some(frame));
+                }
                 let colors = &theme.colors;
                 let mut entries = Vec::new();
                 window.with_content_mask(frame.mask(), |window| {
@@ -658,8 +798,182 @@ impl RenderOnce for LinePlot {
                 }
             },
         )
-        .size_full()
+        .size_full();
+        let (Some(pointer), Some(id)) = (pointer, id) else {
+            return plot.into_any_element();
+        };
+        interactive_plot(plot, pointer, id, on_drag, on_reset, on_wheel, window, cx)
     }
+}
+
+/// A [`LinePlot`]'s drawing, wrapped in the element that takes its drag, double-click, wheel
+/// and arrow keys.
+#[allow(clippy::too_many_arguments)]
+fn interactive_plot(
+    plot: gpui::Canvas<()>,
+    pointer: gpui::Entity<PlotPointer>,
+    id: gpui::ElementId,
+    on_drag: Option<Handler<PlotDrag>>,
+    on_reset: Option<Handler<()>>,
+    on_wheel: Option<Handler<i32>>,
+    window: &mut Window,
+    cx: &mut App,
+) -> gpui::AnyElement {
+    let pressed = pointer.read(cx).press.is_some();
+    let radius = cx.theme().shape.radius_sm;
+    let element = crate::focus::focusable(
+        div().id(id.clone()),
+        &id,
+        on_drag.is_none(),
+        radius,
+        window,
+        cx,
+    )
+    .size_full()
+    .relative()
+    .when(on_drag.is_some(), |element| element.cursor_crosshair())
+    .on_mouse_down(gpui::MouseButton::Left, {
+        let (pointer, on_drag, on_reset) = (pointer.clone(), on_drag.clone(), on_reset.clone());
+        move |event: &gpui::MouseDownEvent, window, cx| {
+            if event.click_count >= 2 {
+                pointer.update(cx, |pointer, _| pointer.press = None);
+                if let Some(on_reset) = &on_reset {
+                    on_reset(&(), window, cx);
+                }
+                return;
+            }
+            let Some(on_drag) = &on_drag else {
+                return;
+            };
+            let press = pointer.update(cx, |pointer, cx| {
+                let press = PlotPress {
+                    from: pointer.value_at(event.position),
+                    anchor: event.position,
+                    base: (0., 0.),
+                    fine: event.modifiers.shift,
+                };
+                pointer.press = Some(press);
+                cx.notify();
+                press
+            });
+            on_drag(
+                &PlotDrag {
+                    phase: DragPhase::Start,
+                    from: press.from,
+                    delta: (0., 0.),
+                },
+                window,
+                cx,
+            );
+        }
+    })
+    .on_key_down({
+        let (pointer, on_drag) = (pointer.clone(), on_drag.clone());
+        move |event: &gpui::KeyDownEvent, window, cx| {
+            let Some(on_drag) = &on_drag else {
+                return;
+            };
+            let (sx, sy) = match event.keystroke.key.as_str() {
+                "left" => (-1., 0.),
+                "right" => (1., 0.),
+                "down" => (0., -1.),
+                "up" => (0., 1.),
+                _ => return,
+            };
+            let Some(frame) = pointer.read(cx).frame else {
+                return;
+            };
+            let rate = PLOT_KEY_STEP
+                * if event.keystroke.modifiers.shift {
+                    FINE
+                } else {
+                    1.
+                };
+            let delta = (
+                sx * rate * (frame.x.1 - frame.x.0),
+                sy * rate * (frame.y.1 - frame.y.0),
+            );
+            let from = ((frame.x.0 + frame.x.1) / 2., (frame.y.0 + frame.y.1) / 2.);
+            for (phase, delta) in [
+                (DragPhase::Start, (0., 0.)),
+                (DragPhase::Move, delta),
+                (DragPhase::End, delta),
+            ] {
+                on_drag(&PlotDrag { phase, from, delta }, window, cx);
+            }
+            cx.stop_propagation();
+        }
+    })
+    .when_some(on_wheel, |element, on_wheel| {
+        let pointer = pointer.clone();
+        element.on_scroll_wheel(move |event: &gpui::ScrollWheelEvent, window, cx| {
+            let notches = f32::from(event.delta.pixel_delta(px(16.)).y) / 16.;
+            let steps = pointer.update(cx, |pointer, _| {
+                pointer.wheel += notches;
+                let steps = pointer.wheel.trunc();
+                pointer.wheel -= steps;
+                steps as i32
+            });
+            cx.stop_propagation();
+            if steps != 0 {
+                on_wheel(&steps, window, cx);
+            }
+        })
+    })
+    .child(plot);
+    let Some(on_drag) = on_drag.filter(|_| pressed) else {
+        return element.into_any_element();
+    };
+    // While pressed, follow the pointer anywhere in the window until the button comes up.
+    element
+        .child(
+            canvas(
+                |_, _, _| {},
+                move |_, _, window, _| {
+                    window.on_mouse_event({
+                        let (pointer, on_drag) = (pointer.clone(), on_drag.clone());
+                        move |event: &gpui::MouseMoveEvent, phase, window, cx| {
+                            if !phase.bubble() {
+                                return;
+                            }
+                            let moved = pointer.update(cx, |pointer, _| {
+                                let mut press = pointer.press?;
+                                if event.modifiers.shift != press.fine {
+                                    // Carry on from here at the new rate rather than jump.
+                                    press.base = pointer.delta(&press, event.position);
+                                    press.anchor = event.position;
+                                    press.fine = event.modifiers.shift;
+                                    pointer.press = Some(press);
+                                }
+                                Some((press.from, pointer.delta(&press, event.position)))
+                            });
+                            if let Some((from, delta)) = moved {
+                                let phase = DragPhase::Move;
+                                on_drag(&PlotDrag { phase, from, delta }, window, cx);
+                            }
+                        }
+                    });
+                    window.on_mouse_event(move |event: &gpui::MouseUpEvent, phase, window, cx| {
+                        if !phase.bubble() {
+                            return;
+                        }
+                        let ended = pointer.update(cx, |pointer, cx| {
+                            cx.notify();
+                            let press = pointer.press.take()?;
+                            Some((press.from, pointer.delta(&press, event.position)))
+                        });
+                        if let Some((from, delta)) = ended {
+                            let phase = DragPhase::End;
+                            on_drag(&PlotDrag { phase, from, delta }, window, cx);
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .top_0()
+            .left_0(),
+        )
+        .into_any_element()
 }
 
 /// Samples counted into equal bins, with an optional curve over them: MATLAB's `histogram`

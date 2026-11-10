@@ -45,7 +45,15 @@ actions!(
         /// Home on a focused track: to the start.
         StepToStart,
         /// End on a focused track: to the end.
-        StepToEnd
+        StepToEnd,
+        /// Up on a focused list, such as [`crate::Table`]: the row above.
+        SelectPrevious,
+        /// Down on a focused list: the row below.
+        SelectNext,
+        /// Home on a focused list: the first row.
+        SelectFirst,
+        /// End on a focused list: the last row.
+        SelectLast
     ]
 );
 
@@ -56,6 +64,11 @@ pub const CONTROL_CONTEXT: &str = "AtelierControl";
 
 /// The key context of a focused track that arrow keys move, inside [`CONTROL_CONTEXT`].
 pub const TRACK_CONTEXT: &str = "AtelierTrack";
+
+/// The key context of a focused list of rows, inside [`CONTROL_CONTEXT`]: Up, Down, Home and
+/// End move the selection ([`SelectPrevious`], [`SelectNext`], [`SelectFirst`],
+/// [`SelectLast`]) before any binding sees them.
+pub const LIST_CONTEXT: &str = "AtelierList";
 
 /// Whether the keyboard moved focus last, which is when the ring shows.
 #[derive(Default)]
@@ -100,6 +113,18 @@ pub(crate) fn init(cx: &mut App) {
         if matches!(key, "enter" | "space") && on(CONTROL_CONTEXT) {
             // Left for the control, which gpui presses on the key's release.
             cx.stop_propagation();
+        } else if on(LIST_CONTEXT) {
+            let step: Option<Box<dyn gpui::Action>> = match key {
+                "up" => Some(Box::new(SelectPrevious)),
+                "down" => Some(Box::new(SelectNext)),
+                "home" => Some(Box::new(SelectFirst)),
+                "end" => Some(Box::new(SelectLast)),
+                _ => None,
+            };
+            if let Some(step) = step {
+                window.dispatch_action(step, cx);
+                cx.stop_propagation();
+            }
         } else if on(TRACK_CONTEXT) {
             let step: Option<Box<dyn gpui::Action>> = match key {
                 "left" | "down" => Some(Box::new(StepBackward)),

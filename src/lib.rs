@@ -35,11 +35,13 @@ pub mod agent;
 pub mod ambient;
 mod backdrop;
 mod button;
+mod color;
 mod controls;
 mod dialog;
 mod display;
 pub mod emoji;
 mod focus;
+mod follow;
 mod form;
 mod frame;
 mod gpu;
@@ -59,7 +61,9 @@ pub mod plot;
 mod preferences;
 mod progress;
 mod selectable;
+mod stat;
 mod strings;
+mod table;
 mod text;
 mod theme;
 mod transport;
@@ -69,14 +73,19 @@ mod window;
 
 pub use ambient::{Ambience, AmbientBackdrop};
 pub use backdrop::BackdropPalette;
-pub use button::{Button, ButtonVariant, ControlSize, CopyButton};
+pub use button::{Button, ButtonVariant, ControlSize, CopyButton, binding_label};
+pub use color::{ColorPicker, ColorSwatch, Hsv, HsvChannel, hex, parse_hex};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use dialog::{DIALOG_CONTEXT, Dialog};
-pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
-pub use focus::{
-    CONTROL_CONTEXT, FocusNext, FocusPrevious, StepBackward, StepForward, StepToEnd, StepToStart,
-    TRACK_CONTEXT, focus_visible, set_focus_visible, tab_navigation,
+pub use display::{
+    Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, METER_FLOOR_DB, Spinner, StatusDot, Tone,
 };
+pub use focus::{
+    CONTROL_CONTEXT, FocusNext, FocusPrevious, LIST_CONTEXT, SelectFirst, SelectLast, SelectNext,
+    SelectPrevious, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT,
+    focus_visible, set_focus_visible, tab_navigation,
+};
+pub use follow::{BackToPlayhead, Follow, PlayheadSide};
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
 pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
@@ -106,7 +115,9 @@ pub use selectable::{
     BLOCK_SEPARATOR, CopySelection, LINE_SEPARATOR, LinkHandler, SELECTABLE_CONTEXT, SelectAll,
     SelectableText, SelectionScope,
 };
+pub use stat::Stat;
 pub use strings::{ActiveStrings, Strings};
+pub use table::{Column, ColumnWidth, RowMark, Table, TableCell, TableRow};
 pub use text::{Label, TextColor, TextSize};
 pub use theme::{
     ActiveTheme, Appearance, Colors, Density, Direction, Elevation, Material, PrimaryStyle, Shape,

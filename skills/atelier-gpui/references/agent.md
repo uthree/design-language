@@ -37,14 +37,16 @@ once the conversation streams or grows.
 
 ```rust
 let chat = cx.new(|_| ChatView::new("chat"));             // side panel
-let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)));   // middle of a window
+let chat = cx.new(|_| ChatView::new("chat").reading_width(px(780.)).open_attachments());
 cx.subscribe(&chat, |app, _, event: &ChatEvent, cx| match event {
     ChatEvent::Decided { entry, decision } => app.agent.answer(*entry, *decision),
     ChatEvent::Chose { entry, picked } => app.agent.answer_choices(*entry, picked),
+    ChatEvent::OpenAttachment { attachment, .. } => app.open(&attachment.label, cx),
 }).detach();
 
 chat.update(cx, |chat, cx| {
-    chat.push(ChatEntry::user(text).attachment("Piano · bars 17–24"), cx);
+    chat.push(ChatEntry::user(text).attachment("song.toml")
+        .attachment(ChatAttachment::new("Piano · bars 17–24").icon(IconName::Music)), cx);
     chat.set_thinking(Some("Reading the score".into()), cx);   // before the first token
     let call = chat.push(ChatEntry::tool("read_notes", "Read 96 notes", ToolState::Running).icon(IconName::Eye), cx);
     chat.append(call, &json, cx);                              // the call's detail
@@ -68,6 +70,10 @@ AgentPanel::new("agent", title).status(status).chat(chat.clone()).composer(compo
 - **An approval answered folds into one line** ("Allowed: Run the tests?") and emits
   `ChatEvent::Decided`; `answer(id, decision)` records one the runtime decided by rule;
   `awaiting_approval()` says whether one waits.
+- **Attachments** are chips above the person's bubble: a label is a file, a `ChatAttachment`
+  names another kind with its icon. With `open_attachments()` a chip is a tab stop that emits
+  `ChatEvent::OpenAttachment { entry, index, attachment }` on a click, Enter or Space; open the
+  file or a preview there. Don't rebuild `UserMessage` with chips of your own for this.
 - Messages carry a hover copy button (`without_copy_buttons()` to leave them out); answers take
   the provider's mark from `set_logo`; `anonymous()` drops the identity line.
 - `replace(entries)` opens another conversation at its end; `capacity(n)` keeps the last n;

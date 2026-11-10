@@ -70,16 +70,21 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `SegmentedControl`, `Tabs` | `.at-segmented`, `.at-tabs` with `<button>`s |
 | `TextField`, `FormField` | `.at-field` around an `<input>`, `.at-form-field` |
 | `TextInput` (in a `TextField`), `TextField::area` | the browser's own `<input>` / `<textarea>` in `.at-field`, `.at-field--area` |
+| `Table`, `Column`, `TableRow`, `RowMark`, `TableCell` | `table(element, { columns, rows, empty })`, returning `update`, `select`, `cell`; `atelier:row-select` with `{ index }`, `atelier:cell-activate` with `{ row, column, element }`; `.at-table`, `.at-table__row[aria-selected]`, `[data-active]`, `[data-faint]`, `[data-tinted]`, `--_mark` |
+| `Follow`, `BackToPlayhead`, `PlayheadSide` | `follow()` from `atelier.js`, returning `update(offset, span, at, playing)`, `engage`, `release`, `released`, `page(span, at)`, `side(offset, span, at)`; `.at-back-to-playhead[data-side="before" \| "after"]` on an `.at-button--sm` |
+| `Stat` (`unit`, `size`, `color`, `inline`, `end`, `empty`) | `.at-stat` holding `.at-stat__caption` and `.at-stat__figure` (`.at-stat__value`, `.at-stat__unit`); an empty value shows the dash; `.at-stat--display`, `--md`, `--sm`, `--inline`, `--end`; `data-tone="success" \| "warning" \| "danger"` |
 | `InlineEdit`, `SpotBook` | `inlineEdit(label, { value, multiline, allowEmpty, minWidth, maxWidth, onCommit, onClose })`, returning `field`, `input`, `close`; `onCommit` may return a message to refuse; `atelier:inline-commit` with `{ value }`, `atelier:inline-close`; `.at-inline-edit` (the label's own rectangle stands in for the spot) |
 | `PreferencesWindow`, `SettingsPage`, `SettingsGroup`, `Setting`, `FormGroup` | `preferences(element, { pages, selected, actions, labels })`, returning `select`, `search`, `page`; `atelier:page`; `.at-preferences`, `.at-form-group` |
 | `KeybindingList`, `KeyBinding`, `keystroke_label` | `keybindings(element, { groups, labels })`, returning `update`, `recording`; `keystrokeLabel(event)`; `atelier:keybinding`, `keybinding-remove`, `keybinding-reset`; `.at-keybindings`, `.at-keybinding` |
 | `Switch`, `Checkbox`, `Slider` | `.at-switch`, `.at-checkbox` around an `<input type=checkbox>`, `input.at-slider` |
+| `ColorSwatch`, `ColorPicker`, `hex`, `parse_hex` | `colorSwatch(color, { label, pressed })` (`button.at-swatch`, `aria-pressed`), `colorPicker(element, { value, presets, labels })` returning `{ value, set }` and firing `atelier:color`; `parseHex`. `Slider::color` is `--at-slider-fill` on `input.at-slider` |
 | `Slider::bipolar`, `.default_value(v)` | `input.at-slider.at-slider--bipolar`, `data-default="v"` (a double click goes back) |
 | `Knob::new(v).id(..).bipolar().label(..).readout_with(..)` | `.at-knob` with `data-value`, `data-bipolar`, `data-default`, `data-step`, `.at-knob__label` and an `<output class="at-knob__readout">`; `--_size` and `--_value-color` restyle it |
 | `Card`, `Popover`, `SectionHeader` | `.at-card`, `.at-popover`, `.at-section-header` |
 | `ListItem`, `OptionCard`, `MenuItem` | `.at-list-item`, `.at-option-card`, `.at-menu-item` in `.at-menu` |
 | `Badge`, `StatusDot`, `Kbd`, `Avatar` | `.at-badge--success` etc., `.at-status-dot`, `.at-kbd`, `.at-avatar` |
-| `ProgressBar`, `Spinner`, `Skeleton`, `LevelMeter` | `.at-progress`, `.at-spinner`, `.at-skeleton`, `.at-meter` |
+| `ProgressBar`, `Spinner`, `Skeleton` | `.at-progress`, `.at-spinner`, `.at-skeleton` |
+| `LevelMeter` (`peak`, `clipped`, `horizontal`, `LevelMeter::position(db)`) | `.at-meter` with `--level` and `--peak` (0 to 1), a `.at-meter__peak` child, `data-clipped`, `.at-meter--horizontal`; `setMeter(element, { level, peak, clipped })` and `meterPosition(db)` from `atelier.js`. The older `<span style="height: …">` fill still works. |
 | `TitleBar`, `Toolbar`, `Sidebar`, `StatusBar` | `.at-title-bar`, `.at-toolbar`, `.at-sidebar`, `.at-status-bar`, each with `.at-chrome` |
 | `Composer`, `ContextChip`, user and assistant messages | `.at-composer`, `.at-context-chip`, `.at-user-message`, `.at-assistant-message` |
 | `Dialog`, `ApprovalDialog` (`Decision`) | `openDialog({ title, body, icon, tone, content, actions })` and `approvalDialog({ title, body, command, allowLabel, destructive, offerAlways, reviewing })` from `atelier.js`, resolving with the answer; `dialog.at-dialog` with `::backdrop` in `--at-scrim` |
@@ -87,9 +92,9 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `AgentActivity`, `AgentPhase` | `activity(element, { phase, detail, progress, elapsed, rate, tokens, context, labels })`; `.at-activity`; `AGENT_PHASES` |
 | `PlanView`, `StepList` | `planView(element, { title, steps, open })`, firing `atelier:toggle`; `.at-plan`, `ol.at-steps > li.at-step--done/running/pending/failed/skipped` |
 | `ChangedFiles`, `FileChange`, `ChangeKind` | `changedFiles(element, { title, files, actions })`, firing `atelier:open-file` with `{ index, path }`; `.at-changes`, `.at-change[data-kind]` |
-| `graph::NodeCanvas`, `GraphNode`, `NodeField`, `Wire`, `NodeState` | `nodeCanvas(element, { portTypes, nodes, wires, legend, labels })`, returning `add`, `remove`, `update`, `setState`, `connect`, `disconnect`, `select`, `undoAgentNode`, `resetView`, `nodes`, `wires`, `downstream`, `executionOrder`; `atelier:node-select`, `node-move`, `node-connect`, `node-disconnect`, `node-remove`, `node-keep`, `node-undo`; `.at-node-canvas`, `.at-node` |
+| `graph::NodeCanvas`, `GraphNode`, `NodeField`, `Wire`, `NodeState` | `nodeCanvas(element, { portTypes, nodes, wires, legend, labels })` (a node's `comments` are drawn as notes), returning `add`, `remove`, `update`, `setState`, `connect`, `disconnect`, `select`, `undoAgentNode`, `resetView`, `nodes`, `wires`, `downstream`, `executionOrder`; `atelier:node-select`, `node-move`, `node-connect`, `node-disconnect`, `node-remove`, `node-keep`, `node-undo`, `node-comment`; `.at-node-canvas`, `.at-node`, `.at-node__comment` |
 | `MenuItem::description`, `.danger()` | `.at-menu-item--described` with `.at-menu-item__text` and `.at-menu-item__description`, `.at-menu-item--danger` |
-| `ChatView` (`push`, `append`, `finish`, `set_tool_state`, `answer`, `jump_to_latest`, `ChatEvent::Decided`, `ChatEvent::Chose`) | `chat(element, { panel, logo, strings })` from `atelier.js`, returning `push`, `append`, `finish`, `setToolState`, `answer`, `jumpToLatest`; `atelier:decided` events with `{ id, decision }`, `atelier:chose` with `{ id, picked }` for a `choices` entry |
+| `ChatView` (`push`, `append`, `finish`, `set_tool_state`, `answer`, `jump_to_latest`, `open_attachments`, `ChatEvent::Decided`, `ChatEvent::Chose`, `ChatEvent::OpenAttachment`), `ChatAttachment` | `chat(element, { panel, logo, strings, openAttachments })` from `atelier.js`, returning `push`, `append`, `finish`, `setToolState`, `answer`, `jumpToLatest`; `atelier:decided` events with `{ id, decision }`, `atelier:chose` with `{ id, picked }` for a `choices` entry, `atelier:open-attachment` with `{ id, index, label }`; a user entry's `attachments` are labels or `{ label, icon }` |
 | `Markdown` | `markdown(element, text, { labels })`, `.at-markdown` (answers in `chat()` use it) |
 | `SelectableText`, `SelectionScope` | the page's own selection, which already runs across elements and scrolls past an edge; the transcript, Markdown, code and notices leave `user-select` alone |
 | `LogView`, `LogLine`, `LogLevel` | `logView(element, { lines })` with `{ key, message, time, level, source }`, returning `push`, `update`; `.at-log`, `.at-log__line`; a copy gives one record to a line, `12s WARN source: message` |
@@ -97,6 +102,7 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `agent::MessageQueue`, `QueuedMessage` | `messageQueue(element, { messages, paused, editable, labels })`, returning `update`; `atelier:queue-send-now`, `queue-edit`, `queue-remove` with `{ index }`, `queue-pause` with `{ paused }`; `.at-queue` |
 | `agent::ConversationList`, `Conversation`, `ConversationRow` | `conversationList(element, { conversations, selected, archived, labels })`, returning `update`, `search`; `atelier:conversation-open`, `conversation-more` with `{ index }`, `conversation-new`, `conversation-archived`; `.at-conversations`, `.at-conversation` |
 | `Tooltip` | `data-tooltip="…"` on any element |
+| `Button::shortcut`, `Button::shortcut_for`, `Tooltip::shortcut`, `binding_label` | `data-shortcut="secondary-d"` (gpui's notation, or already written) beside `data-tooltip`, turned by `hydrate()` into `.at-tooltip` with `.at-tooltip__keys` and `aria-keyshortcuts`; `shortcutTooltip(element, words, keys)` and `shortcutLabel(binding)` from `atelier.js` |
 
 Icons are `<span data-icon="sparkles"></span>`; `hydrate()` from `atelier.js` draws them, and
 wires segmented controls and tabs (click and arrow keys, an `atelier:select` event), slider fills
@@ -183,7 +189,7 @@ to WebAssembly would bring them over. The liquid-metal backdrop is not ported ye
 The prototype covers the tokens, the core controls, the window frame, the agent transcript and
 composer, dialogs and approvals, the activity line, plan and changed files, the node canvas,
 preferences, Markdown, choice cards, the message queue, the conversation list, and the backdrops. Still to come: menus that open (the menu is
-styled, not positioned; the permission picker's menu is the exception), completions, plots and the instrument controls such as
+styled, not positioned; the permission picker's menu is the exception), completions, plots (and with them `LinePlot::on_drag`) and the instrument controls such as
 `PianoKeyboard`, `NoteRoll` and `ReadoutStrip`/`Readout`, and the effort picker's `note` and
 `EffortButton::disabled`. `IconName::Menu` is in the generated icons.
 
