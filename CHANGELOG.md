@@ -14,6 +14,33 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: notes on nodes
+
+### Added
+
+- `GraphNode::comment(text)`: a note left on a node, drawn under its fields on a warning wash
+  with a stripe. It shows the first `graph::COMMENT_LINES` (4) lines (`comment_preview` cuts
+  them) and the whole text in a tooltip.
+- Pressing a note selects its node without taking hold of it and emits
+  `NodeCanvasEvent::CommentPressed { node, index }`. `NodeCanvas::spots(&book)` records where
+  each note is drawn under `NodeCanvas::comment_key(node, index)`, so an `InlineEdit` opens
+  over the note itself; write the text back with `update_node`. The node editor example does.
+
+### Changed
+
+- A `match` on `NodeCanvasEvent` needs an arm for `CommentPressed`.
+
+### Web
+
+- `nodeCanvas` draws a node's `comments` as `.at-node__comment` notes; pressing one fires
+  `atelier:node-comment` with `{ id, index, target }`, for `inlineEdit(target, { multiline:
+  true })`. The showcase's Sampler carries one you can edit.
+
+### Workarounds you can delete
+
+- Auris Studio's `mixer_comment_notes` in `ui/mixer_graph.rs`, which drew the notes into a
+  node body and caught presses before the canvas did.
+
 ## Unreleased: attachments that open
 
 ### Added

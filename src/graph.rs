@@ -179,7 +179,28 @@ pub struct GraphNode {
     /// Added by the assistant and not yet kept: drawn in the agent colour, dashed, with Keep and
     /// Undo under it.
     pub by_agent: bool,
+    /// Notes the person wrote on it, drawn at the bottom of the card. Line breaks are kept; up
+    /// to [`COMMENT_LINES`] lines show, the rest is in the note's tooltip.
+    pub comments: Vec<SharedString>,
     body: Option<NodeBody>,
+}
+
+/// How many lines of a comment a node shows; its tooltip has the whole text.
+pub const COMMENT_LINES: usize = 4;
+
+/// What a comment on a node shows: its first [`COMMENT_LINES`] lines as written, and an
+/// ellipsis when there is more. Each line still wraps to the card's width.
+pub fn comment_preview(text: &str) -> String {
+    let mut lines = text.lines();
+    let mut shown = lines
+        .by_ref()
+        .take(COMMENT_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if lines.next().is_some() {
+        shown.push('…');
+    }
+    shown
 }
 
 impl GraphNode {
@@ -195,6 +216,7 @@ impl GraphNode {
             fields: Vec::new(),
             state: NodeState::Idle,
             by_agent: false,
+            comments: Vec::new(),
             body: None,
         }
     }
@@ -247,6 +269,12 @@ impl GraphNode {
         self
     }
 
+    /// A note on the node: "Under the vocal", "Chorus only". Several stack in order.
+    pub fn comment(mut self, text: impl Into<SharedString>) -> Self {
+        self.comments.push(text.into());
+        self
+    }
+
     /// Anything else at the bottom of the card, drawn each frame: a preview, a player.
     pub fn body(
         mut self,
@@ -275,6 +303,14 @@ pub enum NodeCanvasEvent {
     /// The person undid a node the assistant added: it is gone, and what it sat between is
     /// wired back together.
     Undone(NodeId),
+    /// The person pressed one of a node's comments: open it for editing, over
+    /// [`NodeCanvas::comment_key`] in the canvas's [`crate::SpotBook`].
+    CommentPressed {
+        /// The node it is on, which is now selected.
+        node: NodeId,
+        /// Which of its comments, from 0.
+        index: usize,
+    },
 }
 
 /// What the pointer is doing on the canvas.
@@ -342,6 +378,7 @@ pub struct NodeCanvas {
     port_types: Vec<SharedString>,
     legend: bool,
     focus: Option<FocusHandle>,
+    spots: Option<crate::SpotBook>,
 }
 
 impl EventEmitter<NodeCanvasEvent> for NodeCanvas {}
@@ -360,7 +397,20 @@ impl NodeCanvas {
             port_types: Vec::new(),
             legend: true,
             focus: None,
+            spots: None,
         }
+    }
+
+    /// Record where each node's comments are drawn in `book`, under
+    /// [`NodeCanvas::comment_key`], so an [`crate::InlineEdit`] opens over the one pressed.
+    pub fn spots(mut self, book: &crate::SpotBook) -> Self {
+        self.spots = Some(book.clone());
+        self
+    }
+
+    /// The key a comment's place is recorded under by [`NodeCanvas::spots`].
+    pub fn comment_key(node: NodeId, index: usize) -> SharedString {
+        format!("node-comment:{}:{index}", node.0).into()
     }
 
     /// The names of the port types, in the order of their indexes: the legend lists them and a
@@ -1018,6 +1068,65 @@ impl NodeCanvas {
                 .child(body(id, window, cx))
         });
 
+        let comments = (!node.comments.is_empty()).then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(theme.spacing.xs)
+                .px(theme.spacing.sm)
+                .pb(theme.spacing.sm)
+                .children(node.comments.iter().enumerate().map(|(index, text)| {
+                    let note_id = self.child_id(format!("comment-{}-{index}", id.0));
+                    let whole = text.clone();
+                    selector(div().id(note_id.clone()), &note_id)
+                        .relative()
+                        .flex()
+                        .gap(theme.spacing.xs)
+                        .p(theme.spacing.xs)
+                        .rounded(theme.shape.radius_xs)
+                        .bg(theme.colors.warning_wash)
+                        .cursor_pointer()
+                        .hover(|note| note.bg(theme.colors.hover))
+                        .child(
+                            div()
+                                .w(px(3.))
+                                .flex_none()
+                                .rounded(px(1.5))
+                                .bg(theme.colors.warning),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .whitespace_normal()
+                                .text_size(theme.typography.size_xs)
+                                .text_color(theme.colors.text)
+                                .child(comment_preview(text)),
+                        )
+                        .children(self.spots.as_ref().map(|book| {
+                            book.spot(Self::comment_key(id, index))
+                                .absolute()
+                                .top_0()
+                                .left_0()
+                                .size_full()
+                        }))
+                        .tooltip(move |window, cx| Tooltip::new(whole.clone()).build(window, cx))
+                        // A note has nowhere to be dragged to: a press opens it, and never also
+                        // takes hold of the node.
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                if this.selected != Some(id) {
+                                    this.select(Some(id), cx);
+                                    cx.emit(NodeCanvasEvent::Selected(Some(id)));
+                                }
+                                cx.emit(NodeCanvasEvent::CommentPressed { node: id, index });
+                            }),
+                        )
+                }))
+        });
+
         let agent_footer = node.by_agent.then(|| {
             div()
                 .flex()
@@ -1120,6 +1229,7 @@ impl NodeCanvas {
             .child(ports)
             .children(fields)
             .children(body)
+            .children(comments)
             .children(agent_footer)
             .into_any_element()
     }
@@ -1339,5 +1449,17 @@ mod tests {
         assert_eq!(canvas.downstream(effect), [effect, sink]);
         assert_eq!(canvas.unconnected_inputs(), 1);
         assert_eq!(canvas.source(sink, 0), Some((effect, 0)));
+    }
+}
+
+#[cfg(test)]
+mod comment_tests {
+    use super::comment_preview;
+
+    #[test]
+    fn a_comment_keeps_four_lines_and_says_when_there_is_more() {
+        assert_eq!(comment_preview("Under the vocal"), "Under the vocal");
+        assert_eq!(comment_preview("a\nb\nc\nd"), "a\nb\nc\nd");
+        assert_eq!(comment_preview("a\nb\nc\nd\ne"), "a\nb\nc\nd…");
     }
 }

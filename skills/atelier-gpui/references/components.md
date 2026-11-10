@@ -454,6 +454,13 @@ fields. Edit parameters in an inspector beside the canvas and put the new row ba
 - A node the agent added is drawn with a dashed `colors.agent` border and a sparkle, with Keep
   and Undo on the node itself.
 
+Notes people leave on a node (a mixer's scribble strip, "try 40 steps for the outro") are
+`GraphNode::comment(text)`: each shows its first `COMMENT_LINES` (4) lines on a warning wash,
+with the whole text in a tooltip. Pressing one never drags the node; it selects it and emits
+`NodeCanvasEvent::CommentPressed { node, index }`. Give the canvas `.spots(&book)` and open an
+`InlineEdit` over `book.get(&NodeCanvas::comment_key(node, index), window)` with a multiline
+`TextInput`, then write the text back with `update_node` (`examples/node_editor.rs` does).
+
 ## Overlays
 
 `Popover::new().w(..).child(MenuItem::new(id, "Duplicate").shortcut("Ctrl+D").on_click(..))`,

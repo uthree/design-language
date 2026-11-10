@@ -1395,16 +1395,22 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 
 /// `graph::NodeCanvas`: a node graph on a pannable canvas in `root` (give it a height).
 ///
-/// Each node is `{ title, icon, x, y, width, inputs, outputs, fields, state, progress, seconds,
-/// byAgent }`: ports are `{ name, kind }` with `kind` an index into `portTypes` (it picks the
+/// Each node is `{ title, icon, x, y, width, inputs, outputs, fields, comments, state, progress,
+/// seconds, byAgent }`: ports are `{ name, kind }` with `kind` an index into `portTypes` (it picks the
 /// port colour), fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
 /// and `state` is idle, queued, running (with `progress` 0–1), done (with `seconds`), cached or
-/// failed. Wires are `{ from, output, to, input }` by node id, and only join ports of one kind.
+/// failed. `comments` are notes left on the node, each showing its first four lines with the
+/// whole text in its title; pressing one fires `atelier:node-comment` with `{ id, index, target }`
+/// for the application to edit over `target` (with `inlineEdit`, multiline) and `update` the node.
+/// Wires are `{ from, output, to, input }` by node id, and only join ports of one kind.
 ///
 /// The person drags nodes, draws wires from an output to an input, picks a wire up by its
 /// input, pans with the background or the wheel, and deletes the selected node with Delete.
 /// What they do fires `atelier:node-select`, `node-move`, `node-connect`, `node-disconnect`,
 /// `node-remove`, `node-keep` and `node-undo` on `root`, after the canvas has applied it.
+/// How many lines of a node's comment show on the canvas, as `graph::COMMENT_LINES`.
+const COMMENT_LINES = 4;
+
 export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legend = true, labels = {} } = {}) {
   const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", ...labels };
   const graph = new Map();
@@ -1527,6 +1533,18 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       }
       card.append(fields);
     }
+    if (node.comments?.length) {
+      const notes = element("div", "at-node__comments");
+      node.comments.forEach((text, index) => {
+        const lines = String(text).split("\n");
+        const preview = lines.length > COMMENT_LINES ? `${lines.slice(0, COMMENT_LINES).join("\n")}…` : String(text);
+        const note = element("div", "at-node__comment", preview);
+        note.dataset.index = String(index);
+        note.title = String(text);
+        notes.append(note);
+      });
+      card.append(notes);
+    }
     if (node.byAgent) {
       const footer = element("div", "at-node__agent", words.addedByAgent);
       const buttons = element("div");
@@ -1602,6 +1620,21 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
     root.focus({ preventScroll: true });
     const socket = event.target.closest(".at-node__socket");
     const card = event.target.closest(".at-node");
+    const note = event.target.closest(".at-node__comment");
+    if (note && card && event.button === 0) {
+      // A note asks to be edited; the node is selected but stays where it is.
+      const id = Number(card.dataset.node);
+      if (selected !== id) {
+        api.select(id);
+        emit("node-select", { id });
+      }
+      // Selecting redraws the cards, so the note is found again in the new one.
+      const index = Number(note.dataset.index);
+      const target = layer.querySelector(`.at-node[data-node="${id}"] .at-node__comment[data-index="${index}"]`) || note;
+      emit("node-comment", { id, index, target });
+      event.preventDefault();
+      return;
+    }
     if (socket && card) {
       const id = Number(card.dataset.node);
       const index = Number(socket.dataset.index);

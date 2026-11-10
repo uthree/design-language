@@ -676,10 +676,10 @@
       permissionPicker(document.getElementById("permission-sample"));
       // The node canvas, wired as the gpui node_editor's tail end.
       const graphRoot = document.getElementById("graph");
-      nodeCanvas(graphRoot, {
+      const graph = nodeCanvas(graphRoot, {
         portTypes: ["Model", "Conditioning", "Latent", "Audio", "Value"],
         nodes: [
-          { title: "Sampler", icon: "brain", x: 0, y: 10, width: 220, inputs: [{ name: "Model", kind: 0 }, { name: "Positive", kind: 1 }, { name: "Latent", kind: 2 }], outputs: [{ name: "Latent", kind: 2 }], fields: [{ type: "number", name: "Steps", value: "30", fraction: 0.3 }, { type: "choice", name: "Sampler", value: "DPM++ 2M" }], state: "done", seconds: 4.2 },
+          { title: "Sampler", icon: "brain", x: 0, y: 10, width: 220, inputs: [{ name: "Model", kind: 0 }, { name: "Positive", kind: 1 }, { name: "Latent", kind: 2 }], outputs: [{ name: "Latent", kind: 2 }], fields: [{ type: "number", name: "Steps", value: "30", fraction: 0.3 }, { type: "choice", name: "Sampler", value: "DPM++ 2M" }], comments: ["Try 40 steps for the outro\nKeep the seed for v2"], state: "done", seconds: 4.2 },
           { title: "Decode audio", icon: "waveform", x: 270, y: 10, inputs: [{ name: "Latent", kind: 2 }], outputs: [{ name: "Audio", kind: 3 }], state: "running", progress: 0.45 },
           { title: "Loudness normalize", icon: "waveform", x: 270, y: 150, inputs: [{ name: "Audio", kind: 3 }], outputs: [{ name: "Audio", kind: 3 }], fields: [{ type: "number", name: "Target", value: "−14 LUFS", fraction: 0.6 }], byAgent: true },
           { title: "Save audio", icon: "music", x: 520, y: 60, inputs: [{ name: "Audio", kind: 3 }], fields: [{ type: "text", name: "File name", value: "pad-textures-{n}.wav" }] },
@@ -689,6 +689,21 @@
           { from: 1, output: 0, to: 2, input: 0 },
           { from: 2, output: 0, to: 3, input: 0 },
         ],
+      });
+      // A note on a node is edited where it is drawn.
+      graphRoot.addEventListener("atelier:node-comment", ({ detail: { id, index, target } }) => {
+        const comments = [...graph.nodes().find((node) => node.id === id).comments];
+        inlineEdit(target, {
+          value: comments[index],
+          multiline: true,
+          allowEmpty: true,
+          onCommit: (text) => {
+            if (text.trim()) comments[index] = text.trim();
+            else comments.splice(index, 1);
+            graph.update(id, { comments });
+            document.getElementById("graph-event").textContent = `node-comment: ${id} #${index} edited`;
+          },
+        });
       });
       for (const name of ["node-select", "node-move", "node-connect", "node-disconnect", "node-remove", "node-keep", "node-undo"]) {
         graphRoot.addEventListener(`atelier:${name}`, (event) => (document.getElementById("graph-event").textContent = `${name}: ${JSON.stringify(event.detail)}`));

@@ -2533,6 +2533,37 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 
 .at-node__field--text > :last-child { margin: 0; font-family: inherit; }
 
+/* Notes left on a node, as `graph::GraphNode::comment`: four lines, a press edits them. */
+.at-node__comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--at-space-xs);
+  padding: 0 var(--at-space-sm) var(--at-space-sm);
+}
+
+.at-node__comment {
+  display: flex;
+  gap: var(--at-space-xs);
+  padding: var(--at-space-xs);
+  border-radius: var(--at-radius-xs);
+  background: var(--at-warning-wash);
+  color: var(--at-text);
+  font-size: var(--at-size-xs);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.at-node__comment::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--at-warning);
+}
+
+.at-node__comment:hover { background: var(--at-hover); }
+
 .at-node__agent {
   display: flex;
   flex-direction: column;
