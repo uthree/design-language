@@ -368,6 +368,156 @@ export function setMeter(meter, { level = 0, peak, clipped = false } = {}) {
 /// is back in view, playback starts again or `engage()` is called; a change of span is a zoom
 /// and keeps following. `side(offset, span, at)` is `"before"` or `"after"` while let go and
 /// out of view, for a `.at-back-to-playhead` button with that `data-side`.
+/// A colour code read back: six hex digits or the three-digit short form, with or without
+/// `#`, in either case. `parseHex(" 38f ")` is `"#3388FF"`; anything else is `null`. As
+/// `atelier::parse_hex`.
+export function parseHex(text) {
+  const digits = String(text).trim().replace(/^#/, "");
+  if (/^[0-9a-f]{6}$/i.test(digits)) return `#${digits.toUpperCase()}`;
+  if (/^[0-9a-f]{3}$/i.test(digits)) return `#${[...digits].map((digit) => digit + digit).join("").toUpperCase()}`;
+  return null;
+}
+
+/// `#RRGGBB` as hue (degrees), saturation and value (0–1), as `atelier::Hsv`.
+function hsvOf(code) {
+  const number = parseInt(code.slice(1), 16);
+  const [r, g, b] = [16, 8, 0].map((shift) => ((number >> shift) & 255) / 255);
+  const max = Math.max(r, g, b);
+  const chroma = max - Math.min(r, g, b);
+  let hue = 0;
+  if (chroma > 0) {
+    if (max === r) hue = 60 * ((((g - b) / chroma) % 6) + 6) % 360;
+    else if (max === g) hue = 60 * ((b - r) / chroma + 2);
+    else hue = 60 * ((r - g) / chroma + 4);
+  }
+  return { hue, saturation: max ? chroma / max : 0, value: max };
+}
+
+function codeOf({ hue, saturation, value }) {
+  const sector = ((hue % 360) + 360) % 360 / 60;
+  const chroma = value * saturation;
+  const x = chroma * (1 - Math.abs((sector % 2) - 1));
+  const [r, g, b] = [[chroma, x, 0], [x, chroma, 0], [0, chroma, x], [0, x, chroma], [x, 0, chroma], [chroma, 0, x]][Math.min(5, Math.floor(sector))];
+  const m = value - chroma;
+  return `#${[r, g, b].map((channel) => Math.round((channel + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+/// `ColorSwatch`: a button showing `color`, its code (after `label`, if given) in its title.
+/// Toggle `aria-pressed` for the one in use.
+export function colorSwatch(color, { label, pressed = false } = {}) {
+  const swatch = element("button", "at-swatch");
+  swatch.type = "button";
+  swatch.style.setProperty("--_color", color);
+  const code = parseHex(color) ?? color;
+  swatch.title = label ? `${label} · ${code}` : code;
+  swatch.setAttribute("aria-label", swatch.title);
+  swatch.setAttribute("aria-pressed", String(pressed));
+  return swatch;
+}
+
+/// `ColorPicker` in `root`: the colour and its code (typed, then Return), hue, saturation and
+/// brightness sliders filled with what they make, and `presets` as swatches. Each change fires
+/// `atelier:color` with `{ value: "#RRGGBB" }`. The hue is kept while the colour passes through
+/// grey. Returns `{ value, set(code) }`.
+export function colorPicker(root, { value = "#3D7BFF", presets = [], labels = {} } = {}) {
+  const words = { hue: "Hue", saturation: "Saturation", brightness: "Brightness", invalid: "Not a colour code", code: "Colour code", ...labels };
+  let hsv = hsvOf(parseHex(value) ?? "#000000");
+  root.classList.add("at-color-picker");
+  root.replaceChildren();
+  const head = element("div", "at-color-picker__head");
+  const preview = element("span", "at-color-picker__preview");
+  const field = element("label", "at-field");
+  const code = document.createElement("input");
+  code.spellcheck = false;
+  code.setAttribute("aria-label", words.code);
+  field.append(code);
+  const error = element("span", "at-color-picker__error", words.invalid);
+  error.hidden = true;
+  head.append(preview, field, error);
+  root.append(head);
+  const channels = [
+    ["hue", words.hue, 360, (v) => `${Math.round(v)}°`],
+    ["saturation", words.saturation, 1, (v) => `${Math.round(v * 100)}%`],
+    ["value", words.brightness, 1, (v) => `${Math.round(v * 100)}%`],
+  ];
+  const sliders = channels.map(([key, caption, span, format]) => {
+    const row = element("label", "at-color-picker__row");
+    const slider = document.createElement("input");
+    slider.className = "at-slider";
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "1";
+    slider.step = key === "hue" ? String(1 / 360) : "0.01";
+    const readout = element("span");
+    row.append(element("span", "", caption), slider, readout);
+    root.append(row);
+    slider.addEventListener("input", () => {
+      // The hue stops just short of 360° at the end of its track, so the thumb stays there.
+      hsv = { ...hsv, [key]: key === "hue" ? Math.min(Number(slider.value) * span, 359.99) : Number(slider.value) };
+      draw(true);
+    });
+    return { key, span, format, slider, readout };
+  });
+  const row = element("div", "at-color-picker__presets");
+  const swatches = presets.map((preset) => {
+    const swatch = colorSwatch(preset);
+    swatch.addEventListener("click", () => {
+      hsv = hsvOf(parseHex(preset));
+      draw(true);
+    });
+    row.append(swatch);
+    return [parseHex(preset), swatch];
+  });
+  if (swatches.length) root.append(row);
+
+  function draw(changed) {
+    const current = codeOf(hsv);
+    preview.style.setProperty("--_color", current);
+    if (document.activeElement !== code) code.value = current;
+    error.hidden = true;
+    for (const { key, span, format, slider, readout } of sliders) {
+      slider.value = String(hsv[key] / span);
+      const fill = key === "hue" ? codeOf({ hue: hsv.hue, saturation: 1, value: 1 }) : current;
+      slider.style.setProperty("--at-slider-fill", fill);
+      slider.style.setProperty("--_value", `${(hsv[key] / span) * 100}%`);
+      readout.textContent = format(hsv[key]);
+    }
+    for (const [preset, swatch] of swatches) swatch.setAttribute("aria-pressed", String(preset === current));
+    if (changed) root.dispatchEvent(new CustomEvent("atelier:color", { bubbles: true, detail: { value: current } }));
+  }
+  code.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      const typed = parseHex(code.value);
+      if (!typed) {
+        error.hidden = false;
+        return;
+      }
+      code.value = typed;
+      if (typed !== codeOf(hsv)) {
+        hsv = hsvOf(typed);
+        draw(true);
+      }
+    } else if (event.key === "Escape") {
+      code.value = codeOf(hsv);
+      error.hidden = true;
+    }
+  });
+  code.addEventListener("blur", () => {
+    code.value = codeOf(hsv);
+  });
+  draw(false);
+  return {
+    get value() {
+      return codeOf(hsv);
+    },
+    set(next) {
+      const typed = parseHex(next);
+      if (typed && typed !== codeOf(hsv)) hsv = hsvOf(typed);
+      draw(false);
+    },
+  };
+}
+
 export function follow() {
   let released = false;
   let last = null;

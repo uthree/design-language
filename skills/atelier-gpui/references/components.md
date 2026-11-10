@@ -202,6 +202,26 @@ one per row).
 
 Sliders and knobs handle their own dragging and keys; the application keeps only the value
 (and its undo), through `on_change`. Do not wrap them in an element that handles the gesture.
+`Slider::color(hsla)` fills one with a colour of the document's instead of the accent.
+
+Colours the person chooses for the document (a track's, a caption's) are a `ColorSwatch` that
+opens a `ColorPicker`:
+
+```rust
+ColorSwatch::new("caption-swatch", self.caption)
+    .label("Chord captions")                    // the tooltip says "Chord captions · #F4F1EA"
+    .selected(self.picking)
+    .on_click(cx.listener(|this, _, _, cx| { this.picking = !this.picking; cx.notify(); })),
+// under it, while picking:
+ColorPicker::new("caption-picker", self.caption)
+    .presets(presets)                          // swatches to start from
+    .on_change(cx.listener(|this, color: &Hsla, _, cx| { this.caption = *color; cx.notify(); })),
+```
+
+The picker shows the colour and its code (typed, then Return; a code it cannot read says so),
+and hue, saturation and brightness sliders filled with what they make. It keeps the hue while
+the colour passes through grey, so do not convert the colour you store back into the picker
+yourself. `atelier::{hex, parse_hex, Hsv}` are the same arithmetic, for a code in a file.
 
 ## Display
 

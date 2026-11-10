@@ -14,6 +14,32 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: colours the person picks
+
+### Added
+
+- `ColorSwatch::new(id, color)`: a small square showing a document colour, a tab stop that a
+  click, Enter or Space presses. `.selected(..)` rings it in the accent; its tooltip gives the
+  code, after `.label(..)` if there is one.
+- `ColorPicker::new(id, color)`: the colour and its code (type one and press Return), hue,
+  saturation and brightness sliders filled with what they make, and `.presets(..)` as swatches.
+  `.on_change(..)` gets each new colour; without it the picker keeps its own. The hue survives
+  a trip through grey or black.
+- `atelier::{hex, parse_hex, Hsv, HsvChannel}`: the arithmetic behind it, for codes in files.
+- `Slider::color(hsla)` fills a slider with a colour other than the accent.
+- `Strings::{hue, saturation, brightness, color_code_invalid}`, in English and Japanese.
+
+### Web
+
+- `colorSwatch(color, { label, pressed })` (`.at-swatch`), `colorPicker(element, { value,
+  presets })` firing `atelier:color`, and `parseHex`. `input.at-slider` takes
+  `--at-slider-fill`. The showcase has caption colours to pick.
+
+### Workarounds you can delete
+
+- Auris Studio's `ui/colour_picker.rs` (`Hsv`, `hex`, `parse_hex`) and the `swatch` and
+  `video_colour_picker` helpers in `ui/video_export.rs`, with their `atelier: allow` markers.
+
 ## Unreleased: notes on nodes
 
 ### Added

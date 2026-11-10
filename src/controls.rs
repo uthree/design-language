@@ -817,6 +817,7 @@ macro_rules! value_builders {
 #[derive(IntoElement)]
 pub struct Slider {
     value: f32,
+    color: Option<Hsla>,
     parts: ValueParts,
 }
 
@@ -825,8 +826,16 @@ impl Slider {
     pub fn new(value: f32) -> Self {
         Self {
             value: value.clamp(0., 1.),
+            color: None,
             parts: ValueParts::default(),
         }
+    }
+
+    /// Fill colour; defaults to the accent. A [`crate::ColorPicker`] fills each channel with
+    /// the colour it makes.
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
     }
 
     /// Caption to the left.
@@ -880,7 +889,7 @@ impl RenderOnce for Slider {
                     .top((thumb - track_height) / 2.)
                     .h(track_height)
                     .rounded(track_height / 2.)
-                    .bg(on_fill(&theme)),
+                    .bg(self.color.unwrap_or_else(|| on_fill(&theme))),
             )
             // The thumb's left edge sits at value × (width − thumb), so it never overhangs.
             .child(

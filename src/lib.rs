@@ -35,6 +35,7 @@ pub mod agent;
 pub mod ambient;
 mod backdrop;
 mod button;
+mod color;
 mod controls;
 mod dialog;
 mod display;
@@ -72,6 +73,7 @@ mod window;
 pub use ambient::{Ambience, AmbientBackdrop};
 pub use backdrop::BackdropPalette;
 pub use button::{Button, ButtonVariant, ControlSize, CopyButton, binding_label};
+pub use color::{ColorPicker, ColorSwatch, Hsv, HsvChannel, hex, parse_hex};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use dialog::{DIALOG_CONTEXT, Dialog};
 pub use display::{

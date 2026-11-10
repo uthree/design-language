@@ -20,12 +20,13 @@ use atelier::agent::{
 };
 use atelier::{
     ActiveTheme, Appearance, Assets, Avatar, BackToPlayhead, Badge, Button, ButtonVariant, Card,
-    Checkbox, Column, ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState,
-    Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover,
-    ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment, SegmentedControl,
-    Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList, StepState, Switch, Table,
-    TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor, TextField, TextInput, TextSize,
-    Theme, TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
+    Checkbox, ColorPicker, ColorSwatch, Column, ControlSize, Dialog, Direction, Disclosure,
+    Divider, Edge, EmptyState, Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter,
+    ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader,
+    Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList,
+    StepState, Switch, Table, TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor,
+    TextField, TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator,
+    skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
@@ -141,6 +142,17 @@ struct Showcase {
     peak: f32,
     poles: i32,
     filter_from: (f32, f32),
+    /// A video's caption colours, as the person picks them, and which one's picker is open.
+    captions: [Hsla; 3],
+    picking: Option<usize>,
+}
+
+/// What each caption colour is for.
+const CAPTION_NAMES: [&str; 3] = ["Chords", "Lyrics", "Meter"];
+
+/// Caption colours to start from: whites and a black that read over most videos, and a gold.
+fn caption_presets() -> [Hsla; 5] {
+    [0xffffff, 0xf4f1ea, 0xd8d2c4, 0x101010, 0xffc94a].map(|code| rgb(code).into())
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -948,6 +960,42 @@ impl Showcase {
             .gap(px(3.))
             .child(LevelMeter::db(-4.).peak_db(-1.5))
             .child(LevelMeter::db(-7.).peak_db(0.8).clipped(true));
+        // Document colours: a swatch for each, and the picker under the row for the one pressed.
+        let colours = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .w(px(340.))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(20.))
+                    .children(CAPTION_NAMES.iter().enumerate().map(|(index, name)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(
+                                ColorSwatch::new(("caption-swatch", index), self.captions[index])
+                                    .label(*name)
+                                    .selected(self.picking == Some(index))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.picking =
+                                            (this.picking != Some(index)).then_some(index);
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(Label::new(*name).size(TextSize::Small))
+                    })),
+            )
+            .children(self.picking.map(|index| {
+                ColorPicker::new(("caption-picker", index), self.captions[index])
+                    .presets(caption_presets())
+                    .on_change(cx.listener(move |this, color: &Hsla, _, cx| {
+                        this.captions[index] = *color;
+                        cx.notify();
+                    }))
+            }));
         let figures = div()
             .flex()
             .flex_wrap()
@@ -1381,6 +1429,7 @@ impl Showcase {
             .child(section("Following the playhead", follow))
             .child(section("A plot as its own control", filter))
             .child(section("Figures", figures.into_any_element()))
+            .child(section("Colours", colours.into_any_element()))
             .child(section("Status and identity", marks.into_any_element()))
             .child(section("Progress and loading", progress))
             .child(section(
@@ -2117,6 +2166,8 @@ fn main() {
                     peak: FILTER_DEFAULT.1,
                     poles: 2,
                     filter_from: FILTER_DEFAULT,
+                    captions: [0xf4f1ea, 0xffffff, 0x3d7bff].map(|code| rgb(code).into()),
+                    picking: None,
                 })
             })
             .expect("failed to open the showcase window");

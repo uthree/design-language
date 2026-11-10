@@ -177,6 +177,12 @@
               </div>
 
               <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Colours</h3></div>
+                <div class="row" id="caption-swatches"></div>
+                <div id="caption-picker" style="max-width: 340px" hidden></div>
+              </div>
+
+              <div class="at-card at-card--padded">
                 <div class="at-section-header"><h3 class="at-heading">Following the playhead</h3></div>
                 <div class="row">
                   <div id="follow-strip" class="follow-strip"></div>
@@ -336,7 +342,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, conversationList, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, colorPicker, colorSwatch, conversationList, follow, hydrate, icon, meterPosition, setMeter, inlineEdit, keybindings, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -470,6 +476,32 @@
       }
 
       // Meters on the dB scale; the right one went over and holds its clip light.
+      // Caption colours: a swatch each, and a picker under the row for the one pressed.
+      {
+        const captions = [["Chords", "#F4F1EA"], ["Lyrics", "#FFFFFF"], ["Meter", "#3D7BFF"]];
+        const row = document.getElementById("caption-swatches");
+        const holder = document.getElementById("caption-picker");
+        let open = null;
+        const swatches = captions.map(([name, color], index) => {
+          const swatch = colorSwatch(color, { label: name });
+          swatch.addEventListener("click", () => {
+            open = open === index ? null : index;
+            swatches.forEach((other, at) => other.setAttribute("aria-pressed", String(at === open)));
+            holder.hidden = open === null;
+            if (open !== null) colorPicker(holder, { value: captions[open][1], presets: ["#FFFFFF", "#F4F1EA", "#D8D2C4", "#101010", "#FFC94A"] });
+          });
+          const item = document.createElement("label");
+          item.className = "row";
+          item.append(swatch, name);
+          row.append(item);
+          return swatch;
+        });
+        holder.addEventListener("atelier:color", ({ detail: { value } }) => {
+          captions[open][1] = value;
+          swatches[open].style.setProperty("--_color", value);
+          swatches[open].title = `${captions[open][0]} · ${value}`;
+        });
+      }
       setMeter(document.getElementById("meter-left"), { level: meterPosition(-4), peak: meterPosition(-1.5) });
       setMeter(document.getElementById("meter-right"), { level: meterPosition(-7), peak: meterPosition(0.8), clipped: true });
 

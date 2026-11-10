@@ -120,4 +120,5 @@ and colours; when the stand-in is not enough, add the component to Atelier.
 | A radio group | a `SegmentedControl` (few options) or `OptionCard`s (options that need words) |
 | A number field with steppers | a `TextField` holding the number, the unit trailing |
 | Reordering a list by dragging | `ListItem`s with the application's own drag handling and a menu with "Move up / Move down" |
-| A colour picker, a date or time picker | the application's own, using tokens; ask for it to be added |
+| A colour picker | `ColorSwatch` that opens a `ColorPicker` under it (or in a `Popover`), with the application's presets |
+| A date or time picker | the application's own, using tokens; ask for it to be added |
