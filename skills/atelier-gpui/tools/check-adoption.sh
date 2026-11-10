@@ -53,6 +53,10 @@ check() {
     done <<<"$hits"
 }
 
+# The app's mark in the title bar.
+check warn 'Avatar::logo\(\s*IconSource::image' \
+    "if this is the app's own icon in the title bar, use TitleBar::app_icon(IconSource::image(..)) with its title-bar.png: it takes the top-left corner at the bar's icon size. Avatar::logo is for a provider's mark."
+
 # Wrapping and copying components.
 check warn '\.debug_selector\(' \
     "if this div wraps an Atelier component, give the component the id instead (Button::new(id, ..), ListItem::new(id, ..), Plot3d::id): it uses it as its test selector. A control of your own keeps its selector with // atelier: allow."

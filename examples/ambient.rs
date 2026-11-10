@@ -177,7 +177,12 @@ impl Render for Welcome {
             .size_full()
             .flex()
             .flex_col()
-            .child(TitleBar::new().title("Ambient").trailing(switch))
+            .child(
+                TitleBar::new()
+                    .app_icon(common::app_icon("atelier"))
+                    .title("Ambient")
+                    .trailing(switch),
+            )
             .child(
                 div()
                     .flex_1()

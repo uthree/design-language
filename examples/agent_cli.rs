@@ -132,6 +132,7 @@ impl Render for AgentCli {
             .flex_col()
             .child(
                 TitleBar::new()
+                    .app_icon(common::app_icon("atelier"))
                     .title(format!("{} in Atelier", self.provider.label()))
                     .trailing(switch),
             )

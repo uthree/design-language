@@ -17,7 +17,12 @@
 //! // in MyView::render
 //! WindowFrame::new()
 //!     .flex_col()
-//!     .child(TitleBar::new().title("Midnight Drive").child(play_button))
+//!     .child(
+//!         TitleBar::new()
+//!             .app_icon(IconSource::image("app/title-bar.png"))
+//!             .title("Midnight Drive")
+//!             .child(play_button),
+//!     )
 //!     .child(content)
 //! ```
 
@@ -30,7 +35,7 @@ use gpui::{
 };
 
 use crate::focus::{set_focus_visible, tab_navigation};
-use crate::icon::IconName;
+use crate::icon::{Icon, IconName, IconSource};
 use crate::text::Label;
 use crate::theme::{ActiveTheme, Theme};
 
@@ -290,12 +295,16 @@ fn resize_cursor(edge: ResizeEdge) -> CursorStyle {
 /// it; when one side is wider it slides away from that side instead of covering it, and then
 /// truncates.
 ///
+/// On Windows and Linux a desktop application's bar starts with its mark: [`TitleBar::app_icon`]
+/// sets the app icon at the top-left, before every leading control. macOS leaves it out.
+///
 /// The title is all the bar says: there is no subtitle. A save state, a path or a count belongs
 /// in the window's content or its status bar, not beside the title.
 #[derive(IntoElement)]
 pub struct TitleBar {
     base: Div,
     title: Option<SharedString>,
+    app_icon: Option<IconSource>,
     leading: Vec<AnyElement>,
     children: Vec<AnyElement>,
     trailing: Vec<AnyElement>,
@@ -311,6 +320,7 @@ impl TitleBar {
         Self {
             base: div(),
             title: None,
+            app_icon: None,
             leading: Vec::new(),
             children: Vec::new(),
             trailing: Vec::new(),
@@ -331,6 +341,19 @@ impl TitleBar {
     /// The document or window title, centred on the window.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = Some(title.into());
+        self
+    }
+
+    /// The application's mark, first at the leading edge: at the window's top-left corner on
+    /// Windows and Linux. On macOS it is not drawn: the traffic lights hold that corner, Mac
+    /// windows carry no app icon in their title bar, and the Dock and the menu bar already
+    /// name the app. Every desktop application sets it anyway,
+    /// from the `title-bar.png` its icon set carries (`IconSource::image(..)` served by the
+    /// application's asset source). It is drawn [`title_bar_icon_size`] square, is not a control
+    /// (it takes no clicks and drags the window like the bar around it). A test finds it by the
+    /// selector `"atelier-app-icon"`.
+    pub fn app_icon(mut self, icon: impl Into<IconSource>) -> Self {
+        self.app_icon = Some(icon.into());
         self
     }
 
@@ -452,6 +475,14 @@ impl RenderOnce for TitleBar {
         for side in [&mut leading_side, &mut trailing_side] {
             side.style().flex_shrink = Some(YIELD_SHRINK);
         }
+        let app_icon = self.app_icon.filter(|_| !mac).map(|icon| {
+            // Not shielded: the mark is part of the bar, so pressing it moves the window.
+            div()
+                .debug_selector(|| "atelier-app-icon".into())
+                .flex()
+                .flex_none()
+                .child(Icon::new(icon).size(title_bar_icon_size(theme)))
+        });
         let leading_side = leading_side
             .flex()
             .flex_grow()
@@ -459,6 +490,7 @@ impl RenderOnce for TitleBar {
             .h_full()
             .items_center()
             .gap(theme.spacing.sm)
+            .children(app_icon)
             .children(
                 self.leading
                     .into_iter()
@@ -549,6 +581,12 @@ impl RenderOnce for TitleBar {
                 None => bar.child(div().flex_none().w(trailing_edge)),
             })
     }
+}
+
+/// The side of the app icon in a [`TitleBar`]: half the bar's height (16 px under Studio, 18
+/// under Mono, 20 under Glass), the 16–32 px range the icon's small drawing is made for.
+pub fn title_bar_icon_size(theme: &Theme) -> Pixels {
+    (theme.density.title_bar * 0.5).round()
 }
 
 /// The title bar's fill: the chrome tint, or on Windows under the acrylic system backdrop the

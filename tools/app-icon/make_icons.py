@@ -3,6 +3,7 @@
 
     python3 tools/app-icon/make_icons.py            # every app with ship = true, and the sheets
     python3 tools/app-icon/make_icons.py --only auris-studio --no-sheets
+    python3 tools/app-icon/make_icons.py --no-sheets --title-bar examples/common/app-icons
     python3 tools/app-icon/make_icons.py --only auris-studio --version v0.13.0 --out build/icons
 
 The last form is what the release workflow runs (.github/actions/app-icon).
@@ -429,6 +430,13 @@ def detail_for(px: int) -> str:
 PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024]
 ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 ICNS_SIZES = [16, 32, 64, 128, 256, 512, 1024]
+# The mark in the app's own title bar is shown 16 to 20 px square (half the bar's height), so it
+# is the small drawing, rasterised at twice the largest of those for HiDPI screens.
+TITLE_BAR_PX = 64
+
+
+def title_bar_png(mark, faces):
+    return raster(draw(mark, faces, detail="small"), TITLE_BAR_PX)
 
 
 def write_app(app: dict, faces, out: Path):
@@ -451,6 +459,7 @@ def write_app(app: dict, faces, out: Path):
     for px in PNG_SIZES:
         images[px] = raster(draw(mark, faces, detail=detail_for(px)), px)
         images[px].save(out / "png" / f"{px}.png", optimize=True)
+    title_bar_png(mark, faces).save(out / "title-bar.png", optimize=True)
     ico = [images[px] for px in ICO_SIZES]
     ico[-1].save(out / "icon.ico", sizes=[(px, px) for px in ICO_SIZES], append_images=ico[:-1])
     mac = [raster(draw(mark, faces, form="macos", detail=detail_for(px)), px) for px in ICNS_SIZES]
@@ -559,6 +568,11 @@ def main():
     parser.add_argument("--only", help="slug of one app to write, ship or not")
     parser.add_argument("--version", help="draw --only's app at this release (e.g. v0.13.0) instead of apps.toml's")
     parser.add_argument("--no-sheets", action="store_true")
+    parser.add_argument(
+        "--title-bar",
+        type=Path,
+        help="also write every app's title-bar icon to DIR/<slug>.png (the examples' marks)",
+    )
     parser.add_argument("--font-dir", type=Path)
     args = parser.parse_args()
 
@@ -581,6 +595,12 @@ def main():
     for app in apps:
         if (args.only and app["slug"] == args.only) or (not args.only and app.get("ship")):
             write_app(app, faces, args.out / app["slug"])
+    if args.title_bar:
+        args.title_bar.mkdir(parents=True, exist_ok=True)
+        for app in apps:
+            if app["slug"] != "auris-studio-family":
+                title_bar_png(mark_of(app), faces).save(args.title_bar / f"{app['slug']}.png", optimize=True)
+        print(f"wrote title-bar icons to {args.title_bar}")
     if not args.no_sheets:
         args.sheets.mkdir(parents=True, exist_ok=True)
         sheet_suite(apps, faces, args.sheets)

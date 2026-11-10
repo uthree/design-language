@@ -87,7 +87,7 @@ pub use focus::{
 };
 pub use follow::{BackToPlayhead, Follow, PlayheadSide};
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
-pub use frame::{TitleBar, WindowFrame, custom_frame};
+pub use frame::{TitleBar, WindowFrame, custom_frame, title_bar_icon_size};
 pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};
 pub use inline_edit::{InlineEdit, SpotBook};
 pub use input::{
