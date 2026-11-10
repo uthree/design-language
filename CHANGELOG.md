@@ -14,6 +14,35 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: task graphs on the node canvas
+
+### Added
+
+- `Port::many(name, kind)` and `GraphNode::input_many(name, kind)`: an input that takes any
+  number of wires, so a step in a task graph can wait for every step wired into it. A new wire
+  joins the others instead of replacing them, and the socket is drawn as a slot rather than a
+  dot. `NodeCanvas::sources(node, input)` lists them all; `source` still gives the first.
+- `NodeState::Working`: running with no measure of progress, such as an agent at work. The
+  header shows "Working" and a spinner, and an indeterminate bar sweeps under it.
+- `NodeState::NeedsAnswer` and `NodeState::NeedsChoice`, for a node waiting on the person: the
+  card's border turns to the warning colour and its header reads `Strings::needs_answer`
+  ("Needs you") or `Strings::needs_choice` ("Pick one"). `NodeState::needs_person()` asks for
+  either.
+- Undoing a node the assistant added hands every wire that fed its first input to an input it
+  fed that takes many, and the first of them to an ordinary input.
+- `NodeCanvas::can_connect` refuses a wire that is already there.
+
+### Web
+
+- `nodeCanvas` ports take `many: true` (`.at-node__socket--many`), and nodes take the states
+  `working` (`.at-node__progress--sweep`), `needs-answer` and `needs-choice` (`.at-node.is-waiting`, `.at-node__state--needs-person`;
+  labels `needsAnswer` and `needsChoice`). The showcase has a small task graph.
+
+### Changes you need to make
+
+- A `match` on `NodeState` needs arms for `Working`, `NeedsAnswer` and `NeedsChoice`.
+- A `Port { name, kind }` literal needs `many: false`, or use `Port::new`.
+
 ## Unreleased: text inputs that complete, tab, wrap and scroll
 
 ### Added

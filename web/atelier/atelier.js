@@ -1647,10 +1647,11 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 /// `graph::NodeCanvas`: a node graph on a pannable canvas in `root` (give it a height).
 ///
 /// Each node is `{ title, icon, x, y, width, inputs, outputs, fields, comments, state, progress,
-/// seconds, byAgent }`: ports are `{ name, kind }` with `kind` an index into `portTypes` (it picks the
-/// port colour), fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
-/// and `state` is idle, queued, running (with `progress` 0–1), done (with `seconds`), cached or
-/// failed. `comments` are notes left on the node, each showing its first four lines with the
+/// seconds, byAgent }`: ports are `{ name, kind, many }` with `kind` an index into `portTypes` (it
+/// picks the port colour) and `many` marking an input that takes any number of wires, as
+/// `graph::Port::many`; fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
+/// and `state` is idle, queued, running (with `progress` 0–1), working (running with no measure,
+/// as `NodeState::Working`), done (with `seconds`), cached, failed, needs-answer or needs-choice (the last two wait on the person). `comments` are notes left on the node, each showing its first four lines with the
 /// whole text in its title; pressing one fires `atelier:node-comment` with `{ id, index, target }`
 /// for the application to edit over `target` (with `inlineEdit`, multiline) and `update` the node.
 /// Wires are `{ from, output, to, input }` by node id, and only join ports of one kind.
@@ -1663,7 +1664,7 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 const COMMENT_LINES = 4;
 
 export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legend = true, labels = {} } = {}) {
-  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", ...labels };
+  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", working: "Working", needsAnswer: "Needs you", needsChoice: "Pick one", ...labels };
   const graph = new Map();
   let links = [];
   let next = 0;
@@ -1697,9 +1698,10 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
   }
 
   const portKind = (id, index, output) => graph.get(id)?.[output ? "outputs" : "inputs"]?.[index]?.kind;
-  const canConnect = (wire) =>
-    wire.from !== wire.to && portKind(wire.from, wire.output, true) !== undefined && portKind(wire.from, wire.output, true) === portKind(wire.to, wire.input, false);
   const same = (a, b) => a.from === b.from && a.output === b.output && a.to === b.to && a.input === b.input;
+  const takesMany = (id, input) => !!graph.get(id)?.inputs?.[input]?.many;
+  const canConnect = (wire) =>
+    wire.from !== wire.to && !links.some((old) => same(old, wire)) && portKind(wire.from, wire.output, true) !== undefined && portKind(wire.from, wire.output, true) === portKind(wire.to, wire.input, false);
 
   function stateMark(node) {
     const mark = element("span", "at-node__state");
@@ -1709,6 +1711,9 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
         break;
       case "running":
         mark.append(`${Math.round((node.progress || 0) * 100)} %`, element("span", "at-spinner"));
+        break;
+      case "working":
+        mark.append(words.working, element("span", "at-spinner"));
         break;
       case "done":
         mark.classList.add("at-node__state--done");
@@ -1720,6 +1725,11 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       case "failed":
         mark.classList.add("at-node__state--failed");
         mark.textContent = "!";
+        break;
+      case "needs-answer":
+      case "needs-choice":
+        mark.classList.add("at-node__state--needs-person");
+        mark.textContent = node.state === "needs-answer" ? words.needsAnswer : words.needsChoice;
         break;
       default:
         if (node.byAgent) {
@@ -1738,16 +1748,17 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
     card.style.width = `${node.width || 200}px`;
     card.classList.toggle("at-node--agent", !!node.byAgent);
     card.classList.toggle("is-selected", selected === id);
-    card.classList.toggle("is-running", node.state === "running");
+    card.classList.toggle("is-running", node.state === "running" || node.state === "working");
     card.classList.toggle("is-failed", node.state === "failed");
+    card.classList.toggle("is-waiting", node.state === "needs-answer" || node.state === "needs-choice");
     const header = element("div", "at-node__header");
     if (node.icon) header.append(icon(node.icon));
     header.append(element("span", "at-node__title", node.title), stateMark(node));
     card.append(header);
-    if (node.state === "running") {
-      const bar = element("div", "at-node__progress");
+    if (node.state === "running" || node.state === "working") {
+      const bar = element("div", `at-node__progress${node.state === "working" ? " at-node__progress--sweep" : ""}`);
       const fill = element("span");
-      fill.style.width = `${(node.progress || 0) * 100}%`;
+      if (node.state === "running") fill.style.width = `${(node.progress || 0) * 100}%`;
       bar.append(fill);
       card.append(bar);
     }
@@ -1764,6 +1775,7 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
           if (!port) continue;
           const socket = element("span", `at-node__socket at-node__socket--${output ? "out" : "in"}`);
           socket.dataset.kind = port.kind || 0;
+          if (!output && port.many) socket.classList.add("at-node__socket--many");
           socket.dataset.index = row;
           socket.title = portTypes[port.kind] ? `${port.name} · ${portTypes[port.kind]}` : port.name;
           const wired = links.some((wire) => (output ? wire.from === id && wire.output === row : wire.to === id && wire.input === row));
@@ -1892,8 +1904,8 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       if (socket.classList.contains("at-node__socket--out")) {
         drag = { type: "wire", from: id, output: index, cursor: point(event) };
       } else {
-        // Pulling a wired input picks its wire up again.
-        const wire = links.find((wire) => wire.to === id && wire.input === index);
+        // Pulling a wired input picks its wire up again; on one that takes many, the last drawn.
+        const wire = links.findLast((wire) => wire.to === id && wire.input === index);
         if (!wire) return;
         links = links.filter((other) => other !== wire);
         emit("node-disconnect", { wire });
@@ -1953,7 +1965,7 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       if (target && card) {
         const wire = { from: ended.from, output: ended.output, to: Number(card.dataset.node), input: Number(target.dataset.index) };
         if (canConnect(wire)) {
-          const replaced = links.find((old) => old.to === wire.to && old.input === wire.input);
+          const replaced = takesMany(wire.to, wire.input) ? undefined : links.find((old) => old.to === wire.to && old.input === wire.input);
           links = links.filter((old) => old !== replaced);
           links.push(wire);
           if (replaced) emit("node-disconnect", { wire: replaced });
@@ -2012,7 +2024,7 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
     },
     connect(wire) {
       if (!canConnect(wire)) return false;
-      links = links.filter((old) => !(old.to === wire.to && old.input === wire.input));
+      if (!takesMany(wire.to, wire.input)) links = links.filter((old) => !(old.to === wire.to && old.input === wire.input));
       links.push({ ...wire });
       draw();
       return true;
@@ -2031,11 +2043,18 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       }
       draw();
     },
+    // Wires what fed its first input to every input it fed: all of them into an input that takes
+    // many, the first into an ordinary one.
     undoAgentNode(id) {
-      const source = links.find((wire) => wire.to === id);
+      const first = links.find((wire) => wire.to === id);
+      const sources = first ? links.filter((wire) => wire.to === id && wire.input === first.input) : [];
       const targets = links.filter((wire) => wire.from === id);
       api.remove(id);
-      if (source) for (const target of targets) api.connect({ from: source.from, output: source.output, to: target.to, input: target.input });
+      for (const target of targets) {
+        for (const source of takesMany(target.to, target.input) ? sources : sources.slice(0, 1)) {
+          api.connect({ from: source.from, output: source.output, to: target.to, input: target.input });
+        }
+      }
     },
     resetView() {
       pan = { x: 16, y: 24 };

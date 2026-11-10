@@ -21,6 +21,7 @@ use crate::display::{Divider, Spinner, StatusDot};
 use crate::focus::selector;
 use crate::icon::{Icon, IconName};
 use crate::overlay::Tooltip;
+use crate::progress::ProgressBar;
 use crate::strings::ActiveStrings;
 use crate::text::{Label, TextColor, TextSize};
 use crate::theme::{ActiveTheme, Theme};
@@ -39,6 +40,10 @@ pub struct Port {
     pub name: SharedString,
     /// The type of value it carries.
     pub kind: usize,
+    /// An input that takes any number of wires, such as "after" in a task graph where a step
+    /// waits for every step wired into it. An ordinary input holds one wire, and a new one
+    /// replaces it. Outputs always fan out, so this means nothing on an output.
+    pub many: bool,
 }
 
 impl Port {
@@ -47,6 +52,15 @@ impl Port {
         Self {
             name: name.into(),
             kind,
+            many: false,
+        }
+    }
+
+    /// An input named `name` that takes any number of wires of type `kind`.
+    pub fn many(name: impl Into<SharedString>, kind: usize) -> Self {
+        Self {
+            many: true,
+            ..Self::new(name, kind)
         }
     }
 }
@@ -86,12 +100,27 @@ pub enum NodeState {
     Queued,
     /// Running, with progress from 0 to 1.
     Running(f32),
+    /// Running, with no measure of how far along it is, such as an agent at work: a spinner and
+    /// a bar that sweeps.
+    Working,
     /// Finished, with how long it took in seconds if known.
     Done(Option<f32>),
     /// Nothing upstream changed, so its last result was reused.
     Cached,
     /// Stopped by an error.
     Failed,
+    /// Paused until the person answers a question.
+    NeedsAnswer,
+    /// Paused until the person picks one of several results.
+    NeedsChoice,
+}
+
+impl NodeState {
+    /// Whether the node is waiting on the person: [`NodeState::NeedsAnswer`] or
+    /// [`NodeState::NeedsChoice`].
+    pub fn needs_person(self) -> bool {
+        matches!(self, Self::NeedsAnswer | Self::NeedsChoice)
+    }
 }
 
 /// A row in a node's body: a parameter at a glance. Edit it in an inspector beside the
@@ -245,6 +274,12 @@ impl GraphNode {
         self
     }
 
+    /// Add an input that takes any number of wires: see [`Port::many`].
+    pub fn input_many(mut self, name: impl Into<SharedString>, kind: usize) -> Self {
+        self.inputs.push(Port::many(name, kind));
+        self
+    }
+
     /// Add an output.
     pub fn output(mut self, name: impl Into<SharedString>, kind: usize) -> Self {
         self.outputs.push(Port::new(name, kind));
@@ -292,7 +327,8 @@ pub enum NodeCanvasEvent {
     Selected(Option<NodeId>),
     /// A node was dragged to a new place.
     Moved(NodeId),
-    /// A wire was drawn. A wire it replaced on the same input comes first as `Disconnected`.
+    /// A wire was drawn. A wire it replaced on the same input comes first as `Disconnected`;
+    /// an input that takes many wires ([`Port::many`]) replaces none.
     Connected(Wire),
     /// A wire was picked up from its input and let go.
     Disconnected(Wire),
@@ -463,12 +499,29 @@ impl NodeCanvas {
         self.selected
     }
 
-    /// Where the wire into `id`'s input `input` comes from.
+    /// Where the wire into `id`'s input `input` comes from. On an input that takes many wires,
+    /// the first one drawn; [`NodeCanvas::sources`] has them all.
     pub fn source(&self, id: NodeId, input: usize) -> Option<(NodeId, usize)> {
         self.wires
             .iter()
             .find(|wire| wire.to == id && wire.input == input)
             .map(|wire| (wire.from, wire.output))
+    }
+
+    /// Where every wire into `id`'s input `input` comes from, in the order they were drawn.
+    pub fn sources(&self, id: NodeId, input: usize) -> Vec<(NodeId, usize)> {
+        self.wires
+            .iter()
+            .filter(|wire| wire.to == id && wire.input == input)
+            .map(|wire| (wire.from, wire.output))
+            .collect()
+    }
+
+    /// Whether `id`'s input `input` takes many wires.
+    fn takes_many(&self, id: NodeId, input: usize) -> bool {
+        self.node(id)
+            .and_then(|node| node.inputs.get(input))
+            .is_some_and(|port| port.many)
     }
 
     /// How many inputs, across the graph, have no wire.
@@ -523,9 +576,11 @@ impl NodeCanvas {
         ports.get(index).map(|port| port.kind)
     }
 
-    /// Whether a wire may join these ports: different nodes, ports that exist, the same type.
+    /// Whether a wire may join these ports: different nodes, ports that exist, the same type,
+    /// and not a second copy of a wire already there.
     pub fn can_connect(&self, wire: Wire) -> bool {
         wire.from != wire.to
+            && !self.wires.contains(&wire)
             && self
                 .port_kind(wire.from, wire.output, true)
                 .is_some_and(|kind| self.port_kind(wire.to, wire.input, false) == Some(kind))
@@ -562,32 +617,47 @@ impl NodeCanvas {
 
     /// Take a node out, and its wires with it.
     pub fn remove(&mut self, id: NodeId, cx: &mut Context<Self>) {
+        self.take_out(id);
+        cx.notify();
+    }
+
+    /// [`NodeCanvas::remove`], without the redraw.
+    fn take_out(&mut self, id: NodeId) {
         self.nodes.retain(|(node, _)| *node != id);
         self.wires.retain(|wire| wire.from != id && wire.to != id);
         if self.selected == Some(id) {
             self.selected = None;
         }
-        cx.notify();
     }
 
-    /// Draw a wire, replacing any wire already on that input. Returns false, and changes
-    /// nothing, when [`NodeCanvas::can_connect`] refuses it.
+    /// Draw a wire, replacing any wire already on that input unless it takes many
+    /// ([`Port::many`]). Returns false, and changes nothing, when [`NodeCanvas::can_connect`]
+    /// refuses it.
     pub fn connect(&mut self, wire: Wire, cx: &mut Context<Self>) -> bool {
         self.connect_reporting(wire, cx).is_some()
     }
 
     /// [`NodeCanvas::connect`], returning the wire it replaced.
     fn connect_reporting(&mut self, wire: Wire, cx: &mut Context<Self>) -> Option<Option<Wire>> {
+        let replaced = self.attach(wire)?;
+        cx.notify();
+        Some(replaced)
+    }
+
+    /// Put a wire in, without the redraw: `None` when it is refused, else the wire it replaced.
+    fn attach(&mut self, wire: Wire) -> Option<Option<Wire>> {
         if !self.can_connect(wire) {
             return None;
         }
-        let replaced = self
-            .wires
-            .iter()
-            .position(|old| old.to == wire.to && old.input == wire.input)
-            .map(|index| self.wires.remove(index));
+        let replaced = if self.takes_many(wire.to, wire.input) {
+            None
+        } else {
+            self.wires
+                .iter()
+                .position(|old| old.to == wire.to && old.input == wire.input)
+                .map(|index| self.wires.remove(index))
+        };
         self.wires.push(wire);
-        cx.notify();
         Some(replaced)
     }
 
@@ -613,23 +683,36 @@ impl NodeCanvas {
     }
 
     /// Undo a node the assistant added: take it out and wire what fed its first input to
-    /// every input it fed.
+    /// every input it fed. When that input took many wires, an input it fed that takes many
+    /// gets them all, and an ordinary one the first.
     pub fn undo_agent_node(&mut self, id: NodeId, cx: &mut Context<Self>) {
-        let source = self
+        self.unpick(id);
+        cx.notify();
+    }
+
+    /// [`NodeCanvas::undo_agent_node`], without the redraw.
+    fn unpick(&mut self, id: NodeId) {
+        let first = self
             .wires
             .iter()
             .find(|wire| wire.to == id)
-            .map(|wire| (wire.from, wire.output));
+            .map(|wire| wire.input);
+        let sources = first.map_or_else(Vec::new, |input| self.sources(id, input));
         let targets: Vec<_> = self
             .wires
             .iter()
             .filter(|wire| wire.from == id)
             .map(|wire| (wire.to, wire.input))
             .collect();
-        self.remove(id, cx);
-        if let Some((from, output)) = source {
-            for (to, input) in targets {
-                self.connect(Wire::new(from, output, to, input), cx);
+        self.take_out(id);
+        for (to, input) in targets {
+            let take = if self.takes_many(to, input) {
+                sources.len()
+            } else {
+                1
+            };
+            for (from, output) in sources.iter().take(take) {
+                self.attach(Wire::new(*from, *output, to, input));
             }
         }
     }
@@ -709,11 +792,12 @@ impl NodeCanvas {
         event: &MouseDownEvent,
         cx: &mut Context<Self>,
     ) {
-        // Pulling a connected input picks its wire up again, to move or drop it.
+        // Pulling a connected input picks its wire up again, to move or drop it; on one that
+        // takes many, the wire drawn last.
         if let Some(index) = self
             .wires
             .iter()
-            .position(|wire| wire.to == id && wire.input == input)
+            .rposition(|wire| wire.to == id && wire.input == input)
         {
             let wire = self.wires.remove(index);
             cx.emit(NodeCanvasEvent::Disconnected(wire));
@@ -821,7 +905,9 @@ impl NodeCanvas {
             .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             .child(
                 div()
-                    .size(px(10.))
+                    .w(px(10.))
+                    // An input that takes many wires is a slot rather than a dot.
+                    .h(px(if port.many { 16. } else { 10. }))
                     .rounded_full()
                     .border_2()
                     .border_color(color)
@@ -887,6 +973,9 @@ impl NodeCanvas {
                         .color(TextColor::Muted),
                 )
                 .child(Spinner::new(("node-spinner", id.0 as usize)).size(px(12.))),
+            NodeState::Working => mark
+                .child(faint(strings.task_states[1].clone()))
+                .child(Spinner::new(("node-spinner", id.0 as usize)).size(px(12.))),
             NodeState::Done(seconds) => mark
                 .children(seconds.map(|seconds| {
                     Label::new(format!("{seconds:.1} s"))
@@ -900,6 +989,15 @@ impl NodeCanvas {
                         .color(theme.colors.success),
                 ),
             NodeState::Cached => mark.child(faint(strings.cached.clone())),
+            NodeState::NeedsAnswer | NodeState::NeedsChoice => mark.child(
+                Label::new(if node.state == NodeState::NeedsAnswer {
+                    strings.needs_answer.clone()
+                } else {
+                    strings.needs_choice.clone()
+                })
+                .size(TextSize::XSmall)
+                .color(TextColor::Warning),
+            ),
             NodeState::Failed => mark.child(
                 Icon::new(IconName::Alert)
                     .size(px(12.))
@@ -979,13 +1077,15 @@ impl NodeCanvas {
         let strings = cx.strings().clone();
         let geometry = Geometry::new(&theme);
         let selected = self.selected == Some(id);
-        let running = matches!(node.state, NodeState::Running(_));
+        let running = matches!(node.state, NodeState::Running(_) | NodeState::Working);
         let dragging = matches!(self.drag, Drag::Node(dragged, _, _) if dragged == id);
         let rows = node.inputs.len().max(node.outputs.len());
         let border = if node.by_agent {
             theme.colors.agent
         } else if node.state == NodeState::Failed {
             theme.colors.danger
+        } else if node.state.needs_person() {
+            theme.colors.warning
         } else if selected || running {
             theme.colors.accent
         } else {
@@ -1213,7 +1313,13 @@ impl NodeCanvas {
                 }),
             )
             .child(header)
-            .when(running, |card| {
+            .when(node.state == NodeState::Working, |card| {
+                card.child(
+                    ProgressBar::indeterminate(self.child_id(format!("progress-{}", id.0)))
+                        .height(px(2.)),
+                )
+            })
+            .when(matches!(node.state, NodeState::Running(_)), |card| {
                 card.child(
                     div().h(px(2.)).bg(theme.colors.accent_wash).child(
                         div()
@@ -1449,6 +1555,66 @@ mod tests {
         assert_eq!(canvas.downstream(effect), [effect, sink]);
         assert_eq!(canvas.unconnected_inputs(), 1);
         assert_eq!(canvas.source(sink, 0), Some((effect, 0)));
+    }
+
+    #[test]
+    fn an_input_that_takes_many_keeps_every_wire_and_an_ordinary_one_the_last() {
+        let (mut canvas, [source, effect, sink]) = graph();
+        let join = NodeId(canvas.next);
+        canvas.next += 1;
+        canvas
+            .nodes
+            .push((join, GraphNode::new("Join").input_many("After", 0)));
+        assert_eq!(canvas.attach(Wire::new(source, 0, join, 0)), Some(None));
+        assert_eq!(canvas.attach(Wire::new(effect, 0, join, 0)), Some(None));
+        assert_eq!(canvas.sources(join, 0), [(source, 0), (effect, 0)]);
+        // The same wire twice is refused, on either kind of input.
+        assert_eq!(canvas.attach(Wire::new(source, 0, join, 0)), None);
+
+        let first = Wire::new(source, 0, sink, 0);
+        assert_eq!(canvas.attach(first), Some(None));
+        assert_eq!(
+            canvas.attach(Wire::new(effect, 0, sink, 0)),
+            Some(Some(first))
+        );
+        assert_eq!(canvas.sources(sink, 0), [(effect, 0)]);
+    }
+
+    #[test]
+    fn undoing_a_node_hands_on_every_wire_an_input_can_take() {
+        let (mut canvas, [source, _, sink]) = graph();
+        let [other, added, join] = [NodeId(10), NodeId(11), NodeId(12)];
+        canvas
+            .nodes
+            .push((other, GraphNode::new("Other").output("Audio", 0)));
+        canvas.nodes.push((
+            added,
+            GraphNode::new("Added")
+                .input_many("After", 0)
+                .output("Out", 0),
+        ));
+        canvas
+            .nodes
+            .push((join, GraphNode::new("Join").input_many("After", 0)));
+        for wire in [
+            Wire::new(source, 0, added, 0),
+            Wire::new(other, 0, added, 0),
+            Wire::new(added, 0, join, 0),
+            Wire::new(added, 0, sink, 0),
+        ] {
+            canvas.attach(wire).unwrap();
+        }
+        canvas.unpick(added);
+        assert!(canvas.node(added).is_none());
+        assert_eq!(canvas.sources(join, 0), [(source, 0), (other, 0)]);
+        assert_eq!(canvas.sources(sink, 0), [(source, 0)]);
+    }
+
+    #[test]
+    fn a_node_that_needs_the_person_says_so() {
+        assert!(NodeState::NeedsAnswer.needs_person());
+        assert!(NodeState::NeedsChoice.needs_person());
+        assert!(!NodeState::Running(0.5).needs_person());
     }
 }
 
