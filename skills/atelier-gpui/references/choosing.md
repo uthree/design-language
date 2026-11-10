@@ -105,6 +105,7 @@ the control in a mock-up.
 | A category shared across views (cluster, tag) | `theme.categorical(index)`, one index per thing for good, plus a label | a fresh hue per view |
 | Nothing here yet | `EmptyState` with one action | an empty panel |
 | A key that does it | `Kbd` | a shortcut written in plain text |
+| Where playback is, in a view that scrolls (timeline, piano roll, event list) | `Follow` pages along; `BackToPlayhead` once the person scrolls away | a view that snaps back on every page turn, or never follows |
 
 ## Not in Atelier yet
 

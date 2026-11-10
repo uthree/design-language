@@ -282,6 +282,58 @@ function element(tag, className, text) {
   return node;
 }
 
+// ---------------------------------------------------------------- following a playhead
+
+/// Whether a view that plays follows its playhead, the counterpart of `Follow`. Call
+/// `update(offset, span, at, playing)` each frame with where the view starts, how much it shows
+/// and where the playhead is (one unit for all three); it returns an offset to scroll to when a
+/// page turn is due, otherwise `null`. Scrolling away while it plays lets go until the playhead
+/// is back in view, playback starts again or `engage()` is called; a change of span is a zoom
+/// and keeps following. `side(offset, span, at)` is `"before"` or `"after"` while let go and
+/// out of view, for a `.at-back-to-playhead` button with that `data-side`.
+export function follow() {
+  let released = false;
+  let last = null;
+  let wasPlaying = false;
+  const page = (span, at) => Math.max(0, at - span * 0.05);
+  return {
+    page,
+    engage() {
+      released = false;
+    },
+    release() {
+      released = true;
+    },
+    get released() {
+      return released;
+    },
+    update(offset, span, at, playing) {
+      if (playing && !wasPlaying) released = false;
+      wasPlaying = playing;
+      if (!playing) {
+        last = null;
+        return null;
+      }
+      const before = last;
+      last = [offset, span];
+      if (at >= offset && at < offset + span) {
+        released = false;
+        return null;
+      }
+      if (before && before[0] !== offset && before[1] === span) released = true;
+      if (released) return null;
+      last = null;
+      return page(span, at);
+    },
+    side(offset, span, at) {
+      if (!released) return null;
+      if (at < offset) return "before";
+      if (at >= offset + span) return "after";
+      return null;
+    },
+  };
+}
+
 // ---------------------------------------------------------------- table
 
 /// A table of short values, the counterpart of `Table`. `columns` are `{ title, width, grow,

@@ -111,6 +111,8 @@ check warn 'impl[^\n]*EntityInputHandler for' \
     "an editable text input of the application's own: use atelier::TextInput inside a TextField (caret, selection, IME, clipboard, undo; Space and Backspace never reach a shortcut while it is focused)."
 check warn 'fn (inline_bounds|[a-z_]*inline_prompt)\b|InlinePlace::' \
     "a field opened over a label by hand: use atelier::InlineEdit, with SpotBook::spot on a label laid out by flex."
+check warn 'struct PlayheadFollow\b|fn [a-z_]*return_to_playhead\b' \
+    "a playhead follow of the application's own: use atelier::Follow (lets go on a scroll, not a zoom) and BackToPlayhead."
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

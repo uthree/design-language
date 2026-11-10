@@ -37,6 +37,11 @@
       .welcome__words { display: flex; flex-direction: column; align-items: center; gap: var(--at-space-xs); }
       .welcome__name { font-size: var(--at-size-display); }
       .content--clear { background: transparent; }
+      .follow-strip { position: relative; flex: 1; min-width: 200px; height: 96px; overflow: hidden; border: 1px solid var(--at-border); border-radius: var(--at-radius-md); background: var(--at-background); }
+      .follow-strip__lane { position: absolute; inset: 0 auto 0 0; }
+      .follow-strip__bar { position: absolute; top: 0; bottom: 0; padding: 2px 4px; border-left: 1px solid var(--at-separator); color: var(--at-text-faint); font: var(--at-size-xs) var(--at-font-mono); }
+      .follow-strip__clip { position: absolute; top: 26px; height: 28px; border: 1px solid var(--at-accent); border-radius: var(--at-radius-sm); background: var(--at-accent-wash); }
+      .follow-strip__head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--at-playhead); }
       @media (max-width: 1100px) { .inspector { display: none; } }
       @media (max-width: 760px) { .sidebar { display: none; } }
     </style>
@@ -148,6 +153,15 @@
                 <div class="at-section-header"><h3 class="at-heading">Event list</h3></div>
                 <div id="event-table" style="height: 180px"></div>
                 <span class="at-small at-muted">Double-click a cell to edit it; Return moves down the column.</span>
+              </div>
+
+              <div class="at-card at-card--padded">
+                <div class="at-section-header"><h3 class="at-heading">Following the playhead</h3></div>
+                <div class="row">
+                  <div id="follow-strip" class="follow-strip"></div>
+                  <button id="follow-play" class="at-button at-button--icon" title="Play"></button>
+                </div>
+                <span class="at-small at-muted">Scroll the strip while it plays.</span>
               </div>
 
               <div class="at-card at-card--padded">
@@ -301,7 +315,7 @@
     </div>
 
     <script type="module">
-      import { activity, approvalDialog, changedFiles, chat, conversationList, hydrate, inlineEdit, keybindings, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
+      import { activity, approvalDialog, changedFiles, chat, conversationList, follow, hydrate, icon, inlineEdit, keybindings, table, messageQueue, nodeCanvas, openDialog, permissionPicker, planView, preferences, setTheme, theme } from "./atelier/atelier.js";
       import { AmbientBackdrop, AMBIENCES } from "./atelier/ambient.js";
 
       const params = new URLSearchParams(location.search);
@@ -353,6 +367,86 @@
         field.field.addEventListener("keydown", (event) => (walked = event.key === "Enter" && !event.isComposing), true);
       };
       eventTable.cell(0, 0).closest(".at-table").addEventListener("atelier:cell-activate", (event) => editCell(event.detail.row, event.detail.column));
+
+      // A strip of bars that pages along as it plays; scrolled away, it stays put and offers a
+      // way back. The page draws the strip; the kit gives the following and the button.
+      {
+        const length = 64, span = 16, beatsPerSecond = 4;
+        const strip = document.getElementById("follow-strip");
+        const lane = document.createElement("div");
+        lane.className = "follow-strip__lane";
+        for (let bar = 0; bar < length / 4; bar++) {
+          const line = document.createElement("div");
+          line.className = "follow-strip__bar";
+          line.style.left = `${((bar * 4) / length) * 100}%`;
+          line.textContent = bar + 1;
+          lane.append(line);
+        }
+        for (const [start, size] of [[2, 6], [12, 10], [26, 4], [34, 12], [50, 8]]) {
+          const clip = document.createElement("div");
+          clip.className = "follow-strip__clip";
+          clip.style.left = `${(start / length) * 100}%`;
+          clip.style.width = `${(size / length) * 100}%`;
+          lane.append(clip);
+        }
+        const head = document.createElement("div");
+        head.className = "follow-strip__head";
+        lane.append(head);
+        const back = document.createElement("button");
+        back.className = "at-button at-button--sm at-back-to-playhead";
+        back.hidden = true;
+        strip.append(lane, back);
+        const following = follow();
+        let offset = 0, at = 2, playing = false, then = 0;
+        const beatWidth = () => strip.clientWidth / span;
+        const draw = () => {
+          lane.style.width = `${beatWidth() * length}px`;
+          lane.style.transform = `translateX(${-offset * beatWidth()}px)`;
+          head.style.left = `${at * beatWidth()}px`;
+          const side = following.side(offset, span, at);
+          back.hidden = !side;
+          if (side && back.dataset.side !== side) {
+            back.dataset.side = side;
+            back.replaceChildren(...(side === "before" ? [icon("chevron-left"), "Back to playhead"] : ["Back to playhead", icon("chevron-right")]));
+          }
+        };
+        const tick = (now) => {
+          if (!playing) return;
+          at = (at + ((now - then) / 1000) * beatsPerSecond) % length;
+          then = now;
+          const to = following.update(offset, span, at, true);
+          if (to != null) offset = Math.min(to, length - span);
+          draw();
+          requestAnimationFrame(tick);
+        };
+        const play = document.getElementById("follow-play");
+        const showPlay = () => {
+          play.replaceChildren(icon(playing ? "pause" : "play"));
+          play.title = playing ? "Pause" : "Play";
+        };
+        play.addEventListener("click", () => {
+          playing = !playing;
+          following.update(offset, span, at, playing);
+          showPlay();
+          if (playing) {
+            then = performance.now();
+            requestAnimationFrame(tick);
+          }
+        });
+        strip.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const along = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+          offset = Math.min(Math.max(offset + along / beatWidth(), 0), length - span);
+          draw();
+        }, { passive: false });
+        back.addEventListener("click", () => {
+          offset = Math.min(following.page(span, at), length - span);
+          following.engage();
+          draw();
+        });
+        showPlay();
+        draw();
+      }
 
       // A label edited where it is shown: Return or a press elsewhere commits, Escape closes.
       const trackName = document.getElementById("inline-name");

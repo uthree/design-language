@@ -19,13 +19,13 @@ use atelier::agent::{
     SuggestionChip, ThinkingIndicator, ToolCall, ToolGroup, ToolState, UserMessage,
 };
 use atelier::{
-    ActiveTheme, Appearance, Assets, Avatar, Badge, Button, ButtonVariant, Card, Checkbox, Column,
-    ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState, Icon, IconName,
-    InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover, ProgressBar,
-    ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment, SegmentedControl, Sidebar,
-    Skeleton, Slider, Spinner, SpotBook, StepList, StepState, Switch, Table, TableCell, TableRow,
-    Tabs, TaskProgress, TaskState, TextColor, TextField, TextInput, TextSize, Theme, TitleBar,
-    Tone, WindowFrame, menu_separator, skeleton_paragraph,
+    ActiveTheme, Appearance, Assets, Avatar, BackToPlayhead, Badge, Button, ButtonVariant, Card,
+    Checkbox, Column, ControlSize, Dialog, Direction, Disclosure, Divider, Edge, EmptyState,
+    Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem, MenuItem, Popover,
+    ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment, SegmentedControl,
+    Sidebar, Skeleton, Slider, Spinner, SpotBook, StepList, StepState, Switch, Table, TableCell,
+    TableRow, Tabs, TaskProgress, TaskState, TextColor, TextField, TextInput, TextSize, Theme,
+    TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
@@ -119,6 +119,11 @@ struct Showcase {
     event_edit: Option<TableCell>,
     cell_input: Entity<TextInput>,
     event_scroll: gpui::UniformListScrollHandle,
+    /// The follow demo: whether its strip follows, where it shows, the playhead, and the clock.
+    follow: Follow,
+    follow_offset: f64,
+    follow_at: f64,
+    follow_run: Option<gpui::Task<()>>,
 }
 
 /// Sample tracks. Their colours are document data, not interface tokens.
@@ -917,6 +922,7 @@ impl Showcase {
     fn components(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let progress = self.progress_samples(cx);
         let event_list = self.event_list(window, cx);
+        let follow = self.follow_demo(cx);
         let theme = cx.theme();
         let section = |title: &'static str, body: AnyElement| {
             div()
@@ -1291,6 +1297,7 @@ impl Showcase {
             .child(section("Controls", controls.into_any_element()))
             .child(section("Fields", fields.into_any_element()))
             .child(section("Event list", event_list))
+            .child(section("Following the playhead", follow))
             .child(section("Status and identity", marks.into_any_element()))
             .child(section("Progress and loading", progress))
             .child(section(
@@ -1616,6 +1623,166 @@ impl Showcase {
     }
 }
 
+/// The follow demo's length and how much of it its strip shows, in beats, and its tempo.
+const FOLLOW_LENGTH: f64 = 64.;
+const FOLLOW_SPAN: f64 = 16.;
+const FOLLOW_BEATS_PER_SECOND: f64 = 4.;
+const FOLLOW_TICK: Duration = Duration::from_millis(16);
+
+impl Showcase {
+    /// A strip of bars that pages along as it plays. Scroll it away and it stays where it was
+    /// put, with a button back to the playhead in the corner the playhead went.
+    fn follow_demo(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let width = 480.;
+        let x = |beat: f64| px(((beat - self.follow_offset) / FOLLOW_SPAN * width) as f32);
+        let playing = self.follow_run.is_some();
+        let bars = (0..(FOLLOW_LENGTH / 4.) as usize).map(|bar| {
+            let beat = bar as f64 * 4.;
+            div()
+                .absolute()
+                .left(x(beat))
+                .top_0()
+                .bottom_0()
+                .w(px(1.))
+                .bg(colors.separator)
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(4.))
+                        .top(px(2.))
+                        .whitespace_nowrap()
+                        .child(
+                            Label::new((bar + 1).to_string())
+                                .size(TextSize::XSmall)
+                                .color(TextColor::Faint)
+                                .mono(),
+                        ),
+                )
+        });
+        let clips =
+            [(2., 6.), (12., 10.), (26., 4.), (34., 12.), (50., 8.)].map(|(start, length)| {
+                div()
+                    .absolute()
+                    .left(x(start))
+                    .w(px((length / FOLLOW_SPAN * width) as f32))
+                    .top(px(26.))
+                    .h(px(28.))
+                    .rounded(theme.shape.radius_sm)
+                    .bg(colors.accent_wash)
+                    .border_1()
+                    .border_color(colors.accent)
+            });
+        let side = self
+            .follow
+            .side(self.follow_offset, FOLLOW_SPAN, self.follow_at);
+        let strip = div()
+            .id("follow-strip")
+            .relative()
+            .w(px(width as f32))
+            .h(px(96.))
+            .overflow_hidden()
+            .rounded(theme.shape.radius_md)
+            .border_1()
+            .border_color(colors.border)
+            .bg(colors.background)
+            .on_scroll_wheel(
+                cx.listener(|this, event: &gpui::ScrollWheelEvent, window, cx| {
+                    let delta = event.delta.pixel_delta(window.line_height());
+                    let along = if delta.x.abs() > delta.y.abs() {
+                        delta.x
+                    } else {
+                        delta.y
+                    };
+                    let beats = -f64::from(f32::from(along)) / 480. * FOLLOW_SPAN;
+                    this.follow_offset =
+                        (this.follow_offset + beats).clamp(0., FOLLOW_LENGTH - FOLLOW_SPAN);
+                    // The strip takes the wheel; the page around it stays put.
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .children(bars)
+            .children(clips)
+            .child(
+                div()
+                    .absolute()
+                    .left(x(self.follow_at))
+                    .top_0()
+                    .bottom_0()
+                    .w(px(1.5))
+                    .bg(colors.playhead),
+            )
+            .children(side.map(|side| {
+                BackToPlayhead::new("back-to-playhead", side).on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.follow_offset = Follow::page(FOLLOW_SPAN, this.follow_at)
+                            .min(FOLLOW_LENGTH - FOLLOW_SPAN);
+                        this.follow.engage();
+                        cx.notify();
+                    },
+                ))
+            }));
+        div()
+            .flex()
+            .items_center()
+            .gap(theme.spacing.md)
+            .child(strip)
+            .child(
+                Button::icon_only(
+                    "follow-play",
+                    if playing {
+                        IconName::Pause
+                    } else {
+                        IconName::Play
+                    },
+                )
+                .tooltip(if playing { "Pause" } else { "Play" })
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_follow_play(cx))),
+            )
+            .child(
+                Label::new("Scroll the strip while it plays")
+                    .size(TextSize::Small)
+                    .color(TextColor::Muted),
+            )
+            .into_any_element()
+    }
+
+    fn toggle_follow_play(&mut self, cx: &mut Context<Self>) {
+        if self.follow_run.take().is_some() {
+            self.follow
+                .update(self.follow_offset, FOLLOW_SPAN, self.follow_at, false);
+            cx.notify();
+            return;
+        }
+        self.follow_run = Some(cx.spawn(async move |this, cx| {
+            let mut then = std::time::Instant::now();
+            loop {
+                cx.background_executor().timer(FOLLOW_TICK).await;
+                let now = std::time::Instant::now();
+                let elapsed = now - then;
+                then = now;
+                let going = this.update(cx, |this, cx| {
+                    let step = elapsed.as_secs_f64() * FOLLOW_BEATS_PER_SECOND;
+                    this.follow_at = (this.follow_at + step) % FOLLOW_LENGTH;
+                    if let Some(to) =
+                        this.follow
+                            .update(this.follow_offset, FOLLOW_SPAN, this.follow_at, true)
+                    {
+                        this.follow_offset = to.min(FOLLOW_LENGTH - FOLLOW_SPAN);
+                    }
+                    cx.notify();
+                });
+                if going.is_err() {
+                    return;
+                }
+            }
+        }));
+        cx.notify();
+    }
+}
+
 impl Render for Showcase {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -1770,6 +1937,10 @@ fn main() {
                     event_edit: None,
                     cell_input: cx.new(TextInput::new),
                     event_scroll: gpui::UniformListScrollHandle::new(),
+                    follow: Follow::new(),
+                    follow_offset: 0.,
+                    follow_at: 2.,
+                    follow_run: None,
                 })
             })
             .expect("failed to open the showcase window");

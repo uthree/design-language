@@ -339,6 +339,13 @@ setting changes, not the control. Errors say what is wrong and how to fix it, ne
   "120.00").unit("BPM").on_click(..))` — the transport's display: buttons and captioned values on
   one sunken surface, hairlines between the readouts. Give a changing value `.min_width(..)` so
   the strip holds still. One strip per window, not a box per readout.
+- `Follow` — a view that plays pages along with its playhead. Each frame,
+  `if let Some(to) = follow.update(offset, span, at, playing) { scroll to to }` (one unit for
+  all four: beats, seconds, rows). A scroll that hides the playhead lets go, a zoom does not;
+  while `follow.side(offset, span, at)` is `Some(side)`, show
+  `BackToPlayhead::new(id, side).on_click(..)` in the view's `relative()` container, and on its
+  click scroll to `Follow::page(span, at)` and call `follow.engage()`. Don't pull the view back
+  on every page turn while the person reads elsewhere.
 - `OptionCard::new(id, icon, title).description(..).selected(bool)`; `.agent()` when the choice
   hands work to the agent. Use a row of them when choosing is the point of the screen. Moving
   from a card to the screen it starts uses the hand-off in [motion.md](motion.md).

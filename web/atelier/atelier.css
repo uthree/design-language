@@ -533,6 +533,25 @@ html[data-vibrancy] body.at-root {
 /* A table of short values (`table()` in atelier.js, `Table` natively): a heading row, rows of
    `--at-control-sm`, a stripe in `--_mark` down a marked row, the row being heard in the
    accent wash and the selected one in `--at-selected`. */
+/* The button back to a playhead the person scrolled away from: bottom corner on its side. */
+.at-back-to-playhead {
+  position: absolute;
+  bottom: var(--at-space-md);
+  box-shadow: var(--at-shadow-medium);
+}
+
+.at-back-to-playhead[data-side="before"] {
+  left: var(--at-space-md);
+}
+
+.at-back-to-playhead[data-side="after"] {
+  right: var(--at-space-md);
+}
+
+.at-back-to-playhead[hidden] {
+  display: none;
+}
+
 .at-table {
   display: flex;
   flex-direction: column;

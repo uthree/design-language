@@ -40,6 +40,7 @@ mod dialog;
 mod display;
 pub mod emoji;
 mod focus;
+mod follow;
 mod form;
 mod frame;
 mod gpu;
@@ -78,6 +79,7 @@ pub use focus::{
     SelectPrevious, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT,
     focus_visible, set_focus_visible, tab_navigation,
 };
+pub use follow::{BackToPlayhead, Follow, PlayheadSide};
 pub use form::{FormField, FormGroup, LabelPlacement, StatusBar};
 pub use frame::{TitleBar, WindowFrame, custom_frame};
 pub use icon::{Assets, Icon, IconName, IconSource, ProviderLogo};

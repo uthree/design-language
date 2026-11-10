@@ -14,6 +14,30 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: following the playhead
+
+### Added
+
+- `Follow`: a view that plays pages along so the playhead stays in view, and lets go when the
+  person scrolls away. Call `update(offset, span, at, playing)` each frame, in any one unit;
+  it returns the offset of the next page turn. A scroll that hides the playhead releases it, a
+  zoom does not; it follows again once the playhead is back in view, playback starts again, or
+  `engage()` is called. `side(..)` says which way the playhead went while released.
+- `BackToPlayhead`: the button that takes a released view back, floating in the bottom corner
+  on the playhead's side and pointing that way. `Strings::back_to_playhead` ("Back to
+  playhead", "再生位置に戻る").
+
+### Web
+
+- `follow()` in `atelier.js`, with the same `update`, `engage`, `page` and `side`, and
+  `.at-back-to-playhead[data-side]`. The showcase has a strip that plays and can be scrolled
+  away from.
+
+### Workarounds you can delete
+
+- Auris Studio's `PlayheadFollow` in `ui/timeline.rs`, and its return-to-playhead chip in
+  `ui/lanes.rs`.
+
 ## Unreleased: tables
 
 ### Added
