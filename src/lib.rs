@@ -74,7 +74,9 @@ pub use backdrop::BackdropPalette;
 pub use button::{Button, ButtonVariant, ControlSize, CopyButton};
 pub use controls::{Checkbox, Knob, Segment, SegmentedControl, Slider, Switch, TextField};
 pub use dialog::{DIALOG_CONTEXT, Dialog};
-pub use display::{Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, Spinner, StatusDot, Tone};
+pub use display::{
+    Avatar, AvatarKind, Badge, Divider, Kbd, LevelMeter, METER_FLOOR_DB, Spinner, StatusDot, Tone,
+};
 pub use focus::{
     CONTROL_CONTEXT, FocusNext, FocusPrevious, LIST_CONTEXT, SelectFirst, SelectLast, SelectNext,
     SelectPrevious, StepBackward, StepForward, StepToEnd, StepToStart, TRACK_CONTEXT,

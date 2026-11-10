@@ -1251,13 +1251,72 @@ a.at-list-item:hover {
 }
 
 .at-meter {
+  position: relative;
   display: flex;
   flex-direction: column-reverse;
+  flex: none;
   width: 6px;
+  min-height: 16px;
   align-self: stretch;
   overflow: hidden;
   border-radius: 2px;
   background: var(--at-sunken);
+}
+
+/* The fill, from `--level` (0 to 1): each zone keeps its colour wherever the level stops. */
+.at-meter::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, var(--at-meter-0) 0 70%, var(--at-meter-1) 70% 90%, var(--at-meter-2) 90%);
+  clip-path: inset(calc((1 - var(--level, 0)) * 100%) 0 0 0);
+}
+
+/* The clip light at the hot end, latched by the application: `data-clipped`. */
+.at-meter[data-clipped]::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--at-danger);
+}
+
+.at-meter__peak {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--peak, 0) * 100% - 1.5px);
+  height: 1.5px;
+  background: var(--at-text);
+}
+
+.at-meter--horizontal {
+  flex-direction: row;
+  width: auto;
+  height: 6px;
+  min-width: 16px;
+  min-height: 0;
+  align-self: auto;
+}
+
+.at-meter--horizontal::before {
+  background: linear-gradient(90deg, var(--at-meter-0) 0 70%, var(--at-meter-1) 70% 90%, var(--at-meter-2) 90%);
+  clip-path: inset(0 calc((1 - var(--level, 0)) * 100%) 0 0);
+}
+
+.at-meter--horizontal[data-clipped]::after {
+  inset: 0 0 0 auto;
+  width: 3px;
+  height: auto;
+}
+
+.at-meter--horizontal .at-meter__peak {
+  top: 0;
+  bottom: 0;
+  left: calc(var(--peak, 0) * 100% - 1.5px);
+  right: auto;
+  width: 1.5px;
+  height: auto;
 }
 
 .at-meter > span {

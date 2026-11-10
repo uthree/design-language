@@ -924,11 +924,36 @@ impl Showcase {
         let event_list = self.event_list(window, cx);
         let follow = self.follow_demo(cx);
         // A loudness panel's figures: one not measured yet, one over its ceiling.
+        // The meters take the height of the figures beside them, which nothing sets.
+        let meters = div()
+            .flex()
+            .gap(px(3.))
+            .child(LevelMeter::db(-4.).peak_db(-1.5))
+            .child(LevelMeter::db(-7.).peak_db(0.8).clipped(true));
         let figures = div()
             .flex()
             .flex_wrap()
             .items_end()
             .gap(px(28.))
+            .child(
+                div().flex().gap(px(12.)).child(meters).child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .child(
+                            Stat::new("Peak L", "−1.5")
+                                .unit("dB")
+                                .size(TextSize::Medium),
+                        )
+                        .child(
+                            Stat::new("Peak R", "+0.8")
+                                .unit("dB · clipped")
+                                .size(TextSize::Medium)
+                                .color(TextColor::Danger),
+                        ),
+                ),
+            )
             .child(
                 Stat::new("Integrated", "−14.2")
                     .unit("LUFS")

@@ -115,6 +115,8 @@ check warn 'struct PlayheadFollow\b|fn [a-z_]*return_to_playhead\b' \
     "a playhead follow of the application's own: use atelier::Follow (lets go on a scroll, not a zoom) and BackToPlayhead."
 check warn 'fn (labelled_figure|[a-z_]*_figure)\b' \
     "a caption-number-unit figure drawn by hand: use atelier::Stat (Stat::empty for the dash before it is measured)."
+check warn 'fn (level_meter|db_to_meter_position|meter_level)\b' \
+    "a level meter or dB scale of the application's own: use atelier::LevelMeter::db(..).peak_db(..).clipped(..) and LevelMeter::position."
 check error 'fn selectable_text\b' \
     "use SelectableText (drag, Shift-click, double- and triple-click, Cmd/Ctrl+C), or UserMessage with an id, which selects already."
 check error 'fn [a-z_]*copy_button\b' \

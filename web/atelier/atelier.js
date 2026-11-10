@@ -282,6 +282,36 @@ function element(tag, className, text) {
   return node;
 }
 
+// ---------------------------------------------------------------- level meters
+
+/// Where a level in dBFS sits on a meter, the counterpart of `LevelMeter::position`: 0 at the
+/// floor of −60 dB and below, 0.7 at −6 dB where green turns yellow, 0.9 at full scale where
+/// yellow turns red, 1 at +6 dB.
+export function meterPosition(db) {
+  const scale = [[-60, 0], [-6, 0.7], [0, 0.9], [6, 1]];
+  if (Number.isNaN(db) || db <= scale[0][0]) return 0;
+  db = Math.min(db, scale[3][0]);
+  for (let index = 1; index < scale.length; index++) {
+    const [lowDb, low] = scale[index - 1];
+    const [highDb, high] = scale[index];
+    if (db <= highDb) return low + ((db - lowDb) / (highDb - lowDb)) * (high - low);
+  }
+  return 1;
+}
+
+/// Set an `.at-meter`'s level and peak (positions from 0 to 1; pass `meterPosition(db)` for dB)
+/// and its clip light. Leave `peak` out for none.
+export function setMeter(meter, { level = 0, peak, clipped = false } = {}) {
+  meter.style.setProperty("--level", Math.min(Math.max(level, 0), 1));
+  let mark = meter.querySelector(".at-meter__peak");
+  if (peak == null || peak <= 0.001) mark?.remove();
+  else {
+    if (!mark) meter.append((mark = element("span", "at-meter__peak")));
+    meter.style.setProperty("--peak", Math.min(peak, 1));
+  }
+  meter.toggleAttribute("data-clipped", clipped);
+}
+
 // ---------------------------------------------------------------- following a playhead
 
 /// Whether a view that plays follows its playhead, the counterpart of `Follow`. Call

@@ -82,7 +82,8 @@ Class names follow the Rust components, and modifiers follow their builders:
 | `Card`, `Popover`, `SectionHeader` | `.at-card`, `.at-popover`, `.at-section-header` |
 | `ListItem`, `OptionCard`, `MenuItem` | `.at-list-item`, `.at-option-card`, `.at-menu-item` in `.at-menu` |
 | `Badge`, `StatusDot`, `Kbd`, `Avatar` | `.at-badge--success` etc., `.at-status-dot`, `.at-kbd`, `.at-avatar` |
-| `ProgressBar`, `Spinner`, `Skeleton`, `LevelMeter` | `.at-progress`, `.at-spinner`, `.at-skeleton`, `.at-meter` |
+| `ProgressBar`, `Spinner`, `Skeleton` | `.at-progress`, `.at-spinner`, `.at-skeleton` |
+| `LevelMeter` (`peak`, `clipped`, `horizontal`, `LevelMeter::position(db)`) | `.at-meter` with `--level` and `--peak` (0 to 1), a `.at-meter__peak` child, `data-clipped`, `.at-meter--horizontal`; `setMeter(element, { level, peak, clipped })` and `meterPosition(db)` from `atelier.js`. The older `<span style="height: …">` fill still works. |
 | `TitleBar`, `Toolbar`, `Sidebar`, `StatusBar` | `.at-title-bar`, `.at-toolbar`, `.at-sidebar`, `.at-status-bar`, each with `.at-chrome` |
 | `Composer`, `ContextChip`, user and assistant messages | `.at-composer`, `.at-context-chip`, `.at-user-message`, `.at-assistant-message` |
 | `Dialog`, `ApprovalDialog` (`Decision`) | `openDialog({ title, body, icon, tone, content, actions })` and `approvalDialog({ title, body, command, allowLabel, destructive, offerAlways, reviewing })` from `atelier.js`, resolving with the answer; `dialog.at-dialog` with `::backdrop` in `--at-scrim` |

@@ -204,6 +204,10 @@ Sliders and knobs handle their own dragging and keys; the application keeps only
 `Avatar::agent()`, `Avatar::logo(ProviderLogo::Anthropic)` (the agent as its provider's mark;
 prefer it when the model is known), `Divider::horizontal()` / `Divider::vertical().full()`,
 `LevelMeter::new(level).peak(p)` (`.horizontal()`, `.thickness(px)`), `StatusDot::new(color)`.
+A meter of a signal in dBFS is `LevelMeter::db(db).peak_db(held)` (`LevelMeter::position(db)` for
+the scale: green to −6 dB, yellow to full scale, red over it, floor −60 dB); `.clipped(latched)`
+lights the clip light at the hot end until the person clicks to clear it. A meter fills the height
+its parent is stretched to; no absolute pinning needed.
 
 `Stat::new("Integrated", "−14.2").unit("LUFS")` — one figure a panel reports: a faint caption
 over a large mono number and its unit. `Stat::empty(caption)` (or `Stat::maybe(caption,

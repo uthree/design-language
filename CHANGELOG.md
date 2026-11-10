@@ -14,6 +14,33 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: meters that read dB and hold a clip
+
+### Added
+
+- `LevelMeter::clipped(bool)`: a clip light at the hot end, latched by the application until
+  the person clears it.
+- `LevelMeter::db(db)`, `.peak_db(db)` and `LevelMeter::position(db)`: a dBFS scale with room
+  for the working range. Green runs to −6 dB, yellow to full scale, red only over it, and the
+  floor is `METER_FLOOR_DB` (−60). −∞ and NaN read as an empty meter.
+
+### Changed
+
+- A vertical `LevelMeter` fills the height its parent is stretched to (a horizontal one the
+  width), where it used to need a parent with a set height. It is never shorter than 16 px.
+  A peak at zero is no longer drawn.
+
+### Web
+
+- `.at-meter` takes `--level` and `--peak`, a `.at-meter__peak` child, `data-clipped` and
+  `.at-meter--horizontal`; `setMeter(..)` and `meterPosition(db)` in `atelier.js`. The span
+  fill with `--_full` still works.
+
+### Workarounds you can delete
+
+- Auris Studio's `level_meter` and `db_to_meter_position` in `ui/widgets.rs`, the clip light
+  drawn over a meter, and the absolute top/bottom pinning around the visualizer's meters.
+
 ## Unreleased: figures
 
 ### Added
