@@ -12,6 +12,14 @@
 //! sees them, so an application's Space for play or Backspace for delete never fires while the
 //! person is typing. A single-letter shortcut of the application's own still would: scope it
 //! away with `KeyBinding::new("m", Mute, Some("!AtelierTextInput"))` ([`TEXT_INPUT_CONTEXT`]).
+//!
+//! An input is a tab stop. While it is [`TextInput::completing`], because a list of suggestions
+//! is open under it, Up and Down move through the list instead of the caret, Tab accepts and
+//! Escape closes the list: see [`TextInputEvent::NextCompletion`] and its neighbours.
+//!
+//! A [`TextInput::multiline`] input wraps at its width and grows a row for each line it shows,
+//! from [`TextInput::min_lines`] to [`TextInput::max_lines`]; past that it scrolls inside
+//! itself, and follows the caret as the person types or moves it.
 
 use std::cell::RefCell;
 use std::ops::Range;
@@ -20,9 +28,9 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, ElementId, ElementInputHandler, Entity,
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     InteractiveElement, IntoElement, Keystroke, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ShapedLine, SharedString,
-    Style, Styled, TextRun, UTF16Selection, UnderlineStyle, WeakEntity, Window, actions, div, fill,
-    point, px, relative, size,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
+    ShapedLine, SharedString, Style, Styled, TextRun, UTF16Selection, UnderlineStyle, WeakEntity,
+    Window, actions, div, fill, point, prelude::FluentBuilder, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -37,7 +45,20 @@ actions!(
         SubmitText,
         /// Escape in a focused [`TextInput`], bubbling the same way; the input also emits
         /// [`TextInputEvent::Cancel`].
-        CancelText
+        CancelText,
+        /// Up in a [`TextInput::completing`] input: the suggestion above. The input also emits
+        /// [`TextInputEvent::PreviousCompletion`].
+        PreviousCompletion,
+        /// Down in a completing input: the suggestion below
+        /// ([`TextInputEvent::NextCompletion`]).
+        NextCompletion,
+        /// Tab in a completing input: take the suggestion, or step on to the next one, as the
+        /// application decides ([`TextInputEvent::AcceptCompletion`]).
+        AcceptCompletion,
+        /// Escape in a completing input: close the list and keep editing
+        /// ([`TextInputEvent::DismissCompletions`]). Escape no longer cancels the edit until the
+        /// application stops [`TextInput::completing`].
+        DismissCompletions
     ]
 );
 
@@ -54,6 +75,14 @@ pub enum TextInputEvent {
     Submit,
     /// Escape was pressed.
     Cancel,
+    /// Up, while [`TextInput::completing`]: move the list's selection up.
+    PreviousCompletion,
+    /// Down, while completing: move the list's selection down.
+    NextCompletion,
+    /// Tab, while completing: accept the selected suggestion (or cycle to the next one).
+    AcceptCompletion,
+    /// Escape, while completing: close the list.
+    DismissCompletions,
 }
 
 /// The text, its selection and the input method's pre-edit, with every edit a person can make
@@ -515,20 +544,64 @@ thread_local! {
 ///
 /// Return emits [`TextInputEvent::Submit`] and Escape [`TextInputEvent::Cancel`], and both also
 /// bubble as the [`SubmitText`] and [`CancelText`] actions. A [`TextInput::multiline`] input
-/// grows a line for each break, and Shift-Return breaks the line. Double-click selects a word,
-/// triple-click everything.
+/// wraps, grows a row for each line it shows up to [`TextInput::max_lines`] and then scrolls,
+/// and Shift-Return breaks the line. Double-click selects a word, triple-click everything.
+///
+/// The input is a tab stop ([`TextInput::tab_index`] places it in the order). To pair it with
+/// [`crate::Completions`], set [`TextInput::set_completing`] while the list is open and answer
+/// the completion events:
+///
+/// ```ignore
+/// cx.subscribe(&self.command, |this, input, event, cx| match event {
+///     TextInputEvent::Changed => this.refilter(input.read(cx).text(), cx),
+///     TextInputEvent::NextCompletion => this.selected = (this.selected + 1) % this.matches.len(),
+///     TextInputEvent::AcceptCompletion => {
+///         let range = this.word_range.clone();
+///         let word = this.matches[this.selected].clone();
+///         input.update(cx, |input, cx| input.replace_range(range, &word, cx));
+///     }
+///     TextInputEvent::DismissCompletions => this.close_list(input, cx),
+///     _ => {}
+/// })
+/// .detach();
+/// ```
 pub struct TextInput {
     focus: FocusHandle,
     buffer: TextBuffer,
-    /// The lines as drawn last frame, each with its byte range.
-    layout: Vec<(Range<usize>, ShapedLine)>,
+    /// The rows as drawn last frame.
+    layout: Vec<Row>,
     bounds: Option<Bounds<Pixels>>,
     line_height: Pixels,
     /// How far a long single line has scrolled to keep the caret in view.
     scroll: Pixels,
+    /// How far a multi-line input taller than its rows has scrolled down.
+    scroll_y: Pixels,
+    /// The caret and text length the vertical scroll last followed, so that a wheel scroll is
+    /// left alone until the caret moves or the text changes.
+    followed: Option<(usize, usize)>,
+    min_lines: usize,
+    max_lines: Option<usize>,
+    completing: bool,
     selecting: bool,
     /// Where a drag began, for a word or line selection to grow from.
     anchor: Option<usize>,
+}
+
+/// One row as drawn: a line, or the part of a wrapped line that fits the width.
+struct Row {
+    range: Range<usize>,
+    line: ShapedLine,
+    /// Whether the row ends where the text wrapped rather than at a break or the end, so a
+    /// caret at its end is drawn at the start of the next row instead.
+    soft: bool,
+}
+
+impl Row {
+    /// Whether a caret at `offset` is drawn on this row.
+    fn holds(&self, offset: usize) -> bool {
+        self.range.start <= offset
+            && (offset < self.range.end || offset == self.range.end && !self.soft)
+    }
 }
 
 impl EventEmitter<TextInputEvent> for TextInput {}
@@ -543,15 +616,89 @@ impl TextInput {
             inputs.push(weak);
         });
         Self {
-            focus: cx.focus_handle(),
+            focus: cx.focus_handle().tab_stop(true),
             buffer: TextBuffer::default(),
             layout: Vec::new(),
             bounds: None,
             line_height: px(18.),
             scroll: px(0.),
+            scroll_y: px(0.),
+            followed: None,
+            min_lines: 1,
+            max_lines: None,
+            completing: false,
             selecting: false,
             anchor: None,
         }
+    }
+
+    /// Where the input comes in the Tab order, 0 (document order) by default.
+    pub fn tab_index(mut self, index: isize) -> Self {
+        self.focus = self.focus.tab_index(index);
+        self
+    }
+
+    /// Leave the input out of the Tab order (it is in it by default), for one that only a
+    /// click or the application should focus.
+    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
+        self.focus = self.focus.tab_stop(tab_stop);
+        self
+    }
+
+    /// The fewest rows a multi-line input is drawn with, one by default: two or three for a
+    /// comment box that should look like more than a line.
+    pub fn min_lines(mut self, lines: usize) -> Self {
+        self.min_lines = lines.max(1);
+        self
+    }
+
+    /// The most rows a multi-line input grows to before it scrolls inside itself, following
+    /// the caret. Unbounded by default, when it grows with every line.
+    pub fn max_lines(mut self, lines: usize) -> Self {
+        self.max_lines = Some(lines.max(1));
+        self
+    }
+
+    /// Start with a list of suggestions open: see [`TextInput::set_completing`].
+    pub fn completing(mut self, completing: bool) -> Self {
+        self.completing = completing;
+        self
+    }
+
+    /// Say whether a list of suggestions is open under the input. While it is, Up and Down
+    /// emit [`TextInputEvent::PreviousCompletion`] and [`TextInputEvent::NextCompletion`]
+    /// instead of moving the caret, Tab emits [`TextInputEvent::AcceptCompletion`] instead of
+    /// moving focus, and Escape emits [`TextInputEvent::DismissCompletions`] instead of
+    /// [`TextInputEvent::Cancel`]; each also bubbles as the action of the same name. Shift with
+    /// Up or Down still selects. A command palette that always shows its list sets it once.
+    pub fn set_completing(&mut self, completing: bool, cx: &mut Context<Self>) {
+        if self.completing != completing {
+            self.completing = completing;
+            cx.notify();
+        }
+    }
+
+    /// Whether the input is completing.
+    pub fn is_completing(&self) -> bool {
+        self.completing
+    }
+
+    /// Select `range` (byte offsets, clamped to character boundaries), the caret at its end:
+    /// the word a completion just wrote, or a name without its extension.
+    pub fn select_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        self.buffer.select_range(range.start, range.end);
+        cx.notify();
+    }
+
+    /// Replace `range` (byte offsets) with `text` and put the caret after it, as accepting a
+    /// completion does to the word being completed. An undo step of its own; emits
+    /// [`TextInputEvent::Changed`].
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        self.buffer.unmark();
+        self.buffer.typing = false;
+        self.buffer.replace(Some(range), text);
+        self.buffer.typing = false;
+        self.changed(cx);
     }
 
     /// Start with `text`, the caret at its end.
@@ -587,6 +734,8 @@ impl TextInput {
     pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         self.buffer.set_text(text);
         self.scroll = px(0.);
+        self.scroll_y = px(0.);
+        self.followed = None;
         cx.notify();
     }
 
@@ -619,25 +768,80 @@ impl TextInput {
         if self.layout.is_empty() {
             return 0;
         }
-        let row = ((position.y - bounds.top()) / self.line_height).floor();
+        let row = ((position.y - bounds.top() + self.scroll_y) / self.line_height).floor();
         let row = (row.max(0.) as usize).min(self.layout.len() - 1);
-        let (range, line) = &self.layout[row];
         let x = position.x - bounds.left() + self.scroll;
-        range.start + line.closest_index_for_x(x).min(range.len())
+        self.offset_in_row(row, x)
     }
 
-    /// The caret's rectangle relative to the text's origin, and the line it is on.
+    /// The byte offset closest to `x` along `row`. The end of a wrapped row is the next row's
+    /// start, so it answers the last character's start instead.
+    fn offset_in_row(&self, row: usize, x: Pixels) -> usize {
+        let Row { range, line, soft } = &self.layout[row];
+        let offset = range.start + line.closest_index_for_x(x).min(range.len());
+        if *soft && offset == range.end {
+            previous_boundary(self.buffer.text(), offset).max(range.start)
+        } else {
+            offset
+        }
+    }
+
+    /// The row a caret at `offset` is drawn on.
+    fn row_of(&self, offset: usize) -> Option<usize> {
+        self.layout.iter().position(|row| row.holds(offset))
+    }
+
+    /// The caret's place relative to the text's unscrolled origin.
     fn position_of(&self, offset: usize) -> Option<Point<Pixels>> {
-        self.layout
-            .iter()
-            .enumerate()
-            .find(|(_, (range, _))| range.start <= offset && offset <= range.end)
-            .map(|(row, (range, line))| {
-                point(
-                    line.x_for_index(offset - range.start),
-                    self.line_height * row as f32,
-                )
-            })
+        let row = self.row_of(offset)?;
+        let Row { range, line, .. } = &self.layout[row];
+        Some(point(
+            line.x_for_index(offset - range.start),
+            self.line_height * row as f32,
+        ))
+    }
+
+    /// Up or down a row as drawn, keeping the caret's x; past the first or last row, to the
+    /// start or end. Falls back on lines before the input has been drawn.
+    fn vertical(&mut self, down: bool, extend: bool) {
+        let caret = self.buffer.caret();
+        let (Some(row), Some(at)) = (self.row_of(caret), self.position_of(caret)) else {
+            return if down {
+                self.buffer.down(extend)
+            } else {
+                self.buffer.up(extend)
+            };
+        };
+        let to = match (down, row) {
+            (false, 0) => 0,
+            (false, row) => self.offset_in_row(row - 1, at.x),
+            (true, row) if row + 1 >= self.layout.len() => self.buffer.text().len(),
+            (true, row) => self.offset_in_row(row + 1, at.x),
+        };
+        self.buffer.move_to(to, extend);
+    }
+
+    fn on_scroll_wheel(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bounds) = self.bounds else {
+            return;
+        };
+        let content = self.line_height * self.layout.len() as f32;
+        let most = (content - bounds.size.height).max(px(0.));
+        if most <= px(0.) {
+            return;
+        }
+        let delta = event.delta.pixel_delta(self.line_height).y;
+        let scroll = (self.scroll_y - delta).max(px(0.)).min(most);
+        if scroll != self.scroll_y {
+            self.scroll_y = scroll;
+            cx.stop_propagation();
+            cx.notify();
+        }
     }
 
     fn on_mouse_down(
@@ -696,7 +900,13 @@ impl TextInput {
         let line = cfg!(target_os = "macos") && modifiers.platform;
         let shift = modifiers.shift;
         let before = self.buffer.text().to_owned();
+        let plain = !secondary && !modifiers.alt && !modifiers.control && !modifiers.platform;
         match keystroke.key.as_str() {
+            "up" if self.completing && plain && !shift => return Key::Previous,
+            "down" if self.completing && plain && !shift => return Key::Next,
+            "tab" if self.completing && plain && !shift => return Key::Accept,
+            "escape" if self.completing => return Key::Dismiss,
+            "tab" => return Key::Ignored,
             "enter" if shift && self.buffer.is_multiline() => self.buffer.newline(),
             "enter" => return Key::Submit,
             "escape" => return Key::Cancel,
@@ -720,6 +930,8 @@ impl TextInput {
             "right" => self.buffer.right(word, shift),
             "up" if line => self.buffer.move_to(0, shift),
             "down" if line => self.buffer.move_to(self.buffer.text().len(), shift),
+            "up" if self.buffer.is_multiline() => self.vertical(false, shift),
+            "down" if self.buffer.is_multiline() => self.vertical(true, shift),
             "up" => self.buffer.up(shift),
             "down" => self.buffer.down(shift),
             "home" if secondary => self.buffer.move_to(0, shift),
@@ -781,6 +993,10 @@ enum Key {
     Handled,
     Submit,
     Cancel,
+    Previous,
+    Next,
+    Accept,
+    Dismiss,
 }
 
 /// The focused input in `window`, if any.
@@ -817,6 +1033,7 @@ pub(crate) fn intercept(keystroke: &Keystroke, window: &mut Window, cx: &mut App
             | "down"
             | "home"
             | "end"
+            | "tab"
     ) || keystroke.modifiers.secondary()
         && !keystroke.modifiers.alt
         && matches!(keystroke.key.as_str(), "a" | "c" | "x" | "v" | "z" | "y");
@@ -834,6 +1051,22 @@ pub(crate) fn intercept(keystroke: &Keystroke, window: &mut Window, cx: &mut App
         Key::Cancel => {
             input.update(cx, |_, cx| cx.emit(TextInputEvent::Cancel));
             window.dispatch_action(Box::new(CancelText), cx);
+        }
+        Key::Previous => {
+            input.update(cx, |_, cx| cx.emit(TextInputEvent::PreviousCompletion));
+            window.dispatch_action(Box::new(PreviousCompletion), cx);
+        }
+        Key::Next => {
+            input.update(cx, |_, cx| cx.emit(TextInputEvent::NextCompletion));
+            window.dispatch_action(Box::new(NextCompletion), cx);
+        }
+        Key::Accept => {
+            input.update(cx, |_, cx| cx.emit(TextInputEvent::AcceptCompletion));
+            window.dispatch_action(Box::new(AcceptCompletion), cx);
+        }
+        Key::Dismiss => {
+            input.update(cx, |_, cx| cx.emit(TextInputEvent::DismissCompletions));
+            window.dispatch_action(Box::new(DismissCompletions), cx);
         }
     }
     true
@@ -931,7 +1164,7 @@ impl EntityInputHandler for TextInput {
         let range = self.buffer.range_from_utf16(&range);
         let start = self.position_of(range.start)?;
         let end = self.position_of(range.end).unwrap_or(start);
-        let origin = bounds.origin - point(self.scroll, px(0.));
+        let origin = bounds.origin - point(self.scroll, self.scroll_y);
         Some(Bounds::from_corners(
             origin + start,
             origin + point(end.x.max(start.x), start.y + self.line_height),
@@ -967,6 +1200,9 @@ impl Render for TextInput {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
+            .when(self.buffer.is_multiline(), |el| {
+                el.on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
+            })
             .child(TextElement {
                 input: cx.entity(),
                 selection: theme.colors.selection,
@@ -983,9 +1219,73 @@ struct TextElement {
 }
 
 struct Prepaint {
-    lines: Vec<(Range<usize>, ShapedLine)>,
+    rows: Vec<Row>,
     line_height: Pixels,
     scroll: Pixels,
+    scroll_y: Pixels,
+    followed: Option<(usize, usize)>,
+}
+
+/// The rows `text` is drawn in: one per line, each split again where it is wider than `width`
+/// in a multi-line input. Each row's byte range, and whether it ends in a wrap.
+fn wrap_rows(
+    text: &str,
+    lines: Vec<Range<usize>>,
+    width: Option<Pixels>,
+    cx: &App,
+    font: &gpui::Font,
+    font_size: Pixels,
+) -> Vec<(Range<usize>, bool)> {
+    let Some(width) = width.filter(|width| *width > px(0.)) else {
+        return lines.into_iter().map(|line| (line, false)).collect();
+    };
+    let mut wrapper = cx.text_system().line_wrapper(font.clone(), font_size);
+    let mut rows = Vec::new();
+    for line in lines {
+        let fragments = [gpui::LineFragment::text(&text[line.clone()])];
+        let breaks: Vec<usize> = wrapper
+            .wrap_line(&fragments, width)
+            .map(|boundary| line.start + boundary.ix)
+            .collect();
+        rows.extend(split_line(line, breaks));
+    }
+    rows
+}
+
+/// `line` split at `breaks` (byte offsets where a new row starts), each row marked soft but the
+/// last.
+fn split_line(line: Range<usize>, breaks: Vec<usize>) -> Vec<(Range<usize>, bool)> {
+    let mut rows = Vec::new();
+    let mut start = line.start;
+    for at in breaks {
+        if at > start && at < line.end {
+            rows.push((start..at, true));
+            start = at;
+        }
+    }
+    rows.push((start..line.end, false));
+    rows
+}
+
+/// How many rows are drawn for `count` rows of text.
+fn shown_rows(count: usize, multiline: bool, min: usize, max: Option<usize>) -> usize {
+    if !multiline {
+        return 1;
+    }
+    let rows = count.max(min);
+    max.map_or(rows, |max| rows.min(max.max(min)))
+}
+
+/// The vertical scroll that keeps `caret_top` (a row's top, unscrolled) in a view `visible`
+/// tall over `content`, starting from `scroll`.
+fn follow(scroll: Pixels, caret_top: Pixels, line: Pixels, visible: Pixels) -> Pixels {
+    if caret_top < scroll {
+        caret_top
+    } else if caret_top + line > scroll + visible {
+        caret_top + line - visible
+    } else {
+        scroll
+    }
 }
 
 impl IntoElement for TextElement {
@@ -1013,13 +1313,44 @@ impl gpui::Element for TextElement {
         _: Option<&GlobalElementId>,
         _: Option<&gpui::InspectorElementId>,
         window: &mut Window,
-        cx: &mut App,
+        _: &mut App,
     ) -> (LayoutId, ()) {
-        let rows = self.input.read(cx).buffer.lines().len().max(1);
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = (window.line_height() * rows as f32).into();
-        (window.request_layout(style, [], cx), ())
+        let line_height = window.line_height();
+        let text_style = window.text_style();
+        let font = text_style.font();
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let input = self.input.clone();
+        let layout = window.request_measured_layout(style, move |known, available, _, cx| {
+            let input = input.read(cx);
+            let buffer = &input.buffer;
+            let width = known.width.or(match available.width {
+                gpui::AvailableSpace::Definite(width) => Some(width),
+                _ => None,
+            });
+            let count = if buffer.is_multiline() {
+                wrap_rows(
+                    buffer.text(),
+                    buffer.lines(),
+                    width.map(|width| width - CARET_ROOM),
+                    cx,
+                    &font,
+                    font_size,
+                )
+                .len()
+            } else {
+                1
+            };
+            let rows = shown_rows(
+                count,
+                buffer.is_multiline(),
+                input.min_lines,
+                input.max_lines,
+            );
+            size(width.unwrap_or_default(), line_height * rows as f32)
+        });
+        (layout, ())
     }
 
     fn prepaint(
@@ -1037,14 +1368,17 @@ impl gpui::Element for TextElement {
         let font_size = style.font_size.to_pixels(window.rem_size());
         let line_height = window.line_height();
         let marked = buffer.marked();
-        let lines: Vec<_> = buffer
-            .lines()
+        let width = buffer
+            .is_multiline()
+            .then_some(bounds.size.width - CARET_ROOM);
+        let font = style.font();
+        let rows: Vec<Row> = wrap_rows(buffer.text(), buffer.lines(), width, cx, &font, font_size)
             .into_iter()
-            .map(|range| {
+            .map(|(range, soft)| {
                 let text: SharedString = buffer.text()[range.clone()].to_owned().into();
                 let run = |len: usize, underline: bool| TextRun {
                     len,
-                    font: style.font(),
+                    font: font.clone(),
                     color: style.color,
                     background_color: None,
                     underline: underline.then_some(UnderlineStyle {
@@ -1072,34 +1406,51 @@ impl gpui::Element for TextElement {
                 let line = window
                     .text_system()
                     .shape_line(text, font_size, &runs, None);
-                (range, line)
+                Row { range, line, soft }
             })
             .collect();
-        // Keep the caret in view along a line longer than the field.
         let caret = buffer.caret();
+        let caret_row = rows.iter().position(|row| row.holds(caret));
+        // Keep the caret in view along a line longer than the field.
         let mut scroll = input.scroll;
-        if let Some((range, line)) = lines
-            .iter()
-            .find(|(range, _)| range.start <= caret && caret <= range.end)
-        {
+        if let Some(Row { range, line, .. }) = caret_row.map(|row| &rows[row]) {
             let x = line.x_for_index(caret - range.start);
-            let width = bounds.size.width - px(2.);
+            let width = bounds.size.width - CARET_ROOM;
             if x - scroll > width {
                 scroll = x - width;
             }
             if x < scroll {
                 scroll = x;
             }
-            let widest = lines
+            let widest = rows
                 .iter()
-                .map(|(_, line)| line.width)
+                .map(|row| row.line.width)
                 .fold(px(0.), Pixels::max);
             scroll = scroll.min((widest - width).max(px(0.))).max(px(0.));
         }
+        // And down a passage taller than the input, once the caret has moved or the text
+        // changed: a wheel scroll between keys is left where it is.
+        let content = line_height * rows.len() as f32;
+        let most = (content - bounds.size.height).max(px(0.));
+        let mut scroll_y = input.scroll_y;
+        let now = (caret, buffer.text().len());
+        if input.followed != Some(now)
+            && let Some(row) = caret_row
+        {
+            scroll_y = follow(
+                scroll_y,
+                line_height * row as f32,
+                line_height,
+                bounds.size.height,
+            );
+        }
+        let scroll_y = scroll_y.min(most).max(px(0.));
         Prepaint {
-            lines,
+            rows,
             line_height,
             scroll,
+            scroll_y,
+            followed: Some(now),
         }
     }
 
@@ -1125,18 +1476,22 @@ impl gpui::Element for TextElement {
             (buffer.selection(), buffer.caret())
         };
         let line_height = prepaint.line_height;
-        let origin = bounds.origin - point(prepaint.scroll, px(0.));
+        let origin = bounds.origin - point(prepaint.scroll, prepaint.scroll_y);
         let selection_color = self.selection;
         let caret_color = self.caret;
-        let lines = std::mem::take(&mut prepaint.lines);
+        let rows = std::mem::take(&mut prepaint.rows);
         window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
-            for (row, (range, line)) in lines.iter().enumerate() {
-                let top = origin.y + line_height * row as f32;
+            for (index, row) in rows.iter().enumerate() {
+                let top = origin.y + line_height * index as f32;
+                if top + line_height < bounds.top() || top > bounds.bottom() {
+                    continue;
+                }
+                let Row { range, line, soft } = row;
                 if focused && !selection.is_empty() {
                     let from = selection.start.max(range.start);
                     let to = selection.end.min(range.end);
                     // A selection running past a line's end shows a sliver for the break.
-                    let past = selection.end > range.end && selection.start <= range.end;
+                    let past = !soft && selection.end > range.end && selection.start <= range.end;
                     if from <= to && (from < to || past) {
                         let left = line.x_for_index(from - range.start);
                         let right =
@@ -1152,7 +1507,7 @@ impl gpui::Element for TextElement {
                 }
                 line.paint(point(origin.x, top), line_height, window, cx)
                     .ok();
-                if focused && selection.is_empty() && range.start <= caret && caret <= range.end {
+                if focused && selection.is_empty() && row.holds(caret) {
                     let x = line.x_for_index(caret - range.start);
                     window.paint_quad(fill(
                         Bounds::new(
@@ -1164,15 +1519,20 @@ impl gpui::Element for TextElement {
                 }
             }
         });
-        let scroll = prepaint.scroll;
+        let (scroll, scroll_y, followed) = (prepaint.scroll, prepaint.scroll_y, prepaint.followed);
         self.input.update(cx, |input, _| {
-            input.layout = lines;
+            input.layout = rows;
             input.bounds = Some(bounds);
             input.line_height = line_height;
             input.scroll = scroll;
+            input.scroll_y = scroll_y;
+            input.followed = followed;
         });
     }
 }
+
+/// Room left at a row's end for the caret.
+const CARET_ROOM: Pixels = px(2.);
 
 #[cfg(test)]
 mod tests {
@@ -1244,6 +1604,33 @@ mod tests {
         assert_eq!(buffer.caret(), 11);
         buffer.up(true);
         assert_eq!(buffer.selection(), 8..11);
+    }
+
+    #[test]
+    fn a_wrapped_line_splits_into_soft_rows() {
+        assert_eq!(
+            split_line(4..20, vec![10, 16]),
+            vec![(4..10, true), (10..16, true), (16..20, false)]
+        );
+        // A break at either end, or one that does not move on, makes no empty row.
+        assert_eq!(split_line(0..5, vec![0, 5]), vec![(0..5, false)]);
+    }
+
+    #[test]
+    fn rows_shown_stop_at_the_cap_and_the_caret_is_followed() {
+        assert_eq!(shown_rows(1, true, 2, Some(6)), 2);
+        assert_eq!(shown_rows(4, true, 2, Some(6)), 4);
+        assert_eq!(shown_rows(300, true, 2, Some(6)), 6);
+        assert_eq!(shown_rows(300, true, 1, None), 300);
+        assert_eq!(shown_rows(3, false, 2, Some(6)), 1);
+        let line = px(18.);
+        let visible = line * 6.;
+        // Typing on row 10 scrolls so that row is the last one shown, and back up to row 2
+        // scrolls so it is the first.
+        let down = follow(px(0.), line * 10., line, visible);
+        assert_eq!(down, line * 5.);
+        assert_eq!(follow(down, line * 2., line, visible), line * 2.);
+        assert_eq!(follow(down, line * 7., line, visible), down);
     }
 
     #[test]
