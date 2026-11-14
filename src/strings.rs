@@ -124,6 +124,10 @@ pub struct Strings {
     pub reset_view: SharedString,
     /// A graph node whose last result was reused.
     pub cached: SharedString,
+    /// A graph node waiting for the person to answer.
+    pub needs_answer: SharedString,
+    /// A graph node waiting for the person to pick one of several results.
+    pub needs_choice: SharedString,
     /// The placeholder of the preferences search.
     pub search_settings: SharedString,
     /// A search that found nothing; `{}` is the search text.
@@ -273,6 +277,8 @@ impl Strings {
             undo: "Undo".into(),
             reset_view: "Reset view".into(),
             cached: "Cached".into(),
+            needs_answer: "Needs you".into(),
+            needs_choice: "Pick one".into(),
             search_settings: "Search settings".into(),
             nothing_matches: "Nothing matches “{}”".into(),
             settings_found: "{} found".into(),
@@ -396,6 +402,8 @@ impl Strings {
             undo: "元に戻す".into(),
             reset_view: "表示をリセット".into(),
             cached: "キャッシュ".into(),
+            needs_answer: "要対応".into(),
+            needs_choice: "選択待ち".into(),
             search_settings: "設定を検索".into(),
             nothing_matches: "「{}」に一致する設定はありません".into(),
             settings_found: "{} 件".into(),

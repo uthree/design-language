@@ -800,17 +800,111 @@ html[data-vibrancy] body.at-root {
   min-height: 2.8em;
 }
 
-.at-inline-edit__error {
+.at-inline-edit__panel {
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
-  padding: 2px 6px;
-  border-radius: var(--at-radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 4px;
+  border-radius: var(--at-radius-md);
   background: var(--at-elevated);
   box-shadow: var(--at-shadow-medium);
-  color: var(--at-danger);
+}
+
+.at-inline-edit__error,
+.at-inline-edit__hint {
+  padding: 0 4px;
   font-size: var(--at-size-xs);
+}
+
+.at-inline-edit__error {
+  color: var(--at-danger);
+}
+
+.at-inline-edit__hint {
+  color: var(--at-text-faint);
+}
+
+/* A completion list inside the panel needs no frame of its own. */
+.at-inline-edit__panel .at-completions {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* `growLines()`: the script sets the height; the area scrolls past its cap. */
+.at-field textarea.at-grow,
+.at-composer textarea.at-grow {
+  resize: none;
+  min-height: 0;
+  overflow-y: hidden;
+}
+
+/* ---------------------------------------------------------------- completions */
+
+/* `Completions`: suggestions under an input, the keyboard's row in `--at-selected`. */
+.at-completions {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: var(--at-space-xxs);
+  border: 1px solid var(--at-border);
+  border-radius: var(--at-radius-md);
+  background: var(--at-overlay);
+  box-shadow: var(--at-shadow-medium);
+}
+
+.at-completions__rows {
+  display: flex;
+  flex-direction: column;
+  max-height: calc((var(--at-row) - 2px) * var(--_rows, 6));
+  overflow-y: auto;
+}
+
+.at-completion {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--at-space-sm);
+  height: calc(var(--at-row) - 2px);
+  padding: 0 var(--at-space-sm);
+  border-radius: max(0px, calc(var(--at-radius-md) - var(--at-space-xxs)));
+  color: var(--at-text);
+  font-size: var(--at-size-md);
+  cursor: default;
+}
+
+.at-completion:hover {
+  background: var(--at-hover);
+}
+
+.at-completion[aria-selected="true"] {
+  background: var(--at-selected);
+}
+
+.at-completion__label {
+  flex: none;
   white-space: nowrap;
+}
+
+.at-completion__description {
+  min-width: 0;
+  margin-inline-start: auto;
+  padding-inline-start: var(--at-space-lg);
+  overflow: hidden;
+  color: var(--at-text-muted);
+  font-size: var(--at-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-completion--empty {
+  color: var(--at-text-faint);
+  font-size: var(--at-size-sm);
 }
 
 .at-form-field {
@@ -2496,6 +2590,7 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 .at-node.is-selected,
 .at-node.is-running { border-color: var(--at-accent); }
 .at-node.is-failed { border-color: var(--at-danger); }
+.at-node.is-waiting { border-color: var(--at-warning); }
 .at-node.is-dragging { box-shadow: var(--at-shadow-medium); }
 .at-node--agent { border: 1px dashed var(--at-agent); }
 
@@ -2534,6 +2629,7 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 .at-node__state .at-spinner { width: 12px; height: 12px; }
 .at-node__state--done::after { content: "✓"; color: var(--at-success); font-family: var(--at-font-ui, inherit); }
 .at-node__state--failed { color: var(--at-danger); }
+.at-node__state--needs-person { color: var(--at-warning); }
 .at-node__state--agent { color: var(--at-agent); }
 
 .at-node__progress {
@@ -2545,6 +2641,15 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
   display: block;
   height: 100%;
   background: var(--at-accent);
+}
+
+/* Running with no measure: a segment sweeps across, as ProgressBar::indeterminate. */
+.at-node__progress--sweep { overflow: hidden; }
+.at-node__progress--sweep > span { width: 30%; animation: at-node-sweep 1.4s ease-in-out infinite; }
+
+@keyframes at-node-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
 }
 
 .at-node__ports { padding-top: var(--at-space-xs); }
@@ -2586,6 +2691,8 @@ button.at-change:focus-visible { outline: 2px solid var(--at-focus-ring); outlin
 .at-node__socket.is-wired::before { background: var(--_color); }
 .at-node__socket.is-muted { opacity: 0.3; }
 .at-node__socket--in { left: -10px; }
+/* An input that takes many wires is a slot rather than a dot. */
+.at-node__socket--many::before { height: 16px; border-radius: 5px; }
 .at-node__socket--out { right: -10px; }
 .at-node__socket[data-kind="1"] { --_color: var(--at-port-1); }
 .at-node__socket[data-kind="2"] { --_color: var(--at-port-2); }

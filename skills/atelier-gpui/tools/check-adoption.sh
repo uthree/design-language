@@ -127,6 +127,10 @@ check warn 'fn keyed_tip\b|fn [a-z_]*shortcut_tooltip\b' \
     "a tooltip with keys built by hand: use Button::shortcut_for(&action) (read from the keymap) or Button::shortcut(..)."
 check warn 'colou?r swatch has no component|the picker is the application.s own|mod colou?r_picker\b' \
     "a colour swatch or picker of the application's own: use atelier::ColorSwatch and ColorPicker (with presets), and atelier::{hex, parse_hex, Hsv}."
+check warn 'fn editable_scrolling_area\b|\bProseViewport\b' \
+    "a scrolling text area of the application's own: use TextInput::multiline().max_lines(n) in a TextField::area, which wraps, scrolls inside itself and follows the caret."
+check warn 'tab_stop\(true\)\)\.tab_index\(' \
+    "a TextInput's focus handle made a tab stop by hand: a TextInput is a tab stop already (TextInput::tab_index(..) places it)."
 check warn 'fn [a-z_]*comment_notes\b' \
     "notes drawn onto graph nodes by hand: use GraphNode::comment(..), NodeCanvas::spots(..) and NodeCanvasEvent::CommentPressed, then an InlineEdit over NodeCanvas::comment_key."
 check warn 'fn user_message_with_attachments\b' \

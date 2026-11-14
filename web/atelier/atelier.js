@@ -670,6 +670,72 @@ export function table(root, { columns = [], rows = [], empty = "" } = {}) {
 
 // ---------------------------------------------------------------- inline edit
 
+// ---------------------------------------------------------------- text input
+
+/// Grow a textarea a row per line it shows, wrapped lines included, from `minLines` to
+/// `maxLines`, and scroll inside it past that: `TextInput::min_lines` and `max_lines`. The
+/// browser keeps the caret in view as it moves. Returns a function that re-measures, for text
+/// set from script.
+export function growLines(textarea, { minLines = 1, maxLines = Infinity } = {}) {
+  textarea.classList.add("at-grow");
+  const fit = () => {
+    const style = getComputedStyle(textarea);
+    const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    textarea.style.height = "auto";
+    const rows = Math.round((textarea.scrollHeight - padding) / line);
+    const shown = Math.min(Math.max(rows, minLines), Math.max(maxLines, minLines));
+    textarea.style.height = `${shown * line + padding}px`;
+    textarea.style.overflowY = rows > shown ? "auto" : "hidden";
+  };
+  textarea.addEventListener("input", fit);
+  fit();
+  return fit;
+}
+
+/// Hand an input's Up, Down, Tab and Escape to a list of suggestions while `isOpen()` says one
+/// is open: `TextInput::set_completing`. Up and Down call `onPrevious` and `onNext` instead of
+/// moving the caret, Tab calls `onAccept` instead of moving focus, and Escape calls `onDismiss`
+/// instead of reaching the field's own Escape. Shift with an arrow still selects, and nothing is
+/// taken while an input method composes.
+export function completionKeys(input, { isOpen = () => true, onPrevious, onNext, onAccept, onDismiss } = {}) {
+  input.addEventListener("keydown", (event) => {
+    if (event.isComposing || event.keyCode === 229 || !isOpen()) return;
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    const handler = { ArrowUp: onPrevious, ArrowDown: onNext, Tab: onAccept, Escape: onDismiss }[event.key];
+    if (!handler) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    handler();
+  });
+}
+
+/// The suggestions under an input as the person types, the counterpart of `Completions`:
+/// `items` are `{ label, description }` (or strings), `selected` the row the keyboard is on,
+/// scrolled into view, and `rows` how many show before the list scrolls. A click calls
+/// `onSelect(index)`. Focus stays in the input, so the rows are no tab stops. Call it again to
+/// redraw; returns the list.
+export function completions(root, { items = [], selected = null, rows = 6, empty, onSelect } = {}) {
+  root.replaceChildren();
+  root.classList.add("at-completions");
+  root.style.setProperty("--_rows", rows);
+  const list = root.appendChild(element("div", "at-completions__rows"));
+  items.forEach((item, index) => {
+    const { label, description } = typeof item === "string" ? { label: item } : item;
+    const row = list.appendChild(element("div", "at-completion"));
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(index === selected));
+    row.append(element("span", "at-completion__label", label));
+    if (description) row.append(element("span", "at-completion__description", description));
+    // Pressing a row must not take focus from the input.
+    row.addEventListener("pointerdown", (event) => event.preventDefault());
+    row.addEventListener("click", () => onSelect?.(index));
+  });
+  if (!items.length && empty) list.append(element("div", "at-completion at-completion--empty", empty));
+  list.children[selected]?.scrollIntoView({ block: "nearest" });
+  return root;
+}
+
 /// Edit `target`'s text where it is shown, the counterpart of `InlineEdit`: a field opens over
 /// the label, about its size (at least `minWidth`, at most `maxWidth` pixels wide), with the
 /// text selected so the first key replaces it. Return commits and Escape closes; a press
@@ -678,10 +744,29 @@ export function table(root, { columns = [], rows = [], empty = "" } = {}) {
 ///
 /// `onCommit(text)` may return a message to refuse the edit: the field stays open and shows it.
 /// The target also receives `atelier:inline-commit` (`detail.value`) and `atelier:inline-close`.
-/// Returns `{ field, input, close }`.
+///
+/// `hint` is a faint line under the field, and `below` an element after it, usually a
+/// `completions()` list; both share the error's panel, 220 to 360 pixels wide. Pass
+/// `completing` (the options of `completionKeys`) so Up, Down and Tab move through the list and
+/// Escape closes it rather than the field. A multi-line field grows from `minLines` to
+/// `maxLines` (2 and 6) and then scrolls. A press elsewhere while an input method composes
+/// does not commit. Returns `{ field, input, close }`.
 export function inlineEdit(
   target,
-  { value, multiline = false, allowEmpty = false, minWidth = 150, maxWidth = 420, onCommit, onClose } = {},
+  {
+    value,
+    multiline = false,
+    allowEmpty = false,
+    minWidth = 150,
+    maxWidth = 420,
+    minLines = 2,
+    maxLines = 6,
+    hint,
+    below,
+    completing,
+    onCommit,
+    onClose,
+  } = {},
 ) {
   const original = value ?? target.textContent.trim();
   const previous = document.activeElement;
@@ -689,13 +774,26 @@ export function inlineEdit(
   const field = element("span", `at-field at-inline-edit${multiline ? " at-field--area" : ""}`);
   const input = document.createElement(multiline ? "textarea" : "input");
   input.value = original;
-  if (multiline) input.rows = Math.min(Math.max(original.split("\n").length, 2), 6);
   field.append(input);
   const width = Math.min(Math.max(rect.width + 8, minWidth), maxWidth);
   const left = Math.max(8, Math.min(rect.left - 4, window.innerWidth - width - 8));
   field.style.width = `${width}px`;
   field.style.left = `${left}px`;
   (target.closest(".at-root") || document.body).append(field);
+  if (multiline) growLines(input, { minLines, maxLines });
+  let panel = null;
+  const showPanel = () => {
+    if (!panel) {
+      panel = field.appendChild(element("span", "at-inline-edit__panel"));
+      panel.style.minWidth = `${Math.max(width, 220)}px`;
+      panel.style.maxWidth = `${Math.max(width, 360)}px`;
+      panel.addEventListener("pointerdown", (event) => event.target === panel && event.preventDefault());
+    }
+    return panel;
+  };
+  if (hint) showPanel().append(element("span", "at-inline-edit__hint", hint));
+  if (below) showPanel().append(below);
+  if (completing) completionKeys(input, completing);
   // Centred on a one-line label; an area opens downward from the label's top.
   const height = field.getBoundingClientRect().height;
   field.style.top = `${multiline ? rect.top : rect.top + (rect.height - height) / 2}px`;
@@ -710,7 +808,7 @@ export function inlineEdit(
     if (commit && text !== original && (allowEmpty || text.trim())) {
       const refusal = onCommit?.(text);
       if (typeof refusal === "string" && refusal) {
-        error ??= field.appendChild(element("span", "at-inline-edit__error"));
+        error ??= showPanel().insertBefore(element("span", "at-inline-edit__error"), panel.firstChild);
         error.textContent = refusal;
         input.focus();
         return;
@@ -725,8 +823,12 @@ export function inlineEdit(
     field.remove();
     if (previous instanceof HTMLElement && document.contains(previous)) previous.focus();
   };
+  let composing = false;
+  input.addEventListener("compositionstart", () => (composing = true));
+  input.addEventListener("compositionend", () => (composing = false));
   const outside = (event) => {
-    if (!field.contains(event.target)) finish(true);
+    // What an input method is still composing is not an answer yet.
+    if (!field.contains(event.target) && !composing) finish(true);
   };
   document.addEventListener("pointerdown", outside, true);
   input.addEventListener("keydown", (event) => {
@@ -740,9 +842,6 @@ export function inlineEdit(
       event.stopPropagation();
       finish(false);
     }
-  });
-  input.addEventListener("input", () => {
-    if (multiline) input.rows = Math.min(Math.max(input.value.split("\n").length, 2), 6);
   });
   return { field, input, close: () => finish(false) };
 }
@@ -1556,10 +1655,11 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 /// `graph::NodeCanvas`: a node graph on a pannable canvas in `root` (give it a height).
 ///
 /// Each node is `{ title, icon, x, y, width, inputs, outputs, fields, comments, state, progress,
-/// seconds, byAgent }`: ports are `{ name, kind }` with `kind` an index into `portTypes` (it picks the
-/// port colour), fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
-/// and `state` is idle, queued, running (with `progress` 0–1), done (with `seconds`), cached or
-/// failed. `comments` are notes left on the node, each showing its first four lines with the
+/// seconds, byAgent }`: ports are `{ name, kind, many }` with `kind` an index into `portTypes` (it
+/// picks the port colour) and `many` marking an input that takes any number of wires, as
+/// `graph::Port::many`; fields are `{ type: "number" | "choice" | "text", name, value, fraction }`,
+/// and `state` is idle, queued, running (with `progress` 0–1), working (running with no measure,
+/// as `NodeState::Working`), done (with `seconds`), cached, failed, needs-answer or needs-choice (the last two wait on the person). `comments` are notes left on the node, each showing its first four lines with the
 /// whole text in its title; pressing one fires `atelier:node-comment` with `{ id, index, target }`
 /// for the application to edit over `target` (with `inlineEdit`, multiline) and `update` the node.
 /// Wires are `{ from, output, to, input }` by node id, and only join ports of one kind.
@@ -1572,7 +1672,7 @@ export function changedFiles(root, { title = "Changed files", files = [], action
 const COMMENT_LINES = 4;
 
 export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legend = true, labels = {} } = {}) {
-  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", ...labels };
+  const words = { addedByAgent: "Added by the assistant", keep: "Keep", undo: "Undo", resetView: "Reset view", queued: "Queued", cached: "Cached", working: "Working", needsAnswer: "Needs you", needsChoice: "Pick one", ...labels };
   const graph = new Map();
   let links = [];
   let next = 0;
@@ -1606,9 +1706,10 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
   }
 
   const portKind = (id, index, output) => graph.get(id)?.[output ? "outputs" : "inputs"]?.[index]?.kind;
-  const canConnect = (wire) =>
-    wire.from !== wire.to && portKind(wire.from, wire.output, true) !== undefined && portKind(wire.from, wire.output, true) === portKind(wire.to, wire.input, false);
   const same = (a, b) => a.from === b.from && a.output === b.output && a.to === b.to && a.input === b.input;
+  const takesMany = (id, input) => !!graph.get(id)?.inputs?.[input]?.many;
+  const canConnect = (wire) =>
+    wire.from !== wire.to && !links.some((old) => same(old, wire)) && portKind(wire.from, wire.output, true) !== undefined && portKind(wire.from, wire.output, true) === portKind(wire.to, wire.input, false);
 
   function stateMark(node) {
     const mark = element("span", "at-node__state");
@@ -1618,6 +1719,9 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
         break;
       case "running":
         mark.append(`${Math.round((node.progress || 0) * 100)} %`, element("span", "at-spinner"));
+        break;
+      case "working":
+        mark.append(words.working, element("span", "at-spinner"));
         break;
       case "done":
         mark.classList.add("at-node__state--done");
@@ -1629,6 +1733,11 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       case "failed":
         mark.classList.add("at-node__state--failed");
         mark.textContent = "!";
+        break;
+      case "needs-answer":
+      case "needs-choice":
+        mark.classList.add("at-node__state--needs-person");
+        mark.textContent = node.state === "needs-answer" ? words.needsAnswer : words.needsChoice;
         break;
       default:
         if (node.byAgent) {
@@ -1647,16 +1756,17 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
     card.style.width = `${node.width || 200}px`;
     card.classList.toggle("at-node--agent", !!node.byAgent);
     card.classList.toggle("is-selected", selected === id);
-    card.classList.toggle("is-running", node.state === "running");
+    card.classList.toggle("is-running", node.state === "running" || node.state === "working");
     card.classList.toggle("is-failed", node.state === "failed");
+    card.classList.toggle("is-waiting", node.state === "needs-answer" || node.state === "needs-choice");
     const header = element("div", "at-node__header");
     if (node.icon) header.append(icon(node.icon));
     header.append(element("span", "at-node__title", node.title), stateMark(node));
     card.append(header);
-    if (node.state === "running") {
-      const bar = element("div", "at-node__progress");
+    if (node.state === "running" || node.state === "working") {
+      const bar = element("div", `at-node__progress${node.state === "working" ? " at-node__progress--sweep" : ""}`);
       const fill = element("span");
-      fill.style.width = `${(node.progress || 0) * 100}%`;
+      if (node.state === "running") fill.style.width = `${(node.progress || 0) * 100}%`;
       bar.append(fill);
       card.append(bar);
     }
@@ -1673,6 +1783,7 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
           if (!port) continue;
           const socket = element("span", `at-node__socket at-node__socket--${output ? "out" : "in"}`);
           socket.dataset.kind = port.kind || 0;
+          if (!output && port.many) socket.classList.add("at-node__socket--many");
           socket.dataset.index = row;
           socket.title = portTypes[port.kind] ? `${port.name} · ${portTypes[port.kind]}` : port.name;
           const wired = links.some((wire) => (output ? wire.from === id && wire.output === row : wire.to === id && wire.input === row));
@@ -1801,8 +1912,8 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       if (socket.classList.contains("at-node__socket--out")) {
         drag = { type: "wire", from: id, output: index, cursor: point(event) };
       } else {
-        // Pulling a wired input picks its wire up again.
-        const wire = links.find((wire) => wire.to === id && wire.input === index);
+        // Pulling a wired input picks its wire up again; on one that takes many, the last drawn.
+        const wire = links.findLast((wire) => wire.to === id && wire.input === index);
         if (!wire) return;
         links = links.filter((other) => other !== wire);
         emit("node-disconnect", { wire });
@@ -1862,7 +1973,7 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       if (target && card) {
         const wire = { from: ended.from, output: ended.output, to: Number(card.dataset.node), input: Number(target.dataset.index) };
         if (canConnect(wire)) {
-          const replaced = links.find((old) => old.to === wire.to && old.input === wire.input);
+          const replaced = takesMany(wire.to, wire.input) ? undefined : links.find((old) => old.to === wire.to && old.input === wire.input);
           links = links.filter((old) => old !== replaced);
           links.push(wire);
           if (replaced) emit("node-disconnect", { wire: replaced });
@@ -1921,7 +2032,7 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
     },
     connect(wire) {
       if (!canConnect(wire)) return false;
-      links = links.filter((old) => !(old.to === wire.to && old.input === wire.input));
+      if (!takesMany(wire.to, wire.input)) links = links.filter((old) => !(old.to === wire.to && old.input === wire.input));
       links.push({ ...wire });
       draw();
       return true;
@@ -1940,11 +2051,18 @@ export function nodeCanvas(root, { portTypes = [], nodes = [], wires = [], legen
       }
       draw();
     },
+    // Wires what fed its first input to every input it fed: all of them into an input that takes
+    // many, the first into an ordinary one.
     undoAgentNode(id) {
-      const source = links.find((wire) => wire.to === id);
+      const first = links.find((wire) => wire.to === id);
+      const sources = first ? links.filter((wire) => wire.to === id && wire.input === first.input) : [];
       const targets = links.filter((wire) => wire.from === id);
       api.remove(id);
-      if (source) for (const target of targets) api.connect({ from: source.from, output: source.output, to: target.to, input: target.input });
+      for (const target of targets) {
+        for (const source of takesMany(target.to, target.input) ? sources : sources.slice(0, 1)) {
+          api.connect({ from: source.from, output: source.output, to: target.to, input: target.input });
+        }
+      }
     },
     resetView() {
       pan = { x: 16, y: 24 };

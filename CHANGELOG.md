@@ -30,6 +30,81 @@ its code bumps the minor version while Atelier is below 1.0.
 
 - An `on_mouse_down(.., |_, _, cx| cx.stop_propagation())` wrapped around `BackToPlayhead`.
 
+## Unreleased: task graphs on the node canvas
+
+### Added
+
+- `Port::many(name, kind)` and `GraphNode::input_many(name, kind)`: an input that takes any
+  number of wires, so a step in a task graph can wait for every step wired into it. A new wire
+  joins the others instead of replacing them, and the socket is drawn as a slot rather than a
+  dot. `NodeCanvas::sources(node, input)` lists them all; `source` still gives the first.
+- `NodeState::Working`: running with no measure of progress, such as an agent at work. The
+  header shows "Working" and a spinner, and an indeterminate bar sweeps under it.
+- `NodeState::NeedsAnswer` and `NodeState::NeedsChoice`, for a node waiting on the person: the
+  card's border turns to the warning colour and its header reads `Strings::needs_answer`
+  ("Needs you") or `Strings::needs_choice` ("Pick one"). `NodeState::needs_person()` asks for
+  either.
+- Undoing a node the assistant added hands every wire that fed its first input to an input it
+  fed that takes many, and the first of them to an ordinary input.
+- `NodeCanvas::can_connect` refuses a wire that is already there.
+
+### Web
+
+- `nodeCanvas` ports take `many: true` (`.at-node__socket--many`), and nodes take the states
+  `working` (`.at-node__progress--sweep`), `needs-answer` and `needs-choice` (`.at-node.is-waiting`, `.at-node__state--needs-person`;
+  labels `needsAnswer` and `needsChoice`). The showcase has a small task graph.
+
+### Changes you need to make
+
+- A `match` on `NodeState` needs arms for `Working`, `NeedsAnswer` and `NeedsChoice`.
+- A `Port { name, kind }` literal needs `many: false`, or use `Port::new`.
+
+## Unreleased: text inputs that complete, tab, wrap and scroll
+
+### Added
+
+- `TextInput::set_completing(bool, cx)` (and the builder `completing`): while a list of
+  suggestions is open, Up and Down emit `TextInputEvent::PreviousCompletion` /
+  `NextCompletion` instead of moving the caret, Tab emits `AcceptCompletion` instead of moving
+  focus, and Escape emits `DismissCompletions` instead of `Cancel`. Each also bubbles as the
+  action of the same name. A command palette sets it once and keeps it.
+- `TextInput::select_range(range, cx)` and `TextInput::replace_range(range, text, cx)`: select
+  part of the text, or replace the word being completed (an undo step; emits `Changed`).
+- `TextInput` is a tab stop; `TextInput::tab_index(..)` places it and `tab_stop(false)` leaves it
+  out.
+- A `TextInput::multiline()` input wraps at its width. `min_lines(n)` and `max_lines(n)` bound
+  how many rows it shows; past `max_lines` it scrolls inside itself (wheel too) and follows the
+  caret as the person types or moves it. Up and Down move by rows as drawn.
+- `InlineEdit::hint(text)` and `InlineEdit::below(element)`: a faint line and, usually,
+  `Completions` under the field, in one panel with the error, 220 to 360 px wide.
+- The showcase's Fields section has a chord field with completions and a notes area capped at
+  four rows; its event list shows a hint under the cell being edited.
+
+### Changed
+
+- A press outside an `InlineEdit` while an input method is composing no longer commits.
+- `InlineEdit`'s error now sits in the panel under the field rather than in a pill of its own.
+
+### Web
+
+- `completions(root, { items, selected, rows, empty, onSelect })` and `.at-completions`: the
+  suggestion list, no longer under "Not yet".
+- `completionKeys(input, { isOpen, onPrevious, onNext, onAccept, onDismiss })`, the
+  counterpart of `set_completing`.
+- `growLines(textarea, { minLines, maxLines })`: grow to a cap, then scroll. The showcase's
+  notes and the composer use it.
+- `inlineEdit` takes `hint`, `below`, `completing`, `minLines` and `maxLines`
+  (`.at-inline-edit__panel`, `__hint`), and does not commit on a press while an input method
+  composes.
+
+### Workarounds you can delete
+
+- `.track_focus(&input_handle.clone().tab_stop(true)).tab_index(0)` on the `TextField` around a
+  `TextInput`.
+- A scrolling text area of your own (`ProseViewport`, `editable_scrolling_area`) for long
+  passages: `TextInput::multiline().max_lines(n)` in a `TextField::area`.
+- Hand-rolled inputs kept only because Up and Down could not reach a completion list.
+
 ## Unreleased: the app's mark in the title bar
 
 ### Added

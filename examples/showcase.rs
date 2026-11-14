@@ -20,12 +20,13 @@ use atelier::agent::{
 };
 use atelier::{
     ActiveTheme, Appearance, Avatar, BackToPlayhead, Badge, Button, ButtonVariant, Card, Checkbox,
-    ColorPicker, ColorSwatch, Column, ControlSize, Dialog, Direction, Disclosure, Divider, Edge,
-    EmptyState, Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label, LevelMeter, ListItem,
-    MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo, RowMark, SectionHeader, Segment,
-    SegmentedControl, Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat, StepList, StepState,
-    Switch, Table, TableCell, TableRow, Tabs, TaskProgress, TaskState, TextColor, TextField,
-    TextInput, TextSize, Theme, TitleBar, Tone, WindowFrame, menu_separator, skeleton_paragraph,
+    ColorPicker, ColorSwatch, Column, Completion, Completions, ControlSize, Dialog, Direction,
+    Disclosure, Divider, Edge, EmptyState, Follow, Icon, IconName, InlineEdit, Kbd, Knob, Label,
+    LevelMeter, ListItem, MenuItem, Popover, ProgressBar, ProgressRing, ProviderLogo, RowMark,
+    SectionHeader, Segment, SegmentedControl, Sidebar, Skeleton, Slider, Spinner, SpotBook, Stat,
+    StepList, StepState, Switch, Table, TableCell, TableRow, Tabs, TaskProgress, TaskState,
+    TextColor, TextField, TextInput, TextInputEvent, TextSize, Theme, TitleBar, Tone, WindowFrame,
+    menu_separator, skeleton_paragraph,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Application, Bounds, Context, Entity, Hsla,
@@ -119,6 +120,11 @@ struct Showcase {
     reviewing: bool,
     /// The project name field's input.
     project: Entity<TextInput>,
+    /// A chord typed with suggestions under it, and the suggestion the keyboard is on.
+    chord: Entity<TextInput>,
+    chord_selected: usize,
+    /// Notes longer than their box: four rows, then the box scrolls.
+    notes: Entity<TextInput>,
     /// The track name edited in place, and whether its field is open.
     track_name: SharedString,
     renaming: bool,
@@ -1047,6 +1053,7 @@ impl Showcase {
                     .inline()
                     .size(TextSize::Small),
             );
+        let chord_field = self.chord_field(window, cx);
         let theme = cx.theme();
         let section = |title: &'static str, body: AnyElement| {
             div()
@@ -1173,6 +1180,17 @@ impl Showcase {
                         .empty(self.project.read(cx).is_empty())
                         .focused(self.project.read(cx).is_focused(window))
                         .child(self.project.clone()),
+                ),
+            )
+            .child(chord_field)
+            .child(
+                div().w(px(320.)).child(
+                    TextField::new()
+                        .area()
+                        .placeholder("Session notes")
+                        .empty(self.notes.read(cx).is_empty())
+                        .focused(self.notes.read(cx).is_focused(window))
+                        .child(self.notes.clone()),
                 ),
             )
             .child(
@@ -1704,6 +1722,7 @@ impl Showcase {
             Some(
                 InlineEdit::new("edit-event", &self.cell_input, over)
                     .min_width(px(80.))
+                    .hint(EVENT_HINTS[cell.column.min(2)])
                     .original(original)
                     .on_commit(cx.listener(move |this, text: &SharedString, _, cx| {
                         this.events[cell.row][cell.column] = text.trim().to_owned().into();
@@ -2000,6 +2019,111 @@ impl Showcase {
     }
 }
 
+/// Long enough to wrap and to run past four rows, so the notes box scrolls.
+const SESSION_NOTES: &str = "Bridge: try the pad an octave down and let the bass rest for two \
+bars before the last chorus.\nVocal take 3 is the keeper; comp the second verse from take 5.\n\
+Ask about the tempo map: the click drifts after bar 64.\nRemember to print the stems at 48 kHz.";
+
+/// What each event-list column takes, shown under the cell being edited.
+const EVENT_HINTS: [&str; 3] = [
+    "Bar.beat, such as 2.3",
+    "A note, CC11 or Pitch bend",
+    "0 to 127",
+];
+
+/// The chords the chord field suggests.
+const CHORDS: [&str; 8] = ["Cmaj7", "Cm7", "C7", "Csus4", "Dm7", "Em7", "G7", "bVII7"];
+
+impl Showcase {
+    /// The chords that start with what has been typed.
+    fn chord_matches(&self, cx: &App) -> Vec<&'static str> {
+        let typed = self.chord.read(cx).text().trim().to_lowercase();
+        if typed.is_empty() {
+            return Vec::new();
+        }
+        CHORDS
+            .into_iter()
+            .filter(|chord| chord.to_lowercase().starts_with(&typed) && chord.len() > typed.len())
+            .collect()
+    }
+
+    fn on_chord(
+        &mut self,
+        input: Entity<TextInput>,
+        event: &TextInputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let count = self.chord_matches(cx).len();
+        match event {
+            TextInputEvent::Changed => self.chord_selected = 0,
+            TextInputEvent::PreviousCompletion if count > 0 => {
+                self.chord_selected = (self.chord_selected + count - 1) % count;
+            }
+            TextInputEvent::NextCompletion if count > 0 => {
+                self.chord_selected = (self.chord_selected + 1) % count;
+            }
+            TextInputEvent::AcceptCompletion => {
+                if let Some(chord) = self.chord_matches(cx).get(self.chord_selected) {
+                    let all = 0..input.read(cx).text().len();
+                    input.update(cx, |input, cx| input.replace_range(all, chord, cx));
+                }
+            }
+            TextInputEvent::DismissCompletions => {
+                input.update(cx, |input, cx| input.set_completing(false, cx));
+            }
+            _ => {}
+        }
+        // The list is open while it lists anything, and Escape closed it until the next key.
+        let open =
+            !self.chord_matches(cx).is_empty() && *event != TextInputEvent::DismissCompletions;
+        if matches!(
+            event,
+            TextInputEvent::Changed | TextInputEvent::AcceptCompletion
+        ) {
+            input.update(cx, |input, cx| input.set_completing(open, cx));
+        }
+        cx.notify();
+    }
+
+    /// A chord field whose suggestions follow Up, Down and Tab while focus stays in it.
+    fn chord_field(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let input = self.chord.read(cx);
+        let open = input.is_completing() && input.is_focused(window);
+        let matches = self.chord_matches(cx);
+        div()
+            .w(px(180.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(
+                TextField::new()
+                    .placeholder("Chord (try C)")
+                    .empty(input.is_empty())
+                    .focused(input.is_focused(window))
+                    .child(self.chord.clone()),
+            )
+            .when(open, |el| {
+                el.child(
+                    Completions::new("chord-completions")
+                        .items(matches.iter().map(|chord| Completion::new(*chord)))
+                        .selected(Some(self.chord_selected))
+                        .rows(4)
+                        .on_select(cx.listener(|this, index: &usize, _, cx| {
+                            if let Some(chord) = this.chord_matches(cx).get(*index) {
+                                let input = this.chord.clone();
+                                let all = 0..input.read(cx).text().len();
+                                input.update(cx, |input, cx| {
+                                    input.replace_range(all, chord, cx);
+                                    input.set_completing(false, cx);
+                                });
+                            }
+                        })),
+                )
+            })
+            .into_any_element()
+    }
+}
+
 impl Render for Showcase {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -2115,59 +2239,72 @@ fn main() {
             );
             cx.open_window(options, |window, cx| {
                 atelier::set_window_background(window, &Theme::new(direction, appearance));
-                cx.new(|cx| Showcase {
-                    direction,
-                    appearance,
-                    page,
-                    agent_open,
-                    reasoning_open: false,
-                    tool_open: false,
-                    selected_track: 1,
-                    mute: [false, false, false, false, true],
-                    solo: [false, true, false, false, false],
-                    switches: [true, false],
-                    checks: [true, false],
-                    tool: 1,
-                    tab: 1,
-                    disclosures: [true, false, false],
-                    progress: 0.35,
-                    plan_step: 2,
-                    dialog: match argument("--dialog").as_deref() {
-                        Some("delete") => Some(OpenDialog::Delete),
-                        Some("approval") => Some(OpenDialog::Approval),
-                        _ => None,
-                    },
-                    reviewing: false,
-                    project: cx.new(|cx| TextInput::new(cx).with_text("Midnight Drive", cx)),
-                    track_name: "Lead Vocal".into(),
-                    renaming: false,
-                    rename: cx.new(TextInput::new),
-                    spots: SpotBook::new(),
-                    events: [
-                        ["1.1", "C4", "96"],
-                        ["1.2", "E4", "88"],
-                        ["1.3", "CC11 Expression", "72"],
-                        ["1.3", "G4", "90"],
-                        ["2.1", "Pitch bend", "+2"],
-                        ["2.1", "C5", "100"],
-                        ["2.3", "B4", "84"],
-                    ]
-                    .map(|row| row.map(SharedString::from))
-                    .to_vec(),
-                    event_row: None,
-                    event_edit: None,
-                    cell_input: cx.new(TextInput::new),
-                    event_scroll: gpui::UniformListScrollHandle::new(),
-                    follow: Follow::new(),
-                    follow_offset: 0.,
-                    follow_at: 2.,
-                    follow_run: None,
-                    cutoff: FILTER_DEFAULT.0,
-                    peak: FILTER_DEFAULT.1,
-                    poles: 2,
-                    filter_from: FILTER_DEFAULT,
-                    captions: [0xf4f1ea, 0xffffff, 0x3d7bff].map(|code| rgb(code).into()),
-                    picking: None,
+                cx.new(|cx| {
+                    let chord = cx.new(TextInput::new);
+                    cx.subscribe(&chord, Showcase::on_chord).detach();
+                    Showcase {
+                        direction,
+                        appearance,
+                        page,
+                        agent_open,
+                        reasoning_open: false,
+                        tool_open: false,
+                        selected_track: 1,
+                        mute: [false, false, false, false, true],
+                        solo: [false, true, false, false, false],
+                        switches: [true, false],
+                        checks: [true, false],
+                        tool: 1,
+                        tab: 1,
+                        disclosures: [true, false, false],
+                        progress: 0.35,
+                        plan_step: 2,
+                        dialog: match argument("--dialog").as_deref() {
+                            Some("delete") => Some(OpenDialog::Delete),
+                            Some("approval") => Some(OpenDialog::Approval),
+                            _ => None,
+                        },
+                        reviewing: false,
+                        project: cx.new(|cx| TextInput::new(cx).with_text("Midnight Drive", cx)),
+                        chord,
+                        chord_selected: 0,
+                        notes: cx.new(|cx| {
+                            TextInput::new(cx)
+                                .multiline()
+                                .min_lines(2)
+                                .max_lines(4)
+                                .with_text(SESSION_NOTES, cx)
+                        }),
+                        track_name: "Lead Vocal".into(),
+                        renaming: false,
+                        rename: cx.new(TextInput::new),
+                        spots: SpotBook::new(),
+                        events: [
+                            ["1.1", "C4", "96"],
+                            ["1.2", "E4", "88"],
+                            ["1.3", "CC11 Expression", "72"],
+                            ["1.3", "G4", "90"],
+                            ["2.1", "Pitch bend", "+2"],
+                            ["2.1", "C5", "100"],
+                            ["2.3", "B4", "84"],
+                        ]
+                        .map(|row| row.map(SharedString::from))
+                        .to_vec(),
+                        event_row: None,
+                        event_edit: None,
+                        cell_input: cx.new(TextInput::new),
+                        event_scroll: gpui::UniformListScrollHandle::new(),
+                        follow: Follow::new(),
+                        follow_offset: 0.,
+                        follow_at: 2.,
+                        follow_run: None,
+                        cutoff: FILTER_DEFAULT.0,
+                        peak: FILTER_DEFAULT.1,
+                        poles: 2,
+                        filter_from: FILTER_DEFAULT,
+                        captions: [0xf4f1ea, 0xffffff, 0x3d7bff].map(|code| rgb(code).into()),
+                        picking: None,
+                    }
                 })
             })
             .expect("failed to open the showcase window");
