@@ -54,6 +54,13 @@ export function hydrate(root = document) {
   for (const element of root.querySelectorAll("[data-shortcut]")) {
     shortcutTooltip(element, element.dataset.tooltip || element.textContent.trim(), element.dataset.shortcut);
   }
+  // The back-to-playhead button floats over the view it serves; a press on it is not a press
+  // on that view.
+  for (const back of root.querySelectorAll(".at-back-to-playhead")) {
+    if (back.dataset.atReady) continue;
+    back.dataset.atReady = "1";
+    for (const type of ["pointerdown", "mousedown"]) back.addEventListener(type, (event) => event.stopPropagation());
+  }
   for (const element of root.querySelectorAll("[data-icon]")) {
     if (element.dataset.iconDrawn === element.dataset.icon) continue;
     element.classList.add("at-icon");
@@ -363,13 +370,6 @@ export function setMeter(meter, { level = 0, peak, clipped = false } = {}) {
 
 // ---------------------------------------------------------------- following a playhead
 
-/// Whether a view that plays follows its playhead, the counterpart of `Follow`. Call
-/// `update(offset, span, at, playing)` each frame with where the view starts, how much it shows
-/// and where the playhead is (one unit for all three); it returns an offset to scroll to when a
-/// page turn is due, otherwise `null`. Scrolling away while it plays lets go until the playhead
-/// is back in view, playback starts again or `engage()` is called; a change of span is a zoom
-/// and keeps following. `side(offset, span, at)` is `"before"` or `"after"` while let go and
-/// out of view, for a `.at-back-to-playhead` button with that `data-side`.
 /// A colour code read back: six hex digits or the three-digit short form, with or without
 /// `#`, in either case. `parseHex(" 38f ")` is `"#3388FF"`; anything else is `null`. As
 /// `atelier::parse_hex`.
@@ -520,6 +520,14 @@ export function colorPicker(root, { value = "#3D7BFF", presets = [], labels = {}
   };
 }
 
+/// Whether a view that plays follows its playhead, the counterpart of `Follow`. Call
+/// `update(offset, span, at, playing)` each frame with where the view starts, how much it shows
+/// and where the playhead is (one unit for all three); it returns an offset to scroll to when a
+/// page turn is due, otherwise `null`. Scrolling away while it plays lets go until the playhead
+/// is back in view, playback starts again or `engage()` is called; a change of span is a zoom
+/// and keeps following. `side(offset, span, at)` is `"before"` or `"after"` while let go and
+/// out of view, for a `.at-back-to-playhead` button with that `data-side`. `hydrate` keeps a
+/// press on that button from reaching the view under it.
 export function follow() {
   let released = false;
   let last = null;
