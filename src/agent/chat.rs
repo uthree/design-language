@@ -396,6 +396,7 @@ pub struct ChatView {
     entries: Vec<(EntryId, ChatEntry)>,
     next_id: u64,
     open: HashSet<EntryId>,
+    groups_open: HashSet<EntryId>,
     scroll: ScrollHandle,
     follow_tail: bool,
     unread: usize,
@@ -419,6 +420,7 @@ impl ChatView {
             entries: Vec::new(),
             next_id: 0,
             open: HashSet::new(),
+            groups_open: HashSet::new(),
             scroll: ScrollHandle::new(),
             follow_tail: true,
             unread: 0,
@@ -498,6 +500,7 @@ impl ChatView {
             let excess = self.entries.len().saturating_sub(capacity);
             for (gone, _) in self.entries.drain(..excess) {
                 self.open.remove(&gone);
+                self.groups_open.remove(&gone);
             }
         }
         self.changed(follow, true, cx);
@@ -512,6 +515,7 @@ impl ChatView {
     ) {
         self.entries.clear();
         self.open.clear();
+        self.groups_open.clear();
         self.thinking = None;
         // The old conversation's scroll position means nothing in the new one.
         self.scroll = ScrollHandle::new();
@@ -532,6 +536,7 @@ impl ChatView {
     pub fn remove(&mut self, id: EntryId, cx: &mut Context<Self>) {
         self.entries.retain(|(entry, _)| *entry != id);
         self.open.remove(&id);
+        self.groups_open.remove(&id);
         cx.notify();
     }
 
@@ -673,6 +678,22 @@ impl ChatView {
         self.open.contains(&id)
     }
 
+    /// Open or close the group of consecutive tool calls that `first` begins. Groups start
+    /// closed, showing their title and any call still running or waiting for the person.
+    pub fn set_group_open(&mut self, first: EntryId, open: bool, cx: &mut Context<Self>) {
+        if open {
+            self.groups_open.insert(first);
+        } else {
+            self.groups_open.remove(&first);
+        }
+        cx.notify();
+    }
+
+    /// Whether the group of tool calls that `first` begins is open.
+    pub fn is_group_open(&self, first: EntryId) -> bool {
+        self.groups_open.contains(&first)
+    }
+
     /// How many entries arrived while the person was reading further up.
     pub fn unread(&self) -> usize {
         self.unread
@@ -741,6 +762,20 @@ impl ChatView {
             view.update(cx, |this, cx| {
                 let open = !this.open.contains(&id);
                 this.set_open(id, open, cx);
+            })
+            .ok();
+        }
+    }
+
+    fn toggle_group(
+        first: EntryId,
+        cx: &mut Context<Self>,
+    ) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static + use<> {
+        let view = cx.entity().downgrade();
+        move |_, _, cx| {
+            view.update(cx, |this, cx| {
+                let open = !this.groups_open.contains(&first);
+                this.set_group_open(first, open, cx);
             })
             .ok();
         }
@@ -956,9 +991,26 @@ impl ChatView {
                     .count();
                 if run > 1 {
                     let title = cx.strings().used_tools.replace("{}", &run.to_string());
-                    let mut group = ToolGroup::new(title);
+                    // A group is named by its first call, which stays first as calls join it.
+                    let mut group = ToolGroup::new(title)
+                        .toggle(
+                            self.child_id(*id, "tool-group"),
+                            self.groups_open.contains(id),
+                        )
+                        .on_toggle(Self::toggle_group(*id, cx));
                     for (id, entry) in &self.entries[index..index + run] {
-                        group = group.call(self.tool_row(*id, entry, cx));
+                        let row = self.tool_row(*id, entry, cx);
+                        group = if matches!(
+                            entry,
+                            ChatEntry::Tool {
+                                state: ToolState::Running | ToolState::AwaitingApproval,
+                                ..
+                            }
+                        ) {
+                            group.live_call(row)
+                        } else {
+                            group.call(row)
+                        };
                     }
                     rows.push(group.into_any_element());
                     index += run;

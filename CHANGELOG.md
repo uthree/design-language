@@ -14,6 +14,27 @@ newest tag are on `main` but in no release yet; when a release is tagged, the ve
 `Cargo.toml` goes up and its heading goes above them. A change that makes an application edit
 its code bumps the minor version while Atelier is below 1.0.
 
+## Unreleased: tool groups start closed
+
+### Changed
+
+- `ChatView` draws each run of tool calls closed: its "Used 13 tools" title and, under it, only
+  the calls still running or waiting for approval. A click, Enter or Space on the title opens
+  the group, with a chevron that turns as `Disclosure`'s does. The module's rule, "tool work is
+  collapsed by default", now holds for the group as well as for each call's detail.
+
+### Added
+
+- `ToolGroup::toggle(id, open)` and `ToolGroup::on_toggle`: the title becomes a disclosure.
+  `ToolGroup::live_call` adds a call that stays in sight while the group is closed.
+- `ChatView::set_group_open` and `ChatView::is_group_open`, named by the group's first call.
+
+### Web
+
+- `chat()` groups start closed in the same way: the title is a button with `aria-expanded`, the
+  group carries `data-open`, and each `.at-tool-call` its `data-state`, which the stylesheet reads
+  to keep running and awaiting calls in sight.
+
 ## Unreleased: a press on the back-to-playhead button stays there
 
 ### Changed

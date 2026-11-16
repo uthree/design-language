@@ -1921,9 +1921,38 @@ dialog.at-dialog::backdrop {
 }
 
 .at-tool-group__title {
+  display: flex;
+  align-items: center;
+  gap: var(--at-space-xs);
   padding: var(--at-space-xxs) 0 var(--at-space-xs);
   color: var(--at-text-faint);
   font-size: var(--at-size-xs);
+  cursor: pointer;
+}
+
+.at-tool-group__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.at-tool-group__title .at-icon {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--at-motion-fast, 120ms);
+}
+
+.at-tool-group[data-open="true"] > .at-tool-group__title .at-icon {
+  transform: rotate(90deg);
+}
+
+/* A closed group shows its title and the calls still running or waiting for the person. */
+.at-tool-group:not([data-open="true"]) > .at-tool-call:not([data-state="running"]):not([data-state="awaiting"]),
+.at-tool-group:not([data-open="true"]) > .at-tool-call:not([data-state="running"]):not([data-state="awaiting"]) + .at-tool-call__detail {
+  display: none;
+}
+
+.at-tool-group:not([data-open="true"]) > .at-tool-group__title {
+  padding-bottom: var(--at-space-xxs);
 }
 
 .at-tool-group--single {

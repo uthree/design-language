@@ -625,10 +625,17 @@ impl RenderOnce for ToolCall {
 }
 
 /// Consecutive tool calls, framed as one unit so a long turn reads as its answer.
+///
+/// With [`ToolGroup::toggle`] the title becomes a disclosure and the group can be closed to its
+/// title: a long turn then reads as its answer and one line about the work behind it. A call
+/// added with [`ToolGroup::live_call`] stays in sight while closed, for a call still running or
+/// waiting for the person, so the work in hand is never hidden.
 #[derive(IntoElement)]
 pub struct ToolGroup {
     title: SharedString,
-    calls: Vec<AnyElement>,
+    calls: Vec<(AnyElement, bool)>,
+    toggle: Option<(ElementId, bool)>,
+    on_toggle: Option<ClickHandler>,
 }
 
 impl ToolGroup {
@@ -637,20 +644,89 @@ impl ToolGroup {
         Self {
             title: title.into(),
             calls: Vec::new(),
+            toggle: None,
+            on_toggle: None,
         }
     }
 
-    /// Add a [`ToolCall`].
+    /// Add a [`ToolCall`], hidden while the group is closed.
     pub fn call(mut self, call: impl IntoElement) -> Self {
-        self.calls.push(call.into_any_element());
+        self.calls.push((call.into_any_element(), false));
+        self
+    }
+
+    /// Add a [`ToolCall`] that stays in sight while the group is closed: one still running, or
+    /// waiting for the person's approval.
+    pub fn live_call(mut self, call: impl IntoElement) -> Self {
+        self.calls.push((call.into_any_element(), true));
+        self
+    }
+
+    /// Make the title a disclosure that opens and closes the group; `open` is whether it is
+    /// open now. Without it the group is always open.
+    pub fn toggle(mut self, id: impl Into<ElementId>, open: bool) -> Self {
+        self.toggle = Some((id.into(), open));
+        self
+    }
+
+    /// Called on a click, Enter or Space on the title; flip `open` there.
+    pub fn on_toggle(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_toggle = Some(Box::new(handler));
         self
     }
 }
 
 impl RenderOnce for ToolGroup {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme().clone();
         let inset = theme.spacing.xs;
+        let open = self.toggle.as_ref().is_none_or(|(_, open)| *open);
+        let label = Label::new(self.title)
+            .size(TextSize::XSmall)
+            .color(TextColor::Faint);
+        let title = match self.toggle {
+            None => div()
+                .px(theme.spacing.sm)
+                .pt(theme.spacing.xxs)
+                .pb(theme.spacing.xs)
+                .child(label)
+                .into_any_element(),
+            Some((id, open)) => {
+                let hover = theme.colors.hover;
+                let mut row = focusable(
+                    div().id(id.clone()),
+                    &id,
+                    false,
+                    theme.shape.radius_sm,
+                    window,
+                    cx,
+                )
+                .flex()
+                .items_center()
+                .gap(theme.spacing.xs)
+                .h(theme.density.control_sm)
+                .px(theme.spacing.sm)
+                .rounded(theme.shape.radius_sm)
+                .hover(move |style| style.bg(hover))
+                .child(div().flex_1().min_w_0().truncate().child(label))
+                // Under the calls' state marks, so the column reads straight down.
+                .child(div().flex().w(px(14.)).justify_center().child(chevron(
+                    (id, "chevron"),
+                    open,
+                    px(12.),
+                    theme.colors.text_faint,
+                    window,
+                    cx,
+                )));
+                if let Some(handler) = self.on_toggle {
+                    row = row.on_click(handler);
+                }
+                row.into_any_element()
+            }
+        };
         div()
             .flex()
             .flex_col()
@@ -658,18 +734,13 @@ impl RenderOnce for ToolGroup {
             .rounded(theme.shape.radius_md)
             .border_1()
             .border_color(theme.colors.border)
-            .child(
-                div()
-                    .px(theme.spacing.sm)
-                    .pt(theme.spacing.xxs)
-                    .pb(theme.spacing.xs)
-                    .child(
-                        Label::new(self.title)
-                            .size(TextSize::XSmall)
-                            .color(TextColor::Faint),
-                    ),
+            .child(title)
+            .children(
+                self.calls
+                    .into_iter()
+                    .filter(|(_, live)| open || *live)
+                    .map(|(call, _)| call),
             )
-            .children(self.calls)
     }
 }
 

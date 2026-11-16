@@ -287,3 +287,60 @@ fn attachment_chips_stay_still_unless_asked(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("chat-attachment-0-0").is_some());
     assert!(cx.debug_bounds("chat-attachment-0-0-open").is_none());
 }
+
+#[gpui::test]
+fn a_run_of_tool_calls_starts_closed_and_keeps_the_running_one_in_sight(cx: &mut TestAppContext) {
+    let (chat, _, cx) = open(cx);
+    let (first, running) = chat.update(cx, |chat, cx| {
+        let first = chat.push(
+            ChatEntry::tool("read", "Read a file", ToolState::Succeeded),
+            cx,
+        );
+        chat.push(
+            ChatEntry::tool("grep", "Searched", ToolState::Succeeded),
+            cx,
+        );
+        let running = chat.push(
+            ChatEntry::tool("bash", "Running the tests", ToolState::Running),
+            cx,
+        );
+        (first, running)
+    });
+    cx.run_until_parked();
+    let title = selector(format!("chat-tool-group-{}", entry_number(first)));
+    assert!(cx.debug_bounds(title).is_some(), "the group has a title");
+    assert!(!chat.read_with(cx, |chat, _| chat.is_group_open(first)));
+    assert!(
+        cx.debug_bounds(selector(format!("chat-tool-{}", entry_number(first))))
+            .is_none(),
+        "a finished call is folded away"
+    );
+    assert!(
+        cx.debug_bounds(selector(format!("chat-tool-{}", entry_number(running))))
+            .is_some(),
+        "the running call stays in sight"
+    );
+
+    let bounds = cx.debug_bounds(title).unwrap();
+    cx.simulate_click(bounds.center(), Modifiers::default());
+    cx.run_until_parked();
+    assert!(chat.read_with(cx, |chat, _| chat.is_group_open(first)));
+    assert!(
+        cx.debug_bounds(selector(format!("chat-tool-{}", entry_number(first))))
+            .is_some(),
+        "an open group shows every call"
+    );
+}
+
+/// `debug_bounds` takes a `'static` selector; a test's few leaked strings cost nothing.
+fn selector(name: String) -> &'static str {
+    Box::leak(name.into_boxed_str())
+}
+
+/// `EntryId` keeps its number private; its debug form is the only way to name it.
+fn entry_number(id: atelier::agent::EntryId) -> String {
+    format!("{id:?}")
+        .trim_start_matches("EntryId(")
+        .trim_end_matches(')')
+        .to_string()
+}

@@ -1207,6 +1207,7 @@ export function chat(root, { panel = false, logo = null, strings = {}, openAttac
             mark,
           );
           if (entry.detail) row.setAttribute("aria-expanded", String(!detail.hidden));
+          row.dataset.state = entry.state || "running";
           detail.textContent = entry.detail || "";
         };
         refresh();
@@ -1281,19 +1282,34 @@ export function chat(root, { panel = false, logo = null, strings = {}, openAttac
     }
   };
 
-  // Consecutive tool calls share one group; its title counts them.
+  // Consecutive tool calls share one group; its title counts them and opens it. A group starts
+  // closed, showing only the calls still running or waiting for the person, as it does in gpui.
   const toolGroup = () => {
     const last = transcript.lastElementChild;
     if (last && last.classList.contains("at-tool-group")) return last;
     const group = element("div", "at-tool-group");
-    group.append(element("div", "at-tool-group__title"));
+    const title = element("div", "at-tool-group__title");
+    title.tabIndex = 0;
+    title.setAttribute("role", "button");
+    title.setAttribute("aria-expanded", "false");
+    title.append(element("span", "at-tool-group__label"), icon("chevron-right"));
+    const toggle = () => {
+      const open = group.dataset.open !== "true";
+      group.dataset.open = String(open);
+      title.setAttribute("aria-expanded", String(open));
+    };
+    title.addEventListener("click", toggle);
+    title.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") toggle(), event.preventDefault();
+    });
+    group.append(title);
     transcript.append(group);
     return group;
   };
   const retitle = (group) => {
     if (!group) return;
     const count = group.querySelectorAll(":scope > .at-tool-call").length;
-    group.firstElementChild.textContent = words.usedTools(count);
+    group.firstElementChild.firstElementChild.textContent = words.usedTools(count);
     // A lone call stands on its own, unframed, as it does in gpui.
     group.classList.toggle("at-tool-group--single", count < 2);
   };
